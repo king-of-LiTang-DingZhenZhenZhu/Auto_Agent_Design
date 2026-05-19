@@ -1,67 +1,36 @@
-* ============================================================
-* Circuit: 5-Transistor OTA (Single-Stage)
-* Process: TSMC N28
-* Description: Basic differential pair with active load
-* ============================================================
+* HSpice Netlist — Five-Transistor OTA
+* TSMC 28nm CLN28HPC+ | VDD=1.1V | Vbias=600mV
 
-* --- Include PDK ---
-.lib '/mnt/hgfs/Share/PDKS/TSMC28nm/models/spectre/toplevel.scs' top_tt
+* ------- 1. 引入工艺库 -------
+.lib '/your/hpc/path/TSMC28nm/models/hspice/toplevel.l' TOP_TT
 
-* --- Global Nodes ---
-.global vdd! gnd!
+* ------- 2. 参数定义 -------
+.param VDD=1.1 VBIAS=0.6
+.param Wcm=2u  Lcm=150n
+.param Wdp=2u  Ldp=150n
+.param Wtail=2u Ltail=200n
 
-* --- Optimizable Parameters ---
-.param W1 = 2u
-.param W3 = 4u
-.param W5 = 4u
-.param L1 = 60n
-.param Ibias = 50u
+* ------- 3. 电源 & 激励源 -------
+VDD   vdd   0  DC 'VDD'
+VBIAS vbias 0  DC 'VBIAS'
 
-* --- Core Circuit ---
-.subckt ota_5t INP INN OUT VDD VSS
+* 差分输入：共模 0.55V，AC 差分小信号（用负号表示反相，最稳妥）
+VIP   vip   0  DC 0.3  AC 0.5
+VIN   vin   0  DC 0.3  AC -0.5
 
-* Input differential pair (NMOS)
-MN1  net_outp  INP  net_tail  VSS  nch_mac  w=W1  l=L1  nf=4  m=1
-MN2  OUT       INN  net_tail  VSS  nch_mac  w=W1  l=L1  nf=4  m=1
+* ------- 4. 晶体管拓扑（D G S B）-------
+M5 tail  vbias vdd  vdd  pch_mac w='Wtail' l='Ltail' nf=1 M=4
+M1 lout  vip   tail vdd  pch_mac w='Wdp'   l='Ldp'   nf=1
+M2 vout  vin   tail vdd  pch_mac w='Wdp'   l='Ldp'   nf=1
+M3 lout  lout  0    0    nch_mac w='Wcm'   l='Lcm'   nf=1
+M4 vout  lout  0    0    nch_mac w='Wcm'   l='Lcm'   nf=1
 
-* PMOS active load (current mirror)
-MP3  net_outp  net_outp  VDD  VDD  pch_mac  w=W3  l=L1  nf=4  m=1
-MP4  OUT       net_outp  VDD  VDD  pch_mac  w=W3  l=L1  nf=4  m=1
+* ------- 5. 负载电容 -------
+CL vout 0 1p
 
-* Tail current source
-MN5  net_tail  net_bias  VSS  VSS  nch_mac  w=W5  l=L1  nf=4  m=1
-
-.ends ota_5t
-
-* --- Testbench ---
-* Power supply
-Vdd  vdd!  gnd!  DC 0.9
-
-* Bias current (ideal current source to set bias voltage)
-Ibias_src  vdd!  net_bias  DC Ibias
-MN_bias  net_bias  net_bias  gnd!  gnd!  nch_mac  w=W5  l=L1  nf=4  m=1
-
-* Common mode
-Vcm  net_cm  gnd!  DC 0.45
-
-* Differential AC input
-Vip  net_inp  net_cm  DC 0  AC  0.5
-Vin  net_inn  net_cm  DC 0  AC -0.5
-
-* DUT instantiation
-XDUT  net_inp  net_inn  net_out  vdd!  gnd!  ota_5t
-
-* Load capacitor
-CL  net_out  gnd!  500f
-
-* --- Simulation Control ---
+* ------- 6. 仿真控制 -------
+.options list node post
 .op
-.ac dec 20 1 10G
-
-* --- Measurements ---
-.meas ac gain_db MAX VDB(net_out)
-.meas ac ugf WHEN VDB(net_out)=0 CROSS=1
-.meas ac phase_margin FIND VP(net_out) WHEN VDB(net_out)=0 CROSS=1
-.meas dc power_total PARAM='-I(Vdd)*0.9'
-
+.ac dec 20 0.1k 10g
+.print ac vdb(vout) vp(vout)
 .end
