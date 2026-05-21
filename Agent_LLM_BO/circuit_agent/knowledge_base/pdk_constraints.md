@@ -17,7 +17,7 @@
 | L (channel length) | 30nm | 1um | Min L=30nm for reliability |
 | W (finger width) | 100nm | 3um | Per finger |
 | nf (finger count) | 1 | 64 | Power of 2 preferred |
-| m (multiplier) | 1 | 32 | Integer |
+| M (multiplier) | 1 | 32 | Integer |
 
 **Effective width** = W x nf x m
 
@@ -47,7 +47,7 @@
 
 ## PDK Library Include
 ```spice
-.lib '/mnt/hgfs/Share/PDKS/TSMC28nm/models/spectre/toplevel.scs' top_tt
+.lib '/PDKS/TSMC28nm/models/spectre/toplevel.scs' top_tt
 ```
 
 ## Corner Analysis (for reference)

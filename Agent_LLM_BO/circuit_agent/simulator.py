@@ -10,7 +10,7 @@ import subprocess
 from pathlib import Path
 
 from config import Settings
-from models import DesignTarget, NetlistTemplate, SimResult
+from models import CircuitFiles, DesignTarget, NetlistTemplate, ParamSpace, SimResult
 
 logger = logging.getLogger(__name__)
 
@@ -22,16 +22,57 @@ class Simulator:
         self.config = config
 
     def render_netlist(
-        self, template: NetlistTemplate, params: dict[str, float], output_path: Path
+        self,
+        template: NetlistTemplate,
+        params: dict[str, float],
+        output_path: Path,
+        param_space: ParamSpace | None = None,
     ) -> None:
         """Render parametrized template into a concrete SPICE netlist file.
 
-        Replaces .param values with actual numbers from the optimizer.
+        If param_space is provided, wide transistors are automatically split
+        into multiple fingers respecting max_per_finger limits.
         """
-        content = template.render(params)
+        content = template.render(
+            params,
+            param_space=param_space,
+            max_width_per_finger=self.config.max_width_per_finger,
+        )
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(content, encoding="utf-8")
         logger.debug(f"Rendered netlist to {output_path}")
+
+    def render_circuit_and_testbench(
+        self,
+        circuit_template: NetlistTemplate,
+        testbench_content: str,
+        params: dict[str, float],
+        run_dir: Path,
+        param_space: ParamSpace | None = None,
+    ) -> Path:
+        """Render circuit and testbench files into run_dir.
+
+        Writes circuit.cir (rendered DUT) and tb.sp (testbench with .include).
+        Returns the path to tb.sp as the entry point for Spectre.
+        """
+        run_dir.mkdir(parents=True, exist_ok=True)
+
+        # Render circuit with parameter values
+        circuit_content = circuit_template.render(
+            params,
+            param_space=param_space,
+            max_width_per_finger=self.config.max_width_per_finger,
+        )
+        circuit_path = run_dir / "circuit.cir"
+        circuit_path.write_text(circuit_content, encoding="utf-8")
+        logger.debug(f"Rendered circuit to {circuit_path}")
+
+        # Write testbench (uses .include "circuit.cir" relative to same dir)
+        tb_path = run_dir / "tb.sp"
+        tb_path.write_text(testbench_content, encoding="utf-8")
+        logger.debug(f"Wrote testbench to {tb_path}")
+
+        return tb_path
 
     def run_spectre(
         self, netlist_path: Path, run_dir: Path, timeout: int | None = None

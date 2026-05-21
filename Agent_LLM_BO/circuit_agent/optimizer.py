@@ -13,6 +13,7 @@ from optuna.samplers import TPESampler
 from config import Settings
 from llm_client import LLMClient
 from models import (
+    CircuitFiles,
     DesignTarget,
     IterationRecord,
     NetlistTemplate,
@@ -58,15 +59,18 @@ class HybridOptimizer:
         template: NetlistTemplate,
         param_space: ParamSpace,
         targets: DesignTarget,
+        circuit_files: CircuitFiles | None = None,
         max_iterations: int | None = None,
         on_iteration: callable = None,
     ) -> OptimizationState:
         """Run the full LLM+BO optimization loop.
 
         Args:
-            template: Initial parametrized SPICE netlist template
+            template: Initial parametrized SPICE netlist template (circuit DUT only)
             param_space: Search space definition
             targets: Performance targets
+            circuit_files: Optional split circuit/testbench files. If provided,
+                          renders circuit.cir + tb.sp per iteration.
             max_iterations: Override max iterations
             on_iteration: Callback(iteration, params, result, reward) for progress display
 
@@ -81,6 +85,7 @@ class HybridOptimizer:
         study = optuna.create_study(direction="maximize", sampler=sampler)
 
         current_template = template
+        current_testbench = circuit_files.testbench if circuit_files else None
         topology_changes = 0
 
         logger.info(f"Starting optimization loop (max {max_iter} iterations)")
@@ -107,12 +112,21 @@ class HybridOptimizer:
 
             # Step 3: Render netlist
             run_dir = self.config.get_run_dir(iteration)
-            netlist_path = run_dir / "circuit.spi"
-            self.sim.render_netlist(current_template, proposed_params, netlist_path)
+            if current_testbench is not None:
+                netlist_path = self.sim.render_circuit_and_testbench(
+                    current_template, current_testbench,
+                    proposed_params, run_dir, param_space=param_space,
+                )
+            else:
+                netlist_path = run_dir / "circuit.spi"
+                self.sim.render_netlist(
+                    current_template, proposed_params, netlist_path, param_space=param_space
+                )
 
             # Step 4: Run simulation (with error repair)
             sim_result = self._run_with_repair(
-                netlist_path, run_dir, current_template, proposed_params
+                netlist_path, run_dir, current_template, proposed_params,
+                testbench_content=current_testbench,
             )
 
             # Step 5: Compute reward
@@ -148,7 +162,9 @@ class HybridOptimizer:
                         state, targets, current_template
                     )
                     if new_topology:
-                        current_template, param_space = new_topology
+                        new_circuit_files, param_space = new_topology
+                        current_template = NetlistTemplate.from_netlist(new_circuit_files.circuit_netlist)
+                        current_testbench = new_circuit_files.testbench
                         state.param_space = param_space
                         state.topology_changes += 1
                         topology_changes += 1
@@ -245,10 +261,12 @@ class HybridOptimizer:
         run_dir: Path,
         template: NetlistTemplate,
         params: dict[str, float],
+        testbench_content: str | None = None,
     ) -> SimResult:
         """Run simulation with automatic error repair via LLM.
 
         If simulation fails with syntax/node errors, asks LLM to fix and retries.
+        When testbench_content is provided, repairs both circuit and testbench.
         """
         for attempt in range(self.config.max_repair_attempts + 1):
             success, log_content, error_msg = self.sim.run_spectre(
@@ -268,11 +286,23 @@ class HybridOptimizer:
             if error_type in ("syntax", "node_floating") and attempt < self.config.max_repair_attempts:
                 try:
                     current_netlist = netlist_path.read_text(encoding="utf-8")
-                    repaired = self.llm.repair_netlist(
-                        current_netlist, log_content or error_msg, attempt + 1
-                    )
-                    netlist_path.write_text(repaired, encoding="utf-8")
-                    logger.info(f"LLM repaired netlist (attempt {attempt + 1})")
+                    if testbench_content is not None:
+                        # Split mode: repair both circuit and testbench
+                        repaired_circuit, repaired_tb = self.llm.repair_netlist(
+                            current_netlist, log_content or error_msg, attempt + 1,
+                            testbench=testbench_content,
+                        )
+                        netlist_path.write_text(repaired_circuit, encoding="utf-8")
+                        # Update testbench in run_dir
+                        tb_path = run_dir / "tb.sp"
+                        tb_path.write_text(repaired_tb, encoding="utf-8")
+                        logger.info(f"LLM repaired circuit + testbench (attempt {attempt + 1})")
+                    else:
+                        repaired = self.llm.repair_netlist(
+                            current_netlist, log_content or error_msg, attempt + 1
+                        )
+                        netlist_path.write_text(repaired, encoding="utf-8")
+                        logger.info(f"LLM repaired netlist (attempt {attempt + 1})")
                     continue
                 except Exception as e:
                     logger.error(f"LLM repair failed: {e}")
@@ -310,7 +340,7 @@ class HybridOptimizer:
         state: OptimizationState,
         targets: DesignTarget,
         current_template: NetlistTemplate,
-    ) -> tuple[NetlistTemplate, ParamSpace] | None:
+    ) -> tuple[CircuitFiles, ParamSpace] | None:
         """Ask LLM to suggest a topology change."""
         # Build history summary
         history_summary = self._build_history_summary(state)
