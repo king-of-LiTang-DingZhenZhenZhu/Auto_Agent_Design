@@ -1,0 +1,13 @@
+* 5t_ota.cir -- Five-Transistor OTA subcircuit
+.lib 'PDKS/TSMC28nm/models/hspice/toplevel.l' TOP_TT
+.param Wcm=2u  Lcm=150n
+.param Wdp=2u  Ldp=150n
+.param Wtail=2u Ltail=200n
+
+.subckt ota_5t vip vin vout vbias vdd vss
+M5 tail  vbias vdd  vdd  pch_mac w='Wtail' l='Ltail' nf=1 
+M1 lout  vip   tail vdd  pch_mac w='Wdp'   l='Ldp'   nf=1
+M2 vout  vin   tail vdd  pch_mac w='Wdp'   l='Ldp'   nf=1
+M3 lout  lout  vss  vss  nch_mac w='Wcm'   l='Lcm'   nf=1
+M4 vout  lout  vss  vss  nch_mac w='Wcm'   l='Lcm'   nf=1
+.ends ota_5t

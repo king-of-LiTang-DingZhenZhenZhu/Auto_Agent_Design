@@ -14,23 +14,26 @@
 ## Device Parameter Ranges
 | Parameter | Min | Max | Notes |
 |-----------|-----|-----|-------|
-| L (channel length) | 30nm | 1um | Min L=30nm for reliability |
+| L (channel length) | 30nm | 1um | Min L=30nm for reliability; **analog circuits: recommend L ≥ 60nm** to reduce short-channel effects and improve output impedance |
 | W (finger width) | 100nm | 3um | Per finger |
 | nf (finger count) | 1 | 64 | Power of 2 preferred |
 | M (multiplier) | 1 | 32 | Integer |
 
 **Effective width** = W x nf x m
 
-## Typical Device Parameters (TT corner)
-| Parameter | NMOS (nch_mac) | PMOS (pch_mac) |
-|-----------|---------------|---------------|
-| Vth (typical) | ~0.4V | ~-0.4V |
-| mu*Cox | ~300 uA/V^2 | ~100 uA/V^2 |
-| Lambda (L=30n) | ~0.1 V^-1 | ~0.08 V^-1 |
-| Lambda (L=100n) | ~0.03 V^-1 | ~0.025 V^-1 |
+### `nf` vs `M` — When to Use Which
+| Parameter | Purpose | Preferred Use Case |
+|-----------|---------|-------------------|
+| `nf` (finger count) | Splits one transistor into multiple gate fingers | Matching, reducing gate resistance, layout density |
+| `M` (multiplier) | Replicates the entire unit cell | Current mirror ratios, large W scaling |
+
+- For **matched pairs** (diff pair, mirror): fix `nf` and match it across devices; vary `M` for ratios.
+- For **large W**: prefer increasing `nf` first (up to 64), then `M` (up to 32).
+- Power of 2 preferred for both `nf` and `M` to simplify layout.
+
 
 ## Design Rules for Saturation
-- **NMOS saturation**: Vds > Vgs - Vth (Vov = Vgs - Vth > 0)
+- **NMOS saturation**: Vds > Vdsat (we can use Vdsat = Vov = Vgs - Vth > 0 although it's not precise)
 - **PMOS saturation**: Vsd > Vsg - |Vth| 
 - **Headroom**: With VDD=0.9V, maximum voltage stack ~2-3 devices
 - **Typical Vov**: 50mV ~ 200mV for analog design
@@ -47,14 +50,19 @@
 
 ## PDK Library Include
 ```spice
-.lib '/PDKS/TSMC28nm/models/spectre/toplevel.scs' top_tt
-```
+* if we write xxx.sp scripts
+.lib '/path/to/your/pdk/hspice/toplevel.l' TOP_TT
+* if we write xxx.scs scripts
+include "/PDKS/TSMC28nm/models/spectre/toplevel.scs" section=top_tt
 
-## Corner Analysis (for reference)
+
+## Corner Analysis (when using spice scripts)
 | Corner | Description |
 |--------|------------|
-| top_tt | Typical-Typical |
-| top_ff | Fast-Fast |
-| top_ss | Slow-Slow |
-| top_fs | Fast NMOS, Slow PMOS |
-| top_sf | Slow NMOS, Fast PMOS |
+| TOP_TT | Typical-Typical |
+| TOP_FF | Fast-Fast |
+| TOP_SS | Slow-Slow |
+| TOP_FS | Fast NMOS, Slow PMOS |
+| TOP_SF | Slow NMOS, Fast PMOS |
+
+> **Note**: Corner section names use UPPERCASE in HSPICE `.lib` calls.

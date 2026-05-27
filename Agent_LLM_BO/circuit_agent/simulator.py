@@ -182,8 +182,16 @@ class Simulator:
                     continue
 
         # Map extracted metrics to SimResult fields
+        #
+        # Canonical names (from spice_guide.md):
+        #   gain_dc, phase_dc, gbw_hz, phase_at_ugf, power_total
+        # Legacy names (backwards compatible):
+        #   gain_db, gain, ugf, bw, bandwidth, phase_margin, pm, power
+
         # Gain (dB)
-        if "gain_db" in result.raw_metrics:
+        if "gain_dc" in result.raw_metrics:
+            result.gain_db = result.raw_metrics["gain_dc"]
+        elif "gain_db" in result.raw_metrics:
             result.gain_db = result.raw_metrics["gain_db"]
         elif "gain" in result.raw_metrics:
             val = result.raw_metrics["gain"]
@@ -194,9 +202,12 @@ class Simulator:
                 result.gain_db = val  # Assume already in dB
 
         # Unity gain frequency / bandwidth
-        if "ugf" in result.raw_metrics:
+        if "gbw_hz" in result.raw_metrics:
+            result.unity_gain_freq_hz = result.raw_metrics["gbw_hz"]
+            if result.bandwidth_hz is None:
+                result.bandwidth_hz = result.raw_metrics["gbw_hz"]
+        elif "ugf" in result.raw_metrics:
             result.unity_gain_freq_hz = result.raw_metrics["ugf"]
-            # Use UGF as bandwidth approximation for single-stage
             if result.bandwidth_hz is None:
                 result.bandwidth_hz = result.raw_metrics["ugf"]
         if "bw" in result.raw_metrics:
@@ -204,10 +215,13 @@ class Simulator:
         if "bandwidth" in result.raw_metrics:
             result.bandwidth_hz = result.raw_metrics["bandwidth"]
 
-        # Phase margin
-        if "phase_margin" in result.raw_metrics:
+        # Phase margin: PM = 180 - (phase_dc - phase_at_ugf)
+        if "phase_dc" in result.raw_metrics and "phase_at_ugf" in result.raw_metrics:
+            result.phase_margin_deg = 180.0 - (
+                result.raw_metrics["phase_dc"] - result.raw_metrics["phase_at_ugf"]
+            )
+        elif "phase_margin" in result.raw_metrics:
             pm_val = result.raw_metrics["phase_margin"]
-            # Phase margin = 180 + phase_at_ugf (phase is usually negative)
             if pm_val < 0:
                 result.phase_margin_deg = 180.0 + pm_val
             else:

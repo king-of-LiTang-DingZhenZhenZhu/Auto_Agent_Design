@@ -3,6 +3,7 @@
 
 * ------- 1. 引入工艺库 -------
 .lib '/your/hpc/path/TSMC28nm/models/hspice/toplevel.l' TOP_TT
+.options redefinedparams=ignore
 
 * ------- 2. 参数定义 -------
 .param VDD=1.1 VBIAS=0.5

@@ -45,112 +45,21 @@
 
 ---
 
-## 第二步：生成文件
+## 第二步：生成的各类文件的要求
 
-### 2.1 circuit.cir — DUT 子电路网表
+> **写网表前先查阅脚本规范：**
+> - 写 `.sp` / `.cir`（HSPICE 格式）→ 参考 [Spice_Scripts/spice_guide.md](Agent_LLM_BO/Spice_Scripts/spice_guide.md)
+> - 写 `.scs`（Spectre 原生格式）→ 参考 [Scs_Scirpts/Spectre.scs脚本编写规范.md](Agent_LLM_BO/Scs_Scirpts/Spectre.scs脚本编写规范.md)
+> - PDK 相关的约束参考 [Agent_LLM_BO/circuit_agent/knowledge_base/pdk_constraints.md](Agent_LLM_BO/circuit_agent/knowledge_base/pdk_constraints.md)
 
-**必须遵循的规则：**
+### 2.1 circuit.cir 与 testbench — 网表文件
 
-```
-- .lib 语句在顶部：.lib '/PDKS/TSMC28nm/models/spectre/toplevel.l' TOP_TT
-- 所有可调参数用 .param 声明
-- 核心电路封装在 .subckt ... .ends 中
-- NMOS model = nch_mac，PMOS model = pch_mac
-- NMOS bulk → gnd! (或 vss)，PMOS bulk → vdd!
-- 每个晶体管必须写 nf=1（系统自动更新 finger 数量）
-- W 参数代表总有效宽度（系统自动拆分为 W_finger × nf）
-- 端口顺序：输入 → 输出 → 偏置 → 电源 → 地
-```
+电路网表 (.cir) 和仿真 testbench (.sp) 的编写规范已统一整理在：
+→ [Agent_LLM_BO/Spice_Scripts/spice_guide.md](Agent_LLM_BO/Spice_Scripts/spice_guide.md)
 
-**PDK 约束：**
+生成前务必查阅该文档，遵循其中的命名规范、结构顺序和 .meas 测量语句要求。
 
-| 参数 | 最小值 | 最大值 | 说明 |
-|------|--------|--------|------|
-| L | 30nm | 1um | channel length |
-| W (per finger) | 100nm | 3um | 超过3um 自动拆 finger |
-| nf | 1 | 64 | finger 数量 |
-| VDD | 0.9 | 1.1V | 核心电压 |
-| Vth (NMOS) | ~0.4V | — | 典型阈值电压 |
-| Vth (PMOS) | ~-0.4V | — | 典型阈值电压 |
-
-**示例结构：**
-
-```spice
-* circuit.cir -- 5T OTA
-.lib '/PDKS/TSMC28nm/models/spectre/toplevel.scs' top_tt
-
-.param Wtail=10u Ltail=60n Wdp=5u Ldp=60n Wcm=8u Lcm=100n
-
-.subckt ota_5t vip vin vout vdd vss
-* --- Tail current source ---
-Mtail ntail vbias vss vss nch_mac W='Wtail' L='Ltail' nf=1
-* --- Differential pair ---
-Mdp1 vx1 vip ntail vss nch_mac W='Wdp' L='Ldp' nf=1
-Mdp2 vout vin ntail vss nch_mac W='Wdp' L='Ldp' nf=1
-* --- Active load (current mirror) ---
-Mcm1 vx1 vx1 vdd vdd pch_mac W='Wcm' L='Lcm' nf=1
-Mcm2 vout vx1 vdd vdd pch_mac W='Wcm' L='Lcm' nf=1
-.ends ota_5t
-```
-
-### 2.2 tb_circuit_ac.sp — AC 仿真 testbench
-
-**必须遵循的规则：**
-
-```
-- .include "circuit.cir" 引入 DUT（相对路径，同目录）
-- 定义电源 VDD、偏置 VBIAS、输入激励
-- 实例化 DUT：Xdut ... <subckt_name>
-- AC 分析：.ac dec 20 1 10G
-- .meas 语句名称必须精确（解析器依赖这些名称）
-- 末尾 .end
-```
-
-**必须的 .meas 语句（名称不能改）：**
-
-```spice
-.meas ac gain_db MAX VDB(vout)
-.meas ac ugf WHEN VDB(vout)=0 CROSS=1
-.meas ac phase_margin FIND VP(vout) WHEN VDB(vout)=0 CROSS=1
-.meas dc power_total PARAM='-I(Vdd)*0.9'
-```
-
-**示例结构：**
-
-```spice
-* tb_circuit_ac.sp -- AC Analysis Testbench
-.include "circuit.cir"
-
-* --- Power Supplies ---
-VDD vdd 0 DC 0.9
-VSS vss 0 DC 0
-VBIAS vbias 0 DC 0.5
-
-* --- Input Stimulus (AC) ---
-Vcm vcm 0 DC 0.45
-Vinp vip vcm DC 0 AC 1
-Vinn vin 0 DC 0.45 AC 0
-
-* --- DUT ---
-Xdut vip vin vout vdd vss ota_5t
-
-* --- Load ---
-CL vout 0 500f
-
-* --- Analysis ---
-.op
-.ac dec 20 1 10G
-
-* --- Measurements (names MUST match exactly) ---
-.meas ac gain_db MAX VDB(vout)
-.meas ac ugf WHEN VDB(vout)=0 CROSS=1
-.meas ac phase_margin FIND VP(vout) WHEN VDB(vout)=0 CROSS=1
-.meas dc power_total PARAM='-I(Vdd)*0.9'
-
-.end
-```
-
-### 2.3 params.json — 参数搜索空间
+### 2.2 params.json — 参数搜索空间
 
 **格式规范：**
 - Width 参数：必有 `max_per_finger: 3e-6`
@@ -169,7 +78,7 @@ CL vout 0 500f
 ]
 ```
 
-### 2.4 requirements.json — 设计指标
+### 2.3 requirements.json — 设计指标
 
 ```json
 {
@@ -288,7 +197,7 @@ Python 脚本会自动尝试 LLM 修复（最多3次）。如果仍然失败：
 cd Agent_LLM_BO/circuit_agent
 cp .env.example .env
 # 编辑 .env，填入 DEEPSEEK_API_KEY
-
+# 或者直接在终端export DEEPSEEK_API_KEY=
 # 2. 生成网表后运行优化（带 dry-run 测试）
 python main.py \
   --netlist circuit.cir \
@@ -304,8 +213,12 @@ cat outputs/*/results.json
 
 ## 参考资源
 
+- **SPICE 脚本编写规范**：[Agent_LLM_BO/Spice_Scripts/spice_guide.md](Agent_LLM_BO/Spice_Scripts/spice_guide.md)
+  - 写 `.sp` / `.cir` 网表时参考：命名规范、目录结构、`.control` 块用法、`.meas` 写法
+- **Spectre SCS 脚本编写规范**：[Agent_LLM_BO/Scs_Scirpts/Spectre.scs脚本编写规范.md](Agent_LLM_BO/Scs_Scirpts/Spectre.scs脚本编写规范.md)
+  - 写 `.scs` 网表时参考：Spectre 原生语法、参数定义、仿真控制
 - 知识库：[Agent_LLM_BO/circuit_agent/knowledge_base/](Agent_LLM_BO/circuit_agent/knowledge_base/)
   - `pdk_constraints.md` — TSMC N28 PDK 约束
-  - `spice_scripts_guide.md` — SPICE 编写规范
+  - SPICE/Spectre 编写规范参见上方 [SPICE 脚本编写规范](#参考资源) 和 [Spectre SCS 脚本编写规范](#参考资源) 链接
 - 代码入口：[Agent_LLM_BO/circuit_agent/main.py](Agent_LLM_BO/circuit_agent/main.py)
 - 配置文件：[Agent_LLM_BO/circuit_agent/config.py](Agent_LLM_BO/circuit_agent/config.py)
