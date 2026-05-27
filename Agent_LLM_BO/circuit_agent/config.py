@@ -18,9 +18,14 @@ class Settings(BaseSettings):
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-v4-pro"
 
-    # PDK
-    pdk_path: str = "/PDKS/TSMC28nm/models/spectre/toplevel.scs"
-    pdk_section: str = "top_tt"
+    # PDK — HSPICE format (.cir / .sp)
+    pdk_hspice_path: str = "/PDKS/TSMC28nm/models/hspice/toplevel.l"
+    pdk_hspice_section: str = "TOP_TT"
+
+    # PDK — Spectre format (.scs)
+    pdk_spectre_path: str = "/PDKS/TSMC28nm/models/spectre/toplevel.scs"
+    pdk_spectre_section: str = "top_tt"
+
     vdd: float = 0.9
     min_l: float = 30e-9
     max_width_per_finger: float = 3e-6  # TSMC N28: max 3um per finger
@@ -119,8 +124,10 @@ class Settings(BaseSettings):
         errors = []
         if not self.deepseek_api_key:
             errors.append("DEEPSEEK_API_KEY is not set")
-        if not self.pdk_path:
-            errors.append("PDK_PATH is not set")
+        if not self.pdk_hspice_path:
+            errors.append("PDK_HSPICE_PATH is not set")
+        if not self.pdk_spectre_path:
+            errors.append("PDK_SPECTRE_PATH is not set")
         if errors:
             raise ValueError(
                 "Missing required configuration:\n" + "\n".join(f"  - {e}" for e in errors)
