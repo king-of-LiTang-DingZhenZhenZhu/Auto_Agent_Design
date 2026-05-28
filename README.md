@@ -27,7 +27,9 @@ Auto_Agent_Design/
     │   └── workspace/                 # 运行时工作目录
     │
     ├── Spice_Scripts/                 # HSPICE 格式参考
-    │   ├── spice_guide.md             # SPICE 网表编写规范
+    │   ├── spice_guide.md             # 通用索引
+    │   ├── circuit_cir_guide.md        # .cir 子电路网表编写规范
+    │   ├── testbench_sp_guide.md       # .sp testbench 编写规范
     │   └── Examples/                  # 示例网表（5T OTA 等）
     │
     ├── Scs_Scirpts/                   # Spectre 格式参考

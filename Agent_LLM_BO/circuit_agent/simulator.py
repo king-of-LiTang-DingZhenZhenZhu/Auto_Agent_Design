@@ -183,7 +183,7 @@ class Simulator:
 
         # Map extracted metrics to SimResult fields
         #
-        # Canonical names (from spice_guide.md):
+        # Canonical names (from testbench_sp_guide.md):
         #   gain_dc, phase_dc, gbw_hz, phase_at_ugf, power_total
         # Legacy names (backwards compatible):
         #   gain_db, gain, ugf, bw, bandwidth, phase_margin, pm, power

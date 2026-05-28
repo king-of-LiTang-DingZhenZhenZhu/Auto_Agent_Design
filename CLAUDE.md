@@ -22,7 +22,7 @@
       ▼
 ② 生成 4 个文件:
    ├── circuit.cir          # DUT 子电路（含 .param 可调参数）
-   ├── tb_circuit_ac.sp     # AC 仿真 testbench（含 .meas）如果必要则生成其他的仿真脚本
+   ├── tb_circuit_ac.sp     # AC 仿真 testbench（含 .meas）或者其他的仿真脚本
    ├── params.json          # 参数搜索空间
    └── requirements.json    # 设计指标
       │
@@ -48,16 +48,18 @@
 ## 第二步：生成的各类文件的要求
 
 > **写网表前先查阅脚本规范：**
-> - 写 `.sp` / `.cir`（HSPICE 格式）→ 参考 [Spice_Scripts/spice_guide.md](Agent_LLM_BO/Spice_Scripts/spice_guide.md)
+> - 写 `.cir`（子电路网表）→ 参考 [Spice_Scripts/circuit_cir_guide.md](Agent_LLM_BO/Spice_Scripts/circuit_cir_guide.md)
+> - 写 `.sp`（仿真 testbench）→ 参考 [Spice_Scripts/testbench_sp_guide.md](Agent_LLM_BO/Spice_Scripts/testbench_sp_guide.md)
 > - 写 `.scs`（Spectre 原生格式）→ 参考 [Scs_Scirpts/Spectre.scs脚本编写规范.md](Agent_LLM_BO/Scs_Scirpts/Spectre.scs脚本编写规范.md)
 > - PDK 相关的约束参考 [Agent_LLM_BO/circuit_agent/knowledge_base/pdk_constraints.md](Agent_LLM_BO/circuit_agent/knowledge_base/pdk_constraints.md)
 
 ### 2.1 circuit.cir 与 testbench — 网表文件
 
-电路网表 (.cir) 和仿真 testbench (.sp) 的编写规范已统一整理在：
-→ [Agent_LLM_BO/Spice_Scripts/spice_guide.md](Agent_LLM_BO/Spice_Scripts/spice_guide.md)
+电路网表 (.cir) 和仿真 testbench (.sp) 的编写规范已分拆为两个独立文档：
+- `.cir` 子电路网表 → [Agent_LLM_BO/Spice_Scripts/circuit_cir_guide.md](Agent_LLM_BO/Spice_Scripts/circuit_cir_guide.md)
+- `.sp` 仿真 testbench → [Agent_LLM_BO/Spice_Scripts/testbench_sp_guide.md](Agent_LLM_BO/Spice_Scripts/testbench_sp_guide.md)
 
-生成前务必查阅该文档，遵循其中的命名规范、结构顺序和 .meas 测量语句要求。
+生成前务必查阅对应文档，遵循其中的命名规范、结构顺序和 .meas 测量语句要求。
 
 ### 2.2 params.json — 参数搜索空间
 
@@ -213,8 +215,10 @@ cat outputs/*/results.json
 
 ## 参考资源
 
-- **SPICE 脚本编写规范**：[Agent_LLM_BO/Spice_Scripts/spice_guide.md](Agent_LLM_BO/Spice_Scripts/spice_guide.md)
-  - 写 `.sp` / `.cir` 网表时参考：命名规范、目录结构、`.control` 块用法、`.meas` 写法
+- **SPICE 脚本编写规范**：
+  - `.cir` 子电路网表 → [Agent_LLM_BO/Spice_Scripts/circuit_cir_guide.md](Agent_LLM_BO/Spice_Scripts/circuit_cir_guide.md)
+  - `.sp` 仿真 testbench → [Agent_LLM_BO/Spice_Scripts/testbench_sp_guide.md](Agent_LLM_BO/Spice_Scripts/testbench_sp_guide.md)
+  - 通用索引 → [Agent_LLM_BO/Spice_Scripts/spice_guide.md](Agent_LLM_BO/Spice_Scripts/spice_guide.md)
 - **Spectre SCS 脚本编写规范**：[Agent_LLM_BO/Scs_Scirpts/Spectre.scs脚本编写规范.md](Agent_LLM_BO/Scs_Scirpts/Spectre.scs脚本编写规范.md)
   - 写 `.scs` 网表时参考：Spectre 原生语法、参数定义、仿真控制
 - 知识库：[Agent_LLM_BO/circuit_agent/knowledge_base/](Agent_LLM_BO/circuit_agent/knowledge_base/)
