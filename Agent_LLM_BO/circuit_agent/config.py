@@ -123,7 +123,7 @@ class Settings(BaseSettings):
     def validate_required(self) -> None:
         """Validate that required settings are present."""
         errors = []
-        if not self.deepseek_api_key:
+        if not self.dry_run and not self.deepseek_api_key:
             errors.append("DEEPSEEK_API_KEY is not set")
         if not self.pdk_hspice_path:
             errors.append("PDK_HSPICE_PATH is not set")

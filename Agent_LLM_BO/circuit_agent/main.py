@@ -53,6 +53,8 @@ def main():
     _print_header(config)
 
     # Initialize components
+    if config.dry_run:
+        config.deepseek_api_key = "dry-run"  # placeholder, LLM won't be called
     llm = LLMClient(config)
     sim = Simulator(config)
     optimizer = HybridOptimizer(llm, sim, config)
