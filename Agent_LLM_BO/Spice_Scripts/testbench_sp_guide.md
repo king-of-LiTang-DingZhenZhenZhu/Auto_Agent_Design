@@ -14,7 +14,7 @@
 
 ### 2.1 头部注释
 
-说明脚本名称、功能、特殊测试方法。
+第一行必须是说明脚本名称、功能、特殊测试方法的注释！
 
 ```spice
 * tb_ota_ac.sp -- 5T OTA AC Analysis (Closed-Loop Method)

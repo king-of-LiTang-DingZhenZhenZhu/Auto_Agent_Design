@@ -1,7 +1,7 @@
 # 电路网表 (.cir) 脚本编写规范
 
 适用于 Spectre 仿真器的 `.cir` 子电路网表编写规范。
-
+.cir 文件只描述电路的拓扑结构和参数，不进行仿真，描述的电路会被封装起来，在仿真脚本中调用
 ## 1. 总体原则
 
 - **模块化设计**：被测电路（DUT）封装为子电路（`.subckt`），可调参数用 `.param` 声明，便于优化器自动修改。
@@ -52,7 +52,7 @@
 ### 示例：5T OTA
 
 ```spice
-* circuit.cir -- 5T OTA
+* <5T_OTA>.cir -- 5T OTA
 .lib '/PDKS/TSMC28nm/models/hspice/toplevel.l' TOP_TT
 .options redefinedparams=ignore
 .param Wtail=10u Ltail=60n Wdp=5u Ldp=60n Wcm=8u Lcm=100n

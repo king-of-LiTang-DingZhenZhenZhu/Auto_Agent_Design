@@ -285,19 +285,19 @@ class HybridOptimizer:
             # Only repair syntax and node_floating errors via LLM
             if error_type in ("syntax", "node_floating") and attempt < self.config.max_repair_attempts:
                 try:
-                    current_netlist = netlist_path.read_text(encoding="utf-8")
                     if testbench_content is not None:
-                        # Split mode: repair both circuit and testbench
+                        # Split mode: repair circuit.cir + tb.sp separately
+                        circuit_content = (run_dir / "circuit.cir").read_text(encoding="utf-8")
+                        tb_content = netlist_path.read_text(encoding="utf-8")
                         repaired_circuit, repaired_tb = self.llm.repair_netlist(
-                            current_netlist, log_content or error_msg, attempt + 1,
-                            testbench=testbench_content,
+                            circuit_content, log_content or error_msg, attempt + 1,
+                            testbench=tb_content,
                         )
-                        netlist_path.write_text(repaired_circuit, encoding="utf-8")
-                        # Update testbench in run_dir
-                        tb_path = run_dir / "tb.sp"
-                        tb_path.write_text(repaired_tb, encoding="utf-8")
+                        (run_dir / "circuit.cir").write_text(repaired_circuit, encoding="utf-8")
+                        (run_dir / "tb.sp").write_text(repaired_tb, encoding="utf-8")
                         logger.info(f"LLM repaired circuit + testbench (attempt {attempt + 1})")
                     else:
+                        current_netlist = netlist_path.read_text(encoding="utf-8")
                         repaired = self.llm.repair_netlist(
                             current_netlist, log_content or error_msg, attempt + 1
                         )

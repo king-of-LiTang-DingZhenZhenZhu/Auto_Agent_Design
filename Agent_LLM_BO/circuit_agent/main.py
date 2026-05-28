@@ -169,10 +169,16 @@ def run_from_file(
 
     # --- Build template from user's netlist ---
     netlist_content = netlist_path.read_text(encoding="utf-8")
-    template = NetlistTemplate.from_netlist(netlist_content)
 
     # Try to split into circuit + testbench, or wrap as monolithic
     circuit_files = _build_circuit_files(netlist_content)
+
+    # When split succeeds, template must be DUT-only so circuit.cir doesn't
+    # include the testbench (which .include's circuit.cir, creating a loop)
+    if circuit_files:
+        template = NetlistTemplate.from_netlist(circuit_files.circuit_netlist)
+    else:
+        template = NetlistTemplate.from_netlist(netlist_content)
 
     # Save template to workspace
     workspace = config.get_workspace_path()
@@ -209,11 +215,21 @@ def run_from_file(
     if not success:
         console.print(f"[yellow]Initial simulation failed: {error_msg[:100]}[/yellow]")
         console.print("[dim]Attempting LLM repair before optimization...[/dim]")
-        netlist_content = netlist_path.read_text(encoding="utf-8")
         try:
-            repaired = llm.repair_netlist(netlist_content, log_content or error_msg, 1)
-            netlist_path.write_text(repaired, encoding="utf-8")
-            template = NetlistTemplate.from_netlist(repaired)
+            if circuit_files and circuit_files.testbench:
+                circuit_content = (run_dir / "circuit.cir").read_text(encoding="utf-8")
+                tb_content = (run_dir / "tb.sp").read_text(encoding="utf-8")
+                repaired = llm.repair_netlist(circuit_content, log_content or error_msg, 1,
+                                               testbench=tb_content)
+                if isinstance(repaired, tuple):
+                    (run_dir / "circuit.cir").write_text(repaired[0], encoding="utf-8")
+                    (run_dir / "tb.sp").write_text(repaired[1], encoding="utf-8")
+                    template = NetlistTemplate.from_netlist(repaired[0])
+            else:
+                netlist_content = netlist_path.read_text(encoding="utf-8")
+                repaired = llm.repair_netlist(netlist_content, log_content or error_msg, 1)
+                netlist_path.write_text(repaired, encoding="utf-8")
+                template = NetlistTemplate.from_netlist(repaired)
             success, log_content, error_msg = sim.run_spectre(netlist_path, run_dir)
         except Exception:
             pass
