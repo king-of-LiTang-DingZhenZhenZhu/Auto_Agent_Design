@@ -48,3 +48,6 @@ Agent_LLM_BO/circuit_agent/cache/
 
 # Logs
 *.log
+
+# Documentation
+GIT_GUIDE.md
