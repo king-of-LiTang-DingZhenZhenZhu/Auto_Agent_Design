@@ -252,6 +252,7 @@ class NetlistTemplate:
         params: dict[str, float],
         param_space: ParamSpace | None = None,
         max_width_per_finger: float | None = None,
+        w_l_grid_step: float | None = None,
     ) -> str:
         """Substitute parameter values into the template.
 
@@ -272,6 +273,8 @@ class NetlistTemplate:
         for name, value in resolved.items():
             if name.startswith("nf_"):
                 continue
+            if w_l_grid_step:
+                value = _quantize_wl(name, value, w_l_grid_step)
             pattern = rf"(\b{re.escape(name)}\s*=\s*)\S+"
             replacement = rf"\g<1>{_format_spice_value(value)}"
             content = re.sub(pattern, replacement, content, flags=re.IGNORECASE)
@@ -398,3 +401,10 @@ def _format_spice_value(value: float) -> str:
             # Use up to 3 significant figures
             return f"{scaled:.3g}{suffix}"
     return f"{value:.3e}"
+
+
+def _quantize_wl(name: str, value: float, step: float) -> float:
+    """如果参数名以 W 或 L 开头，按 step 取整到最近整数倍。"""
+    if name.startswith(("W", "L")):
+        return round(value / step) * step
+    return value

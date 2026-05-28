@@ -116,11 +116,13 @@ class HybridOptimizer:
                 netlist_path = self.sim.render_circuit_and_testbench(
                     current_template, current_testbench,
                     proposed_params, run_dir, param_space=param_space,
+                    w_l_grid_step=self.config.w_l_grid_step,
                 )
             else:
                 netlist_path = run_dir / "circuit.spi"
                 self.sim.render_netlist(
-                    current_template, proposed_params, netlist_path, param_space=param_space
+                    current_template, proposed_params, netlist_path, param_space=param_space,
+                    w_l_grid_step=self.config.w_l_grid_step,
                 )
 
             # Step 4: Run simulation (with error repair)

@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     vdd: float = 0.9
     min_l: float = 30e-9
     max_width_per_finger: float = 3e-6  # TSMC N28: max 3um per finger
+    w_l_grid_step: float = 1e-8  # W/L 参数网格步长 (10nm)，输出网表时自动取整
     nmos_model: str = "nch_mac"
     pmos_model: str = "pch_mac"
 

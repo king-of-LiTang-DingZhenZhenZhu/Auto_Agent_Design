@@ -205,10 +205,12 @@ def run_from_file(
         netlist_path = sim.render_circuit_and_testbench(
             template, circuit_files.testbench,
             initial_params, run_dir, param_space=param_space,
+            w_l_grid_step=config.w_l_grid_step,
         )
     else:
         netlist_path = run_dir / "circuit_init.spi"
-        sim.render_netlist(template, initial_params, netlist_path, param_space=param_space)
+        sim.render_netlist(template, initial_params, netlist_path, param_space=param_space,
+                           w_l_grid_step=config.w_l_grid_step)
 
     success, log_content, error_msg = sim.run_spectre(netlist_path, run_dir)
 
@@ -421,6 +423,7 @@ def run_pipeline(
     netlist_path = sim.render_circuit_and_testbench(
         template, circuit_files.testbench,
         initial_params, run_dir, param_space=param_space,
+        w_l_grid_step=config.w_l_grid_step,
     )
 
     success, log_content, error_msg = sim.run_spectre(netlist_path, run_dir)
@@ -653,6 +656,7 @@ def _save_final_output(
         params,
         param_space=param_space,
         max_width_per_finger=config.max_width_per_finger,
+        w_l_grid_step=config.w_l_grid_step,
     )
     circuit_path = netlist_dir / "circuit.cir"
     circuit_path.write_text(final_circuit, encoding="utf-8")

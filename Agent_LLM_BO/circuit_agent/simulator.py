@@ -27,6 +27,7 @@ class Simulator:
         params: dict[str, float],
         output_path: Path,
         param_space: ParamSpace | None = None,
+        w_l_grid_step: float | None = None,
     ) -> None:
         """Render parametrized template into a concrete SPICE netlist file.
 
@@ -37,6 +38,7 @@ class Simulator:
             params,
             param_space=param_space,
             max_width_per_finger=self.config.max_width_per_finger,
+            w_l_grid_step=w_l_grid_step,
         )
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(content, encoding="utf-8")
@@ -49,6 +51,7 @@ class Simulator:
         params: dict[str, float],
         run_dir: Path,
         param_space: ParamSpace | None = None,
+        w_l_grid_step: float | None = None,
     ) -> Path:
         """Render circuit and testbench files into run_dir.
 
@@ -62,6 +65,7 @@ class Simulator:
             params,
             param_space=param_space,
             max_width_per_finger=self.config.max_width_per_finger,
+            w_l_grid_step=w_l_grid_step,
         )
         circuit_path = run_dir / "circuit.cir"
         circuit_path.write_text(circuit_content, encoding="utf-8")
