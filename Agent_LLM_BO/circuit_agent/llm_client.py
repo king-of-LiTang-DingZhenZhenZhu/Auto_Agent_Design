@@ -181,10 +181,13 @@ Output THREE separate code blocks in this order:
         current_result: SimResult | None,
         param_space: ParamSpace,
         targets: DesignTarget,
+        circuit_template: str | None = None,
     ) -> dict[str, float]:
         """LLM reviews BO-proposed parameters for physical feasibility.
 
         Called every N iterations to ensure parameters make physical sense.
+        circuit_template: optional DUT subcircuit netlist showing topology and
+                          which transistor each parameter belongs to.
         """
         result_context = ""
         if current_result:
@@ -196,16 +199,27 @@ Output THREE separate code blocks in this order:
 {targets.to_prompt_str()}
 """
 
+        topology_context = ""
+        if circuit_template:
+            topology_context = f"""
+## Circuit Topology (DUT subcircuit)
+```spice
+{circuit_template.strip()}
+```
+"""
+
         param_str = "\n".join(
             f"  {k} = {_format_value_with_unit(v)}" for k, v in proposed_params.items()
         )
 
         prompt = f"""Review the following circuit parameters proposed by Bayesian Optimization.
+{topology_context}
 Check for physical feasibility in TSMC N28 (VDD=0.9V):
 - All transistors must be able to enter saturation (Vds > Vgs - Vth, typical Vth ~ 0.4V for N28)
-- Matched pairs must have identical L
+- Matched pairs (e.g. differential pair Mdp1/Mdp2) must have identical L
 - Current must be reasonable for the given W/L ratios
 - Headroom constraints under VDD=0.9V must be respected
+- Refer to the circuit topology above to understand each transistor's role
 {result_context}
 ## Proposed Parameters
 {param_str}

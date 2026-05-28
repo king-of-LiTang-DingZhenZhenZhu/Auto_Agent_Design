@@ -124,6 +124,17 @@ class Simulator:
             elif result.stdout:
                 log_content = result.stdout
 
+            # Spectre writes .meas results to a separate .measure file (e.g., tb.measure),
+            # not to sim.log. Append its content so parse_simulation_log can find results.
+            measure_files = sorted(run_dir.glob("*.measure"))
+            if measure_files:
+                measure_content = ""
+                for mf in measure_files:
+                    measure_content += f"\n--- {mf.name} ---\n"
+                    measure_content += mf.read_text(encoding="utf-8", errors="replace")
+                log_content = log_content + measure_content
+                logger.debug(f"Appended {len(measure_files)} .measure file(s) to log")
+
             if result.returncode != 0:
                 error_msg = result.stderr or "Spectre returned non-zero exit code"
                 logger.warning(f"Spectre failed (rc={result.returncode}): {error_msg[:200]}")
@@ -179,8 +190,12 @@ class Simulator:
         for pattern in meas_patterns:
             for match in re.finditer(pattern, log_content, re.MULTILINE):
                 name = match.group(1).lower()
+                value_str = match.group(2)
+                # Skip NaN / inf sentinel values from Spectre .measure files
+                if value_str.lower() in ("nan", "inf", "-inf", "+inf"):
+                    continue
                 try:
-                    value = float(match.group(2))
+                    value = float(value_str)
                     result.raw_metrics[name] = value
                 except ValueError:
                     continue
