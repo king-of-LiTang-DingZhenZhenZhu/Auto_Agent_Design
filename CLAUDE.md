@@ -47,19 +47,14 @@
 
 ## 第二步：生成的各类文件的要求
 
-> **写网表前先查阅脚本规范：**
-> - 写 `.cir`（子电路网表）→ 参考 [Spice_Scripts/circuit_cir_guide.md](Agent_LLM_BO/Spice_Scripts/circuit_cir_guide.md)
-> - 写 `.sp`（仿真 testbench）→ 参考 [Spice_Scripts/testbench_sp_guide.md](Agent_LLM_BO/Spice_Scripts/testbench_sp_guide.md)
-> - 写 `.scs`（Spectre 原生格式）→ 参考 [Scs_Scirpts/Spectre.scs脚本编写规范.md](Agent_LLM_BO/Scs_Scirpts/Spectre.scs脚本编写规范.md)
-> - PDK 相关的约束参考 [Agent_LLM_BO/circuit_agent/knowledge_base/pdk_constraints.md](Agent_LLM_BO/circuit_agent/knowledge_base/pdk_constraints.md)
 
 ### 2.1 circuit.cir 与 testbench — 网表文件
 
-电路网表 (.cir) 和仿真 testbench (.sp) 的编写规范已分拆为两个独立文档：
-- `.cir` 子电路网表 → [Agent_LLM_BO/Spice_Scripts/circuit_cir_guide.md](Agent_LLM_BO/Spice_Scripts/circuit_cir_guide.md)
-- `.sp` 仿真 testbench → [Agent_LLM_BO/Spice_Scripts/testbench_sp_guide.md](Agent_LLM_BO/Spice_Scripts/testbench_sp_guide.md)
+- 电路网表 (.cir) 和仿真 testbench (.sp) 的编写规范参考存放到了.claude/rules下
 
-生成前务必查阅对应文档，遵循其中的命名规范、结构顺序和 .meas 测量语句要求。
+**几个重要的点**
+- 无论.cir 还是.sp 文件，开头第一行必须是注释不允许写有效代码
+- W 和L的最小单位是 10n，只能是 10n 的倍数增减
 
 ### 2.2 params.json — 参数搜索空间
 
@@ -215,14 +210,12 @@ cat outputs/*/results.json
 
 ## 参考资源
 
-- **SPICE 脚本编写规范**：
-  - `.cir` 子电路网表 → [Agent_LLM_BO/Spice_Scripts/circuit_cir_guide.md](Agent_LLM_BO/Spice_Scripts/circuit_cir_guide.md)
-  - `.sp` 仿真 testbench → [Agent_LLM_BO/Spice_Scripts/testbench_sp_guide.md](Agent_LLM_BO/Spice_Scripts/testbench_sp_guide.md)
-  - 通用索引 → [Agent_LLM_BO/Spice_Scripts/spice_guide.md](Agent_LLM_BO/Spice_Scripts/spice_guide.md)
+- **SPICE 脚本编写规范**：[.claude/rules/circuit_cir_guide.md](.claude/rules/circuit_cir_guide.md) / [.claude/rules/testbench_sp_guide.md](.claude/rules/testbench_sp_guide.md)
+  - `.cir` 子电路网表 → `.claude/rules/circuit_cir_guide.md`
+  - `.sp` 仿真 testbench → `.claude/rules/testbench_sp_guide.md`
 - **Spectre SCS 脚本编写规范**：[Agent_LLM_BO/Scs_Scirpts/Spectre.scs脚本编写规范.md](Agent_LLM_BO/Scs_Scirpts/Spectre.scs脚本编写规范.md)
   - 写 `.scs` 网表时参考：Spectre 原生语法、参数定义、仿真控制
 - 知识库：[Agent_LLM_BO/circuit_agent/knowledge_base/](Agent_LLM_BO/circuit_agent/knowledge_base/)
   - `pdk_constraints.md` — TSMC N28 PDK 约束
-  - SPICE/Spectre 编写规范参见上方 [SPICE 脚本编写规范](#参考资源) 和 [Spectre SCS 脚本编写规范](#参考资源) 链接
 - 代码入口：[Agent_LLM_BO/circuit_agent/main.py](Agent_LLM_BO/circuit_agent/main.py)
 - 配置文件：[Agent_LLM_BO/circuit_agent/config.py](Agent_LLM_BO/circuit_agent/config.py)
