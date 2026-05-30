@@ -88,6 +88,40 @@ class LLMClient:
                 else:
                     raise RuntimeError(f"LLM API failed after 3 attempts: {e}") from e
 
+    @staticmethod
+    def _save_dialogue(
+        dialogue_dir: str,
+        iteration: int,
+        tag: str,
+        prompt: str,
+        response: str,
+    ) -> None:
+        """Save an LLM prompt/response pair to a markdown log file."""
+        from pathlib import Path
+        import datetime
+
+        dp = Path(dialogue_dir)
+        dp.mkdir(parents=True, exist_ok=True)
+        filename = f"iter_{iteration:03d}_{tag}.md"
+        filepath = dp / filename
+
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        content = f"""# {tag} — Iteration {iteration}
+**Time**: {timestamp}
+
+## Prompt
+
+{prompt}
+
+---
+
+## Response
+
+{response}
+"""
+        filepath.write_text(content, encoding="utf-8")
+        logger.debug(f"Saved dialogue to {filepath}")
+
     def generate_initial_netlist(
         self, targets: DesignTarget
     ) -> tuple[CircuitFiles, ParamSpace]:
@@ -182,12 +216,16 @@ Output THREE separate code blocks in this order:
         param_space: ParamSpace,
         targets: DesignTarget,
         circuit_template: str | None = None,
+        dialogue_dir: str | None = None,
+        iteration: int = 0,
     ) -> dict[str, float]:
         """LLM reviews BO-proposed parameters for physical feasibility.
 
         Called every N iterations to ensure parameters make physical sense.
         circuit_template: optional DUT subcircuit netlist showing topology and
                           which transistor each parameter belongs to.
+        dialogue_dir: if set, logs the full prompt and LLM response to a file.
+        iteration: current optimization iteration (for log file naming).
         """
         result_context = ""
         if current_result:
@@ -235,6 +273,14 @@ Output the final parameters as a JSON object in a ```json code block:
 """
 
         response = self._call_llm(prompt, max_tokens=2048)
+
+        # Log dialogue to file if requested
+        if dialogue_dir:
+            self._save_dialogue(
+                dialogue_dir, iteration, "validate_params",
+                prompt, response,
+            )
+
         adjusted = self._parse_json_from_response(response)
 
         if adjusted and isinstance(adjusted, dict):

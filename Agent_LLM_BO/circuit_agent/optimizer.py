@@ -107,6 +107,8 @@ class HybridOptimizer:
                     proposed_params = self.llm.validate_and_adjust_params(
                         proposed_params, last_result, param_space, targets,
                         circuit_template=current_template.template_content,
+                        dialogue_dir=str(self.config.get_workspace_path() / "LLM_DIALOGUE"),
+                        iteration=iteration,
                     )
                 except Exception as e:
                     logger.warning(f"LLM validation failed, using BO params: {e}")

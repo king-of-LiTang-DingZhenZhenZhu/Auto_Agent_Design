@@ -20,18 +20,20 @@
 ① 解析需求，提取指标
       │
       ▼
-② 生成 4 个文件:
-   ├── circuit.cir          # DUT 子电路（含 .param 可调参数）
-   ├── tb_circuit_ac.sp     # AC 仿真 testbench（含 .meas）或者其他的仿真脚本
-   ├── params.json          # 参数搜索空间
-   └── requirements.json    # 设计指标
+② 在 <circuit_name>/ 文件夹下生成 4 个文件（名称由LLM根据电路决定）:
+   ├── <circuit_name>.cir    # DUT 子电路（含 .param 可调参数）
+   ├── tb_<circuit_name>_ac.sp  # AC 仿真 testbench（含 .meas），或 dc/tran 等其他类型
+   ├── params.json           # 参数搜索空间
+   └── requirements.json     # 设计指标
       │
       ▼
-③ 调用 python main.py --netlist circuit.cir --params params.json --requirements requirements.json
+③ 调用 python main.py --netlist <circuit_name>/<circuit_name>.cir --params <circuit_name>/params.json --requirements <circuit_name>/requirements.json
       │
       ▼
-④ 读取 outputs/results.json，向用户汇报结果
+④ 读取 outputs/<project_name>/results.json，向用户汇报结果
 ```
+
+> **文件命名**：不要硬编码为 `circuit.cir`。根据电路拓扑命名，例如：5T OTA → `5t_ota.cir` + `tb_5t_ota_ac.sp`；两级运放 → `two_stage_ota.cir` + `tb_two_stage_ota_ac.sp`。所有生成的输入文件放在同名文件夹下，避免散落在根目录。
 
 ---
 
@@ -48,13 +50,14 @@
 ## 第二步：生成的各类文件的要求
 
 
-### 2.1 circuit.cir 与 testbench — 网表文件
+### 2.1 网表文件 (.cir) 与 testbench (.sp)
 
-- 电路网表 (.cir) 和仿真 testbench (.sp) 的编写规范参考存放到了.claude/rules下
+- 编写规范参考存放到了 `.claude/rules` 下
+- **文件命名**：不要硬编码为 `circuit.cir`，由 LLM 根据电路拓扑决定，如 `5t_ota.cir`、`two_stage_ota.cir`
 
 **几个重要的点**
-- 无论.cir 还是.sp 文件，开头第一行必须是注释不允许写有效代码
-- W 和L的最小单位是 10n，只能是 10n 的倍数增减
+- 无论 .cir 还是 .sp 文件，开头第一行必须是注释，不允许写有效代码
+- W 和 L 的最小单位是 10n，只能是 10n 的倍数增减
 
 ### 2.2 params.json — 参数搜索空间
 
@@ -101,9 +104,9 @@
 cd Agent_LLM_BO/circuit_agent
 
 python main.py \
-  --netlist /path/to/circuit.cir \
-  --params /path/to/params.json \
-  --requirements /path/to/requirements.json
+  --netlist /path/to/<circuit_name>/<circuit_name>.cir \
+  --params /path/to/<circuit_name>/params.json \
+  --requirements /path/to/<circuit_name>/requirements.json
 ```
 
 **常用可选参数：**
@@ -118,8 +121,8 @@ python main.py \
 **简化调用（不用 requirements.json）：**
 ```bash
 python main.py \
-  --netlist circuit.cir \
-  --params params.json \
+  --netlist <circuit_name>/<circuit_name>.cir \
+  --params <circuit_name>/params.json \
   --gain 40 --bw 500e6 --pm 60 --power 0.001 --load-cap 500e-15
 ```
 
@@ -197,8 +200,8 @@ cp .env.example .env
 # 或者直接在终端export DEEPSEEK_API_KEY=
 # 2. 生成网表后运行优化（带 dry-run 测试）
 python main.py \
-  --netlist circuit.cir \
-  --params params.json \
+  --netlist <circuit_name>/<circuit_name>.cir \
+  --params <circuit_name>/params.json \
   --gain 40 --bw 500e6 --pm 60 --power 0.001 \
   --dry-run
 
