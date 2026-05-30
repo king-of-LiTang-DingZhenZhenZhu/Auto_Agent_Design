@@ -252,11 +252,10 @@ Output THREE separate code blocks in this order:
 
         prompt = f"""Review the following circuit parameters proposed by Bayesian Optimization.
 {topology_context}
-Check for physical feasibility in TSMC N28 (VDD=0.9V):
-- All transistors must be able to enter saturation (Vds > Vgs - Vth, typical Vth ~ 0.4V for N28)
-- Matched pairs (e.g. differential pair Mdp1/Mdp2) must have identical L
+Check for physical feasibility in TSMC N28 (VDD=0.9 - 1.1V):
+- All transistors should be able to enter saturation (Vds > Vgs - Vth, typical Vth ~ 0.4V for N28)
 - Current must be reasonable for the given W/L ratios
-- Headroom constraints under VDD=0.9V must be respected
+- Headroom constraints under VDD=0.9 - 1.1V must be respected
 - Refer to the circuit topology above to understand each transistor's role
 {result_context}
 ## Proposed Parameters

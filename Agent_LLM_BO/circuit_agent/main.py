@@ -172,11 +172,28 @@ def run_from_file(
     # --- Build template from user's netlist ---
     netlist_content = netlist_path.read_text(encoding="utf-8")
 
-    # Try to split into circuit + testbench, or wrap as monolithic
-    circuit_files = _build_circuit_files(netlist_content)
+    if args.testbench:
+        # Explicit split: --netlist = DUT .cir, --testbench = one or more .sp files
+        testbench_contents = []
+        for tb_str in args.testbench:
+            tb_path = Path(tb_str)
+            if not tb_path.exists():
+                console.print(f"[red]Testbench file not found: {tb_path}[/red]")
+                sys.exit(1)
+            testbench_contents.append(tb_path.read_text(encoding="utf-8"))
+            console.print(f"[green]✓[/green] Loaded testbench: {tb_path}")
+        circuit_name = CircuitFiles.extract_subckt_name(netlist_content)
+        circuit_files = CircuitFiles(
+            circuit_netlist=netlist_content,
+            testbenches=testbench_contents,
+            circuit_name=circuit_name,
+        )
+    else:
+        # Monolithic mode: try to split netlist into circuit + testbench
+        circuit_files = _build_circuit_files(netlist_content)
 
-    # When split succeeds, template must be DUT-only so circuit.cir doesn't
-    # include the testbench (which .include's circuit.cir, creating a loop)
+    # Template must be DUT-only so circuit.cir doesn't include the testbench
+    # (which .include's circuit.cir, creating a self-inclusion loop)
     if circuit_files:
         template = NetlistTemplate.from_netlist(circuit_files.circuit_netlist)
     else:
@@ -187,7 +204,9 @@ def run_from_file(
     template_path = workspace / "circuit_template.sp"
     template_path.write_text(template.template_content, encoding="utf-8")
     if circuit_files:
-        (workspace / "tb_template.sp").write_text(circuit_files.testbench, encoding="utf-8")
+        for i, tb in enumerate(circuit_files.testbenches):
+            suffix = "" if i == 0 else f"_{i}"
+            (workspace / f"tb_template{suffix}.sp").write_text(tb, encoding="utf-8")
 
     # --- Run initial simulation ---
     console.print("\n[bold blue][Phase 1][/bold blue] Running initial Spectre simulation...")
@@ -203,24 +222,25 @@ def run_from_file(
             initial_params[p.name] = (p.low + p.high) / 2
 
     run_dir = config.get_run_dir(0)
-    if circuit_files and circuit_files.testbench:
-        netlist_path = sim.render_circuit_and_testbench(
-            template, circuit_files.testbench,
+    if circuit_files and circuit_files.testbenches:
+        tb_paths = sim.render_circuit_and_testbench(
+            template, circuit_files.testbenches,
             initial_params, run_dir, param_space=param_space,
             w_l_grid_step=config.w_l_grid_step,
         )
     else:
-        netlist_path = run_dir / "circuit_init.spi"
-        sim.render_netlist(template, initial_params, netlist_path, param_space=param_space,
+        tb_paths = [run_dir / "circuit_init.spi"]
+        sim.render_netlist(template, initial_params, tb_paths[0], param_space=param_space,
                            w_l_grid_step=config.w_l_grid_step)
 
-    success, log_content, error_msg = sim.run_spectre(netlist_path, run_dir)
+    # Run primary simulation (with LLM repair on failure)
+    success, log_content, error_msg = sim.run_spectre(tb_paths[0], run_dir)
 
     if not success:
         console.print(f"[yellow]Initial simulation failed: {error_msg[:100]}[/yellow]")
         console.print("[dim]Attempting LLM repair before optimization...[/dim]")
         try:
-            if circuit_files and circuit_files.testbench:
+            if circuit_files and circuit_files.testbenches:
                 circuit_content = (run_dir / "circuit.cir").read_text(encoding="utf-8")
                 tb_content = (run_dir / "tb.sp").read_text(encoding="utf-8")
                 repaired = llm.repair_netlist(circuit_content, log_content or error_msg, 1,
@@ -230,16 +250,22 @@ def run_from_file(
                     (run_dir / "tb.sp").write_text(repaired[1], encoding="utf-8")
                     template = NetlistTemplate.from_netlist(repaired[0])
             else:
-                netlist_content = netlist_path.read_text(encoding="utf-8")
+                netlist_content = tb_paths[0].read_text(encoding="utf-8")
                 repaired = llm.repair_netlist(netlist_content, log_content or error_msg, 1)
-                netlist_path.write_text(repaired, encoding="utf-8")
+                tb_paths[0].write_text(repaired, encoding="utf-8")
                 template = NetlistTemplate.from_netlist(repaired)
-            success, log_content, error_msg = sim.run_spectre(netlist_path, run_dir)
+            success, log_content, error_msg = sim.run_spectre(tb_paths[0], run_dir)
         except Exception:
             pass
 
     if success:
         initial_result = sim.parse_simulation_log(log_content)
+        # Run extra testbenches and merge results
+        for tb_path in tb_paths[1:]:
+            ok, log, _ = sim.run_spectre(tb_path, run_dir)
+            if ok:
+                extra = sim.parse_simulation_log(log)
+                initial_result = SimResult.merge(initial_result, extra)
         console.print("[green]✓[/green] Simulation converged")
         _display_results_table(initial_result, targets, "Initial Results")
         all_met, _ = targets.is_satisfied(initial_result)
@@ -404,8 +430,10 @@ def run_pipeline(
     workspace = config.get_workspace_path()
     template_path = workspace / "circuit_template.sp"
     template_path.write_text(circuit_files.circuit_netlist, encoding="utf-8")
-    tb_path = workspace / "tb_template.sp"
-    tb_path.write_text(circuit_files.testbench, encoding="utf-8")
+    for i, tb in enumerate(circuit_files.testbenches):
+        suffix = "" if i == 0 else f"_{i}"
+        tb_path = workspace / f"tb_template{suffix}.sp"
+        tb_path.write_text(tb, encoding="utf-8")
 
     # --- Phase 2: Initial simulation ---
     console.print("\n[bold blue][Phase 2][/bold blue] Running initial Spectre simulation...")
@@ -422,13 +450,13 @@ def run_pipeline(
             initial_params[p.name] = (p.low + p.high) / 2
 
     run_dir = config.get_run_dir(0)
-    netlist_path = sim.render_circuit_and_testbench(
-        template, circuit_files.testbench,
+    tb_paths = sim.render_circuit_and_testbench(
+        template, circuit_files.testbenches,
         initial_params, run_dir, param_space=param_space,
         w_l_grid_step=config.w_l_grid_step,
     )
 
-    success, log_content, error_msg = sim.run_spectre(netlist_path, run_dir)
+    success, log_content, error_msg = sim.run_spectre(tb_paths[0], run_dir)
 
     if not success:
         console.print(f"[yellow]Initial simulation failed: {error_msg[:100]}[/yellow]")
@@ -444,18 +472,21 @@ def run_pipeline(
                 template = NetlistTemplate.from_netlist(repaired[0])
                 circuit_files = CircuitFiles(
                     circuit_netlist=repaired[0],
-                    testbench=repaired[1],
+                    testbenches=[repaired[1]],
                     circuit_name=CircuitFiles.extract_subckt_name(repaired[0]),
                 )
             else:
-                netlist_path.write_text(repaired, encoding="utf-8")
+                tb_paths[0].write_text(repaired, encoding="utf-8")
                 template = NetlistTemplate.from_netlist(repaired)
-            success, log_content, error_msg = sim.run_spectre(netlist_path, run_dir)
+            success, log_content, error_msg = sim.run_spectre(tb_paths[0], run_dir)
         except Exception:
             pass
-
     if success:
         initial_result = sim.parse_simulation_log(log_content)
+        for tb_path in tb_paths[1:]:
+            ok, log, _ = sim.run_spectre(tb_path, run_dir)
+            if ok:
+                initial_result = SimResult.merge(initial_result, sim.parse_simulation_log(log))
         console.print(f"[green]✓[/green] Simulation converged")
         _display_results_table(initial_result, targets, "Initial Results")
 
@@ -663,10 +694,12 @@ def _save_final_output(
     circuit_path = netlist_dir / "circuit.cir"
     circuit_path.write_text(final_circuit, encoding="utf-8")
 
-    # 2. Save testbench
-    if circuit_files and circuit_files.testbench:
-        tb_path = sim_dir / "tb_circuit_ac.sp"
-        tb_path.write_text(circuit_files.testbench, encoding="utf-8")
+    # 2. Save testbenches
+    if circuit_files and circuit_files.testbenches:
+        for i, tb in enumerate(circuit_files.testbenches):
+            suffix = "" if i == 0 else f"_{i}"
+            tb_path = sim_dir / f"tb_circuit{suffix}.sp"
+            tb_path.write_text(tb, encoding="utf-8")
 
     # 3. Copy simulation data from best run (look for the latest history)
     workspace = config.get_workspace_path()
@@ -756,8 +789,10 @@ def _save_final_output(
     console.print(f"\n[bold green]Project saved to:[/bold green] {project_root}")
     console.print(f"\n[bold]Files:[/bold]")
     console.print(f"  • {circuit_path}")
-    if circuit_files and circuit_files.testbench:
-        console.print(f"  • {tb_path}")
+    if circuit_files and circuit_files.testbenches:
+        for i, tb in enumerate(circuit_files.testbenches):
+            suffix = "" if i == 0 else f"_{i}"
+            console.print(f"  • {sim_dir / f'tb_circuit{suffix}.sp'}")
     console.print(f"  • {result_path}")
     console.print(f"  • {report_path}")
     if history_file.exists():
@@ -775,7 +810,7 @@ def _build_circuit_files(netlist_content: str) -> CircuitFiles | None:
         circuit_name = CircuitFiles.extract_subckt_name(circuit)
         return CircuitFiles(
             circuit_netlist=circuit,
-            testbench=testbench,
+            testbenches=[testbench],
             circuit_name=circuit_name,
         )
     except Exception:
@@ -799,7 +834,14 @@ def parse_args() -> argparse.Namespace:
     # --- File mode arguments ---
     parser.add_argument(
         "--netlist", type=str, default=None,
-        help="Path to a pre-made SPICE netlist file (.sp/.spi). Enables file mode."
+        help="Path to a pre-made SPICE netlist file (.cir). Enables file mode."
+    )
+    parser.add_argument(
+        "--testbench", type=str, nargs='*', default=None,
+        help="One or more testbench .sp files. When provided, --netlist is treated "
+             "as DUT-only .cir (no monolithic split). The first testbench is the "
+             "primary (typically AC); additional ones (e.g. transient) are run "
+             "sequentially and their results are merged."
     )
     parser.add_argument(
         "--project", type=str, default=None,

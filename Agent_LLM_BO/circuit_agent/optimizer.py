@@ -52,6 +52,8 @@ class HybridOptimizer:
             "bandwidth_hz": 1.0,
             "phase_margin_deg": 1.5,
             "power_w": 0.8,
+            "slew_rate_v_per_s": 1.0,
+            "settling_time_s": 0.8,
         }
 
     def run_optimization_loop(
@@ -85,7 +87,7 @@ class HybridOptimizer:
         study = optuna.create_study(direction="maximize", sampler=sampler)
 
         current_template = template
-        current_testbench = circuit_files.testbench if circuit_files else None
+        current_testbenches = circuit_files.testbenches if circuit_files else []
         topology_changes = 0
 
         logger.info(f"Starting optimization loop (max {max_iter} iterations)")
@@ -115,23 +117,24 @@ class HybridOptimizer:
 
             # Step 3: Render netlist
             run_dir = self.config.get_run_dir(iteration)
-            if current_testbench is not None:
-                netlist_path = self.sim.render_circuit_and_testbench(
-                    current_template, current_testbench,
+            if current_testbenches:
+                tb_paths = self.sim.render_circuit_and_testbench(
+                    current_template, current_testbenches,
                     proposed_params, run_dir, param_space=param_space,
                     w_l_grid_step=self.config.w_l_grid_step,
                 )
             else:
-                netlist_path = run_dir / "circuit.spi"
+                tb_paths = [run_dir / "circuit.spi"]
                 self.sim.render_netlist(
-                    current_template, proposed_params, netlist_path, param_space=param_space,
+                    current_template, proposed_params, tb_paths[0],
+                    param_space=param_space,
                     w_l_grid_step=self.config.w_l_grid_step,
                 )
 
-            # Step 4: Run simulation (with error repair)
+            # Step 4: Run simulation (with error repair on primary, then extras)
             sim_result = self._run_with_repair(
-                netlist_path, run_dir, current_template, proposed_params,
-                testbench_content=current_testbench,
+                tb_paths, run_dir, current_template, proposed_params,
+                testbenches=current_testbenches,
             )
 
             # Step 5: Compute reward
@@ -169,7 +172,7 @@ class HybridOptimizer:
                     if new_topology:
                         new_circuit_files, param_space = new_topology
                         current_template = NetlistTemplate.from_netlist(new_circuit_files.circuit_netlist)
-                        current_testbench = new_circuit_files.testbench
+                        current_testbenches = new_circuit_files.testbenches
                         state.param_space = param_space
                         state.topology_changes += 1
                         topology_changes += 1
@@ -254,6 +257,34 @@ class HybridOptimizer:
             reward -= 50.0
             all_met = False
 
+        # Slew rate (higher is better)
+        if targets.slew_rate_v_per_s is not None and result.slew_rate_v_per_s is not None:
+            if result.slew_rate_v_per_s >= targets.slew_rate_v_per_s:
+                reward += 10.0 * self.weights["slew_rate_v_per_s"]
+            else:
+                gap = (targets.slew_rate_v_per_s - result.slew_rate_v_per_s) / max(
+                    targets.slew_rate_v_per_s, 1.0
+                )
+                reward -= gap * 50.0 * self.weights["slew_rate_v_per_s"]
+                all_met = False
+        elif targets.slew_rate_v_per_s is not None:
+            reward -= 50.0
+            all_met = False
+
+        # Settling time (lower is better)
+        if targets.settling_time_s is not None and result.settling_time_s is not None:
+            if result.settling_time_s <= targets.settling_time_s:
+                reward += 10.0 * self.weights["settling_time_s"]
+            else:
+                gap = (result.settling_time_s - targets.settling_time_s) / max(
+                    targets.settling_time_s, 1e-12
+                )
+                reward -= gap * 50.0 * self.weights["settling_time_s"]
+                all_met = False
+        elif targets.settling_time_s is not None:
+            reward -= 50.0
+            all_met = False
+
         # Bonus for meeting all targets
         if all_met:
             reward += 100.0
@@ -262,38 +293,38 @@ class HybridOptimizer:
 
     def _run_with_repair(
         self,
-        netlist_path: Path,
+        tb_paths: list[Path],
         run_dir: Path,
         template: NetlistTemplate,
         params: dict[str, float],
-        testbench_content: str | None = None,
+        testbenches: list[str] | None = None,
     ) -> SimResult:
         """Run simulation with automatic error repair via LLM.
 
-        If simulation fails with syntax/node errors, asks LLM to fix and retries.
-        When testbench_content is provided, repairs both circuit and testbench.
+        Runs primary testbench (tb_paths[0]) with repair loop. Then runs extra
+        testbenches sequentially and merges their results.
         """
+        primary_path = tb_paths[0]
+        has_split = bool(testbenches)
+
+        # --- Primary simulation with repair ---
         for attempt in range(self.config.max_repair_attempts + 1):
-            success, log_content, error_msg = self.sim.run_spectre(
-                netlist_path, run_dir
-            )
+            success, log_content, error_msg = self.sim.run_spectre(primary_path, run_dir)
 
             if success:
-                return self.sim.parse_simulation_log(log_content)
+                merged = self.sim.parse_simulation_log(log_content)
+                break  # proceed to extra simulations
 
-            # Classify the error
             error_type = self.sim.classify_error(log_content or error_msg)
             logger.warning(
                 f"Simulation failed (attempt {attempt+1}): {error_type} - {error_msg[:100]}"
             )
 
-            # Only repair syntax and node_floating errors via LLM
             if error_type in ("syntax", "node_floating") and attempt < self.config.max_repair_attempts:
                 try:
-                    if testbench_content is not None:
-                        # Split mode: repair circuit.cir + tb.sp separately
+                    if has_split:
                         circuit_content = (run_dir / "circuit.cir").read_text(encoding="utf-8")
-                        tb_content = netlist_path.read_text(encoding="utf-8")
+                        tb_content = (run_dir / "tb.sp").read_text(encoding="utf-8")
                         repaired_circuit, repaired_tb = self.llm.repair_netlist(
                             circuit_content, log_content or error_msg, attempt + 1,
                             testbench=tb_content,
@@ -302,23 +333,27 @@ class HybridOptimizer:
                         (run_dir / "tb.sp").write_text(repaired_tb, encoding="utf-8")
                         logger.info(f"LLM repaired circuit + testbench (attempt {attempt + 1})")
                     else:
-                        current_netlist = netlist_path.read_text(encoding="utf-8")
+                        current_netlist = primary_path.read_text(encoding="utf-8")
                         repaired = self.llm.repair_netlist(
                             current_netlist, log_content or error_msg, attempt + 1
                         )
-                        netlist_path.write_text(repaired, encoding="utf-8")
+                        primary_path.write_text(repaired, encoding="utf-8")
                         logger.info(f"LLM repaired netlist (attempt {attempt + 1})")
                     continue
                 except Exception as e:
                     logger.error(f"LLM repair failed: {e}")
 
-            # For convergence errors or exhausted repair attempts, return failed result
-            return SimResult(
-                converged=False,
-                error_message=f"{error_type}: {error_msg[:200]}",
-            )
+            return SimResult(converged=False, error_message=f"{error_type}: {error_msg[:200]}")
 
-        return SimResult(converged=False, error_message="Max repair attempts exhausted")
+        # --- Extra simulations ---
+        for tb_path in tb_paths[1:]:
+            logger.info(f"Running extra simulation: {tb_path.name}")
+            ok, log, _ = self.sim.run_spectre(tb_path, run_dir)
+            if ok:
+                extra = self.sim.parse_simulation_log(log)
+                merged = SimResult.merge(merged, extra)
+
+        return merged
 
     def _detect_stagnation(self, state: OptimizationState) -> bool:
         """Check if optimization has stagnated (no improvement in N iterations)."""

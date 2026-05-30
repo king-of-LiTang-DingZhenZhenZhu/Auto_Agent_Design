@@ -17,6 +17,8 @@ class DesignTarget:
     phase_margin_deg: float | None = None  # Minimum phase margin in degrees
     power_w: float | None = None  # Maximum power in Watts
     load_cap_f: float | None = None  # Load capacitance in Farads
+    slew_rate_v_per_s: float | None = None  # Minimum slew rate in V/s
+    settling_time_s: float | None = None  # Maximum settling time in seconds
     topology_hint: str = ""  # e.g., "5T OTA", "two-stage Miller"
     custom_specs: dict[str, Any] = field(default_factory=dict)
 
@@ -31,6 +33,10 @@ class DesignTarget:
             status["phase_margin_deg"] = result.phase_margin_deg >= self.phase_margin_deg
         if self.power_w is not None and result.power_w is not None:
             status["power_w"] = result.power_w <= self.power_w
+        if self.slew_rate_v_per_s is not None and result.slew_rate_v_per_s is not None:
+            status["slew_rate_v_per_s"] = result.slew_rate_v_per_s >= self.slew_rate_v_per_s
+        if self.settling_time_s is not None and result.settling_time_s is not None:
+            status["settling_time_s"] = result.settling_time_s <= self.settling_time_s
         all_pass = all(status.values()) if status else False
         return all_pass, status
 
@@ -64,6 +70,17 @@ class DesignTarget:
         else:
             gap["power_w"] = None
 
+        if self.slew_rate_v_per_s is not None and result.slew_rate_v_per_s is not None:
+            gap["slew_rate_v_per_s"] = result.slew_rate_v_per_s - self.slew_rate_v_per_s
+        else:
+            gap["slew_rate_v_per_s"] = None
+
+        if self.settling_time_s is not None and result.settling_time_s is not None:
+            # Settling time: lower is better
+            gap["settling_time_s"] = self.settling_time_s - result.settling_time_s
+        else:
+            gap["settling_time_s"] = None
+
         return gap
 
     def to_requirements_dict(self, original_text: str = "") -> dict:
@@ -76,6 +93,8 @@ class DesignTarget:
                 "phase_margin_deg": self.phase_margin_deg,
                 "power_w": self.power_w,
                 "load_cap_f": self.load_cap_f,
+                "slew_rate_v_per_s": self.slew_rate_v_per_s,
+                "settling_time_s": self.settling_time_s,
             },
             "topology_hint": self.topology_hint,
         }
@@ -93,6 +112,10 @@ class DesignTarget:
             lines.append(f"- Power <= {_eng(self.power_w)}W")
         if self.load_cap_f is not None:
             lines.append(f"- Load Capacitance = {_eng(self.load_cap_f)}F")
+        if self.slew_rate_v_per_s is not None:
+            lines.append(f"- Slew Rate >= {_eng(self.slew_rate_v_per_s)}V/s")
+        if self.settling_time_s is not None:
+            lines.append(f"- Settling Time <= {_eng(self.settling_time_s)}s")
         if self.topology_hint:
             lines.append(f"- Topology: {self.topology_hint}")
         for k, v in self.custom_specs.items():
@@ -184,9 +207,32 @@ class SimResult:
     phase_margin_deg: float | None = None
     power_w: float | None = None
     unity_gain_freq_hz: float | None = None
+    slew_rate_v_per_s: float | None = None     # Transient: slew rate in V/s
+    settling_time_s: float | None = None        # Transient: settling time in seconds
     converged: bool = True
     error_message: str = ""
     raw_metrics: dict[str, float] = field(default_factory=dict)
+
+    @staticmethod
+    def merge(primary: "SimResult", extra: "SimResult") -> "SimResult":
+        """Merge extra simulation metrics into primary result.
+
+        Non-None fields from extra are copied into primary only when primary's
+        field is None (primary metrics take precedence for overlapping fields).
+        """
+        merged = SimResult(
+            gain_db=primary.gain_db,
+            bandwidth_hz=primary.bandwidth_hz,
+            phase_margin_deg=primary.phase_margin_deg,
+            power_w=primary.power_w,
+            unity_gain_freq_hz=primary.unity_gain_freq_hz,
+            slew_rate_v_per_s=primary.slew_rate_v_per_s or extra.slew_rate_v_per_s,
+            settling_time_s=primary.settling_time_s or extra.settling_time_s,
+            converged=primary.converged,
+            error_message=primary.error_message,
+            raw_metrics={**extra.raw_metrics, **primary.raw_metrics},
+        )
+        return merged
 
     def to_result_dict(
         self, targets: DesignTarget | None = None, params: dict[str, float] | None = None
@@ -204,6 +250,8 @@ class SimResult:
                 "unity_gain_freq_hz": self.unity_gain_freq_hz,
                 "phase_margin_deg": self.phase_margin_deg,
                 "power_w": self.power_w,
+                "slew_rate_v_per_s": self.slew_rate_v_per_s,
+                "settling_time_s": self.settling_time_s,
             },
         }
 
@@ -235,6 +283,10 @@ class SimResult:
             lines.append(f"Power = {_eng(self.power_w)}W")
         if self.unity_gain_freq_hz is not None:
             lines.append(f"UGF = {_eng(self.unity_gain_freq_hz)}Hz")
+        if self.slew_rate_v_per_s is not None:
+            lines.append(f"SR = {_eng(self.slew_rate_v_per_s)}V/s")
+        if self.settling_time_s is not None:
+            lines.append(f"t_settle = {_eng(self.settling_time_s)}s")
         if not self.converged:
             lines.append(f"[NOT CONVERGED] {self.error_message}")
         return " | ".join(lines)
@@ -311,11 +363,16 @@ class NetlistTemplate:
 
 @dataclass
 class CircuitFiles:
-    """Holds the split circuit design: DUT netlist + testbench."""
+    """Holds the split circuit design: DUT netlist + testbench(es)."""
 
-    circuit_netlist: str   # DUT subcircuit content (.subckt with .param)
-    testbench: str         # Testbench content (.include, stimulus, analysis, .meas)
-    circuit_name: str      # Subcircuit name extracted from .subckt line
+    circuit_netlist: str     # DUT subcircuit content (.subckt with .param)
+    testbenches: list[str]   # Testbench contents (.include, stimulus, analysis, .meas)
+    circuit_name: str        # Subcircuit name extracted from .subckt line
+
+    @property
+    def testbench(self) -> str | None:
+        """Primary testbench (first in list). For backward compatibility."""
+        return self.testbenches[0] if self.testbenches else None
 
     @staticmethod
     def extract_subckt_name(circuit_content: str) -> str:

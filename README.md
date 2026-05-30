@@ -64,7 +64,8 @@ python main.py
 cd Agent_LLM_BO/circuit_agent
 
 python main.py \
-  --netlist /path/to/circuit.cir \
+  --netlist /path/to/<circuit>.cir \
+  --testbench /path/to/tb_<circuit>_ac.sp \
   --params /path/to/params.json \
   --requirements /path/to/requirements.json
 ```
@@ -73,7 +74,8 @@ python main.py \
 
 ```bash
 python main.py \
-  --netlist circuit.cir \
+  --netlist <circuit>.cir \
+  --testbench tb_<circuit>_ac.sp \
   --params params.json \
   --gain 40 --bw 500e6 --pm 60 --power 0.001 --load-cap 500e-15
 ```
@@ -82,6 +84,7 @@ python main.py \
 
 | 参数 | 说明 | 默认值 |
 |------|------|--------|
+| `--testbench <path>` | testbench .sp 文件路径（分离模式） | 无（单片模式） |
 | `--max-iter N` | 最大优化迭代次数 | 50 |
 | `--dry-run` | 跳过 Spectre，使用启发式模拟 | 关闭 |
 | `--verbose` | 输出 DEBUG 日志 | 关闭 |

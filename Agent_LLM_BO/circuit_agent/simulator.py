@@ -47,16 +47,17 @@ class Simulator:
     def render_circuit_and_testbench(
         self,
         circuit_template: NetlistTemplate,
-        testbench_content: str,
+        testbench_contents: list[str],
         params: dict[str, float],
         run_dir: Path,
         param_space: ParamSpace | None = None,
         w_l_grid_step: float | None = None,
-    ) -> Path:
+    ) -> list[Path]:
         """Render circuit and testbench files into run_dir.
 
-        Writes circuit.cir (rendered DUT) and tb.sp (testbench with .include).
-        Returns the path to tb.sp as the entry point for Spectre.
+        Writes circuit.cir (rendered DUT) once, then writes each testbench as
+        tb.sp, tb_1.sp, tb_2.sp, ... (all .include "circuit.cir").
+        Returns the list of testbench paths as entry points for Spectre.
         """
         run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -71,12 +72,16 @@ class Simulator:
         circuit_path.write_text(circuit_content, encoding="utf-8")
         logger.debug(f"Rendered circuit to {circuit_path}")
 
-        # Write testbench (uses .include "circuit.cir" relative to same dir)
-        tb_path = run_dir / "tb.sp"
-        tb_path.write_text(testbench_content, encoding="utf-8")
-        logger.debug(f"Wrote testbench to {tb_path}")
+        # Write each testbench
+        tb_paths = []
+        for i, tb_content in enumerate(testbench_contents):
+            suffix = "" if i == 0 else f"_{i}"
+            tb_path = run_dir / f"tb{suffix}.sp"
+            tb_path.write_text(tb_content, encoding="utf-8")
+            logger.debug(f"Wrote testbench to {tb_path}")
+            tb_paths.append(tb_path)
 
-        return tb_path
+        return tb_paths
 
     def run_spectre(
         self, netlist_path: Path, run_dir: Path, timeout: int | None = None
@@ -152,6 +157,41 @@ class Simulator:
             logger.error(f"Spectre execution error: {e}")
             return False, "", str(e)
 
+    def run_all_testbenches(
+        self,
+        tb_paths: list[Path],
+        run_dir: Path,
+        timeout: int | None = None,
+    ) -> SimResult:
+        """Run Spectre on the primary testbench, then on any extra ones.
+
+        Each testbench's .measure results are parsed and merged into a single
+        SimResult. The primary testbench (index 0) is typically AC; extras may
+        be transient, DC, etc. If the primary fails, a failed SimResult is
+        returned immediately.
+        """
+        if not tb_paths:
+            return SimResult(converged=False, error_message="No testbench to run")
+
+        # --- Primary simulation ---
+        success, log_content, error_msg = self.run_spectre(tb_paths[0], run_dir, timeout)
+        if not success:
+            return SimResult(converged=False, error_message=error_msg)
+
+        merged = self.parse_simulation_log(log_content)
+
+        # --- Extra simulations ---
+        for tb_path in tb_paths[1:]:
+            logger.info(f"Running extra simulation: {tb_path.name}")
+            ok, log, err = self.run_spectre(tb_path, run_dir, timeout)
+            if ok:
+                extra = self.parse_simulation_log(log)
+                merged = SimResult.merge(merged, extra)
+            else:
+                logger.warning(f"Extra simulation {tb_path.name} failed: {err[:100]}")
+
+        return merged
+
     def parse_simulation_log(self, log_content: str) -> SimResult:
         """Parse Spectre simulation log to extract performance metrics.
 
@@ -203,7 +243,8 @@ class Simulator:
         # Map extracted metrics to SimResult fields
         #
         # Canonical names (from testbench_sp_guide.md):
-        #   gain_dc, phase_dc, gbw_hz, phase_at_ugf, power_total
+        #   AC:  gain_dc, phase_dc, gbw_hz, phase_at_ugf, power_total
+        #   Transient: slew_rate, settling_time
         # Legacy names (backwards compatible):
         #   gain_db, gain, ugf, bw, bandwidth, phase_margin, pm, power
 
@@ -257,6 +298,14 @@ class Simulator:
             result.power_w = abs(result.raw_metrics["power_total"])
         elif "power" in result.raw_metrics:
             result.power_w = abs(result.raw_metrics["power"])
+
+        # Slew rate (V/s) — transient measurement
+        if "slew_rate" in result.raw_metrics:
+            result.slew_rate_v_per_s = abs(result.raw_metrics["slew_rate"])
+
+        # Settling time (s) — transient measurement
+        if "settling_time" in result.raw_metrics:
+            result.settling_time_s = result.raw_metrics["settling_time"]
 
         # Check if any .meas FAILED
         if re.search(r"FAILED|failed\s+to\s+find", log_content):

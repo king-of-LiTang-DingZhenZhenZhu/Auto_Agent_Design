@@ -97,6 +97,8 @@ Spectre（SPICE 语法模式）**不支持 `.control/.endc` 块**，所有仿真
 | `gbw_hz` | AC | Hz | 单位增益带宽 |
 | `phase_at_ugf` | AC | 度 | UGF 处相位 |
 | `power_total` | DC | W | 总功耗 |
+| `slew_rate` | TRAN | V/s | 压摆率（取绝对值） |
+| `settling_time` | TRAN | s | 建立时间（输出稳定到目标误差内的时刻） |
 
 ## 3. 完整示例
 

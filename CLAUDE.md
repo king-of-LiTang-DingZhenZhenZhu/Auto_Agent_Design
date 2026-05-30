@@ -20,14 +20,15 @@
 ① 解析需求，提取指标
       │
       ▼
-② 在 <circuit_name>/ 文件夹下生成 4 个文件（名称由LLM根据电路决定）:
-   ├── <circuit_name>.cir    # DUT 子电路（含 .param 可调参数）
-   ├── tb_<circuit_name>_ac.sp  # AC 仿真 testbench（含 .meas），或 dc/tran 等其他类型
-   ├── params.json           # 参数搜索空间
-   └── requirements.json     # 设计指标
+② 在 <circuit_name>/ 文件夹下生成文件（名称由LLM根据电路决定）:
+   ├── <circuit_name>.cir          # DUT 子电路（含 .param 可调参数）
+   ├── tb_<circuit_name>_ac.sp     # AC 仿真 testbench（含 .meas）
+   ├── tb_<circuit_name>_tran.sp   # （可选）Transient 仿真 testbench
+   ├── params.json                 # 参数搜索空间
+   └── requirements.json           # 设计指标
       │
       ▼
-③ 调用 python main.py --netlist <circuit_name>/<circuit_name>.cir --params <circuit_name>/params.json --requirements <circuit_name>/requirements.json
+③ 调用 python main.py --netlist <circuit_name>/<circuit_name>.cir --testbench <circuit_name>/tb_<circuit_name>_ac.sp <circuit_name>/tb_<circuit_name>_tran.sp --params <circuit_name>/params.json --requirements <circuit_name>/requirements.json
       │
       ▼
 ④ 读取 outputs/<project_name>/results.json，向用户汇报结果
@@ -105,6 +106,7 @@ cd Agent_LLM_BO/circuit_agent
 
 python main.py \
   --netlist /path/to/<circuit_name>/<circuit_name>.cir \
+  --testbench /path/to/<circuit_name>/tb_<circuit_name>_ac.sp \
   --params /path/to/<circuit_name>/params.json \
   --requirements /path/to/<circuit_name>/requirements.json
 ```
@@ -122,6 +124,7 @@ python main.py \
 ```bash
 python main.py \
   --netlist <circuit_name>/<circuit_name>.cir \
+  --testbench <circuit_name>/tb_<circuit_name>_ac.sp \
   --params <circuit_name>/params.json \
   --gain 40 --bw 500e6 --pm 60 --power 0.001 --load-cap 500e-15
 ```
