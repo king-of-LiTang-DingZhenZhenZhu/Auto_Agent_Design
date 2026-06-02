@@ -223,15 +223,9 @@ def run_from_file(
     # --- Run initial simulation ---
     console.print("\n[bold blue][Phase 1][/bold blue] Running initial Spectre simulation...")
 
-    initial_params = {}
-    for p in param_space.params:
-        if p.log_scale:
-            import math
-            initial_params[p.name] = math.exp(
-                (math.log(p.low) + math.log(p.high)) / 2
-            )
-        else:
-            initial_params[p.name] = (p.low + p.high) / 2
+    initial_params = param_space.get_initial_params(
+        circuit_files.circuit_netlist if circuit_files else netlist_content
+    )
 
     run_dir = config.get_run_dir(0)
     if circuit_files and circuit_files.testbenches:
@@ -451,15 +445,9 @@ def run_pipeline(
     console.print("\n[bold blue][Phase 2][/bold blue] Running initial Spectre simulation...")
 
     # Use midpoint of parameter ranges as initial values
-    initial_params = {}
-    for p in param_space.params:
-        if p.log_scale:
-            import math
-            initial_params[p.name] = math.exp(
-                (math.log(p.low) + math.log(p.high)) / 2
-            )
-        else:
-            initial_params[p.name] = (p.low + p.high) / 2
+    initial_params = param_space.get_initial_params(
+        circuit_files.circuit_netlist if circuit_files else netlist_content
+    )
 
     run_dir = config.get_run_dir(0)
     tb_paths = sim.render_circuit_and_testbench(

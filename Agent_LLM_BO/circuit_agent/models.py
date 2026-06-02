@@ -154,6 +154,37 @@ class ParamSpace:
     def get_param_names(self) -> list[str]:
         return [p.name for p in self.params]
 
+    def get_initial_params(self, netlist_content: str) -> dict[str, float]:
+        """Extract initial parameter values from netlist .param declarations.
+
+        Parses .param lines to find the designer's chosen starting values.
+        Falls back to geometric/linear midpoint for parameters not found.
+        """
+        # Parse .param name=value pairs from the netlist
+        netlist_params: dict[str, float] = {}
+        for match in re.finditer(
+            r"\.param\s+(.+)", netlist_content, re.IGNORECASE | re.MULTILINE
+        ):
+            line = match.group(1)
+            for kv in re.finditer(r"(\w+)\s*=\s*(\S+)", line):
+                name = kv.group(1)
+                if name.upper() in ("NF", "M"):
+                    continue
+                try:
+                    netlist_params[name] = _parse_spice_suffix(kv.group(2))
+                except ValueError:
+                    continue
+
+        initial = {}
+        for p in self.params:
+            if p.name in netlist_params:
+                initial[p.name] = netlist_params[p.name]
+            elif p.log_scale:
+                initial[p.name] = math.exp((math.log(p.low) + math.log(p.high)) / 2)
+            else:
+                initial[p.name] = (p.low + p.high) / 2
+        return initial
+
     def resolve_params(
         self,
         raw_params: dict[str, float],
@@ -203,6 +234,7 @@ class ParamSpace:
     def from_netlist(cls, content: str, max_per_finger: float = 3e-6) -> ParamSpace:
         """Auto-extract parameter search space from netlist .param declarations.
 
+        
         Parses .param lines, guesses parameter type from naming convention,
         and assigns sensible default bounds. No separate params.json needed.
         """
@@ -234,7 +266,7 @@ class ParamSpace:
             if name.startswith("W") or name.upper().startswith("W"):
                 # Transistor total width
                 low = max(0.1e-6, initial * 0.1)
-                high = max(50e-6, initial * 10)
+                high = max(192e-6, initial * 10)
                 params.append(ParamDef(
                     name=name, low=low, high=high,
                     log_scale=True, unit="m", max_per_finger=max_per_finger,
@@ -250,7 +282,7 @@ class ParamSpace:
             elif name.startswith("C") or name.upper().startswith("C"):
                 # Capacitor
                 low = max(0.01e-12, initial * 0.01)
-                high = max(100e-12, initial * 100)
+                high = max(10e-12, initial * 100)
                 params.append(ParamDef(
                     name=name, low=low, high=high,
                     log_scale=True, unit="F",
@@ -258,15 +290,15 @@ class ParamSpace:
             elif name.startswith("R") or name.upper().startswith("R"):
                 # Resistor
                 low = max(1, initial * 0.01)
-                high = max(1e6, initial * 100)
+                high = max(2000, initial * 100)
                 params.append(ParamDef(
                     name=name, low=low, high=high,
                     log_scale=True, unit="Ohm",
                 ))
             elif name.upper().startswith("I"):
                 # Current bias
-                low = max(1e-9, initial * 0.01)
-                high = max(1e-3, initial * 100)
+                low = max(1e-6, initial * 0.01)
+                high = max(5e-3, initial * 100)
                 params.append(ParamDef(
                     name=name, low=low, high=high,
                     log_scale=True, unit="A",
@@ -447,16 +479,21 @@ class NetlistTemplate:
         for name, value in resolved.items():
             if name.startswith("nf_"):
                 continue
+            # Apply same W/L grid quantization as Phase 1 so that transistor-
+            # line values are consistent with .param values and never round
+            # down to zero (Spectre rejects L <= 0).
+            if w_l_grid_step:
+                value = _quantize_wl(name, value, w_l_grid_step)
             formatted = _format_spice_value(value)
-            # Replace with-quotes form: W='Wtail' → W=5u
+            # Replace with-quotes form: W='Wtail' → W=3u / l='Ltail' → l=200n
             content = re.sub(
-                rf"(\b[WL]\s*=\s*)'{re.escape(name)}'",
+                rf"(\b[wWlL]\s*=\s*)'{re.escape(name)}'",
                 rf"\g<1>{formatted}",
                 content,
             )
-            # Replace without-quotes form: W=Wtail → W=5u
+            # Replace without-quotes form: W=Wtail → W=3u / l=Ltail → l=200n
             content = re.sub(
-                rf"(\b[WL]\s*=\s*){re.escape(name)}\b",
+                rf"(\b[wWlL]\s*=\s*){re.escape(name)}\b",
                 rf"\g<1>{formatted}",
                 content,
             )
