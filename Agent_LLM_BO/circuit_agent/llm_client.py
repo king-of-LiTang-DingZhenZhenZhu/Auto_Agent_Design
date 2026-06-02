@@ -33,7 +33,6 @@ class LLMClient:
         kb_path = self.config.get_knowledge_base_path()
         sections = [
             "You are an expert analog circuit designer specializing in TSMC N28 process.",
-            "You design circuits that are physically realizable and meet performance targets.",
             "",
             "## Critical Design Rules",
             f"- Process: TSMC N28",
@@ -157,7 +156,8 @@ class LLMClient:
    - Every transistor MUST have `nf=1` on its line (e.g., `M1 ... w='Wdp' l='Ldp' nf=1`). The system will update nf automatically.
    - W in .param is the total effective width, NOT the per-finger width.
    - DO NOT add nf or M as .param entries — the system manages them automatically.
-   - DO NOT include nf or M in the parameter search space JSON — only W and L parameters.
+   - DO NOT include nf or M in the parameter search space JSON — system manages them.
+   - DO include ALL .param variables: transistor W/L, compensation capacitors (Cc), nulling resistors (Rz), bias currents (Ibias), etc.
 
 ## .meas Statement Format (IMPORTANT)
 Use these EXACT measurement names so the parser can extract them:
@@ -196,13 +196,16 @@ Output THREE separate code blocks in this order:
 ```json
 [
   {{"name": "Wtail", "low": 0.5e-6, "high": 20e-6, "log_scale": true, "unit": "m", "max_per_finger": 3e-6}},
-  {{"name": "Ltail", "low": 30e-9, "high": 500e-9, "log_scale": true, "unit": "m"}}
+  {{"name": "Ltail", "low": 30e-9, "high": 500e-9, "log_scale": true, "unit": "m"}},
+  {{"name": "Cc", "low": 0.1e-12, "high": 10e-12, "log_scale": true, "unit": "F"}}
 ]
 ```
 - For width (W) parameters, always include `"max_per_finger": 3e-6`
 - For length (L) parameters, do NOT include max_per_finger
+- For C/R/I parameters (capacitors, resistors, currents), use `"log_scale": true`, no max_per_finger
 - DO NOT include nf or M in the parameter space — system manages them
 - Each parameter should have physically reasonable bounds for TSMC N28
+- Include ALL .param variables you declared, not just transistor widths and lengths
 """
 
         response = self._call_llm(prompt)
@@ -287,7 +290,13 @@ Output the final parameters as a JSON object in a ```json code block:
             for name in proposed_params:
                 if name not in adjusted:
                     adjusted[name] = proposed_params[name]
-            return adjusted
+            # Clamp each value to its param_space bounds (LLM may hallucinate out-of-range values)
+            clamped = {}
+            for p in param_space.params:
+                value = float(adjusted.get(p.name, proposed_params[p.name]))
+                value = max(p.low, min(p.high, value))
+                clamped[p.name] = value
+            return clamped
 
         # If parsing fails, return proposed params unchanged
         logger.warning("Failed to parse LLM parameter validation response, using proposed params")

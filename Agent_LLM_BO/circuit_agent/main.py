@@ -104,10 +104,22 @@ def run_from_file(
         with open(params_path) as f:
             param_data = json.load(f)
         param_space = ParamSpace.from_dict(param_data)
+        console.print(f"[green]✓[/green] Loaded {len(param_space.params)} parameters from params file")
     else:
-        console.print("[red]--params is required in file mode. Provide a JSON file defining the search space.[/red]")
-        console.print('[dim]Example: [{"name": "W1", "low": 0.5e-6, "high": 20e-6, "log_scale": true}][/dim]')
-        sys.exit(1)
+        # Auto-extract from netlist .param declarations
+        try:
+            netlist_content = netlist_path.read_text(encoding="utf-8")
+            param_space = ParamSpace.from_netlist(
+                netlist_content, max_per_finger=config.max_width_per_finger
+            )
+            console.print(f"[green]✓[/green] Auto-extracted {len(param_space.params)} parameters from netlist:")
+            for p in param_space.params:
+                extra = f" [max_per_finger={p.max_per_finger}]" if p.max_per_finger else ""
+                console.print(f"     {p.name}: [{_eng_fmt(p.low)} ~ {_eng_fmt(p.high)}]{extra}")
+        except ValueError as e:
+            console.print(f"[red]Cannot auto-extract parameter space: {e}[/red]")
+            console.print("[dim]Provide a --params JSON file or add .param declarations to the netlist.[/dim]")
+            sys.exit(1)
 
     # --- Build design targets ---
     original_requirement_text = ""
@@ -849,7 +861,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--params", type=str, default=None,
-        help="Path to JSON file defining parameter search space (required in file mode)"
+        help="Path to JSON file defining parameter search space. "
+             "If omitted, parameters are auto-extracted from the netlist's "
+             ".param declarations with sensible default bounds."
     )
     parser.add_argument(
         "--requirements", type=str, default=None,

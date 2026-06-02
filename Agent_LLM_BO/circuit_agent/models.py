@@ -166,14 +166,16 @@ class ParamSpace:
         """
         resolved = dict(raw_params)
         for p in self.params:
-            limit = p.max_per_finger or global_max_per_finger
-            if limit is None:
+            # Only split finger for width parameters that explicitly have max_per_finger.
+            # Non-width params (Rz, Cc, Ibias, etc.) must NOT go through this path
+            # or they would get nonsensical nf values (e.g. Rz=24k → nf=8e9, Rz=3uΩ).
+            if p.max_per_finger is None:
                 continue
             if p.name not in raw_params:
                 continue
             total_w = raw_params[p.name]
-            if total_w > limit:
-                nf = int(math.ceil(total_w / limit))
+            if total_w > p.max_per_finger:
+                nf = int(math.ceil(total_w / p.max_per_finger))
                 resolved[p.name] = total_w / nf
             else:
                 nf = 1
@@ -195,6 +197,89 @@ class ParamSpace:
                     max_per_finger=d.get("max_per_finger"),
                 )
             )
+        return cls(params=params)
+
+    @classmethod
+    def from_netlist(cls, content: str, max_per_finger: float = 3e-6) -> ParamSpace:
+        """Auto-extract parameter search space from netlist .param declarations.
+
+        Parses .param lines, guesses parameter type from naming convention,
+        and assigns sensible default bounds. No separate params.json needed.
+        """
+        # Parse .param declarations: name=value pairs
+        param_entries: list[tuple[str, float]] = []
+        for match in re.finditer(
+            r"\.param\s+(.+)", content, re.IGNORECASE | re.MULTILINE
+        ):
+            line = match.group(1)
+            for kv in re.finditer(r"(\w+)\s*=\s*(\S+)", line):
+                name = kv.group(1)
+                if name.upper() in ("NF", "M"):
+                    continue  # system-managed
+                try:
+                    value = _parse_spice_suffix(kv.group(2))
+                    param_entries.append((name, value))
+                except ValueError:
+                    continue
+
+        if not param_entries:
+            raise ValueError(
+                "No .param declarations found in netlist. "
+                "Add .param statements for optimizable variables."
+            )
+
+        # Assign bounds based on naming convention
+        params = []
+        for name, initial in param_entries:
+            if name.startswith("W") or name.upper().startswith("W"):
+                # Transistor total width
+                low = max(0.1e-6, initial * 0.1)
+                high = max(50e-6, initial * 10)
+                params.append(ParamDef(
+                    name=name, low=low, high=high,
+                    log_scale=True, unit="m", max_per_finger=max_per_finger,
+                ))
+            elif name.startswith("L") or name.upper().startswith("L"):
+                # Transistor length
+                low = max(30e-9, initial * 0.3)
+                high = max(1e-6, initial * 5)
+                params.append(ParamDef(
+                    name=name, low=low, high=high,
+                    log_scale=True, unit="m",
+                ))
+            elif name.startswith("C") or name.upper().startswith("C"):
+                # Capacitor
+                low = max(0.01e-12, initial * 0.01)
+                high = max(100e-12, initial * 100)
+                params.append(ParamDef(
+                    name=name, low=low, high=high,
+                    log_scale=True, unit="F",
+                ))
+            elif name.startswith("R") or name.upper().startswith("R"):
+                # Resistor
+                low = max(1, initial * 0.01)
+                high = max(1e6, initial * 100)
+                params.append(ParamDef(
+                    name=name, low=low, high=high,
+                    log_scale=True, unit="Ohm",
+                ))
+            elif name.upper().startswith("I"):
+                # Current bias
+                low = max(1e-9, initial * 0.01)
+                high = max(1e-3, initial * 100)
+                params.append(ParamDef(
+                    name=name, low=low, high=high,
+                    log_scale=True, unit="A",
+                ))
+            else:
+                # Generic: ±2 orders of magnitude around initial
+                low = initial * 0.01
+                high = initial * 100
+                params.append(ParamDef(
+                    name=name, low=low, high=high,
+                    log_scale=True,
+                ))
+
         return cls(params=params)
 
 
@@ -320,16 +405,23 @@ class NetlistTemplate:
         content = self.template_content
 
         # Phase 1: substitute .param values for non-nf parameters
-        # Use \b word boundary to handle multiple params on same line:
-        #   .param Wtail=2u Ltail=200n Wdp=2u
-        for name, value in resolved.items():
-            if name.startswith("nf_"):
+        # Only match on .param lines to avoid corrupting transistor declarations.
+        # Example: .param Wtail=2u Ltail=200n Wdp=2u
+        lines = content.split("\n")
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if not stripped.startswith((".param", ".PARAM")):
                 continue
-            if w_l_grid_step:
-                value = _quantize_wl(name, value, w_l_grid_step)
-            pattern = rf"(\b{re.escape(name)}\s*=\s*)\S+"
-            replacement = rf"\g<1>{_format_spice_value(value)}"
-            content = re.sub(pattern, replacement, content, flags=re.IGNORECASE)
+            for name, value in resolved.items():
+                if name.startswith("nf_"):
+                    continue
+                if w_l_grid_step:
+                    value = _quantize_wl(name, value, w_l_grid_step)
+                pattern = rf"(\b{re.escape(name)}\s*=\s*)\S+"
+                replacement = rf"\g<1>{_format_spice_value(value)}"
+                line = re.sub(pattern, replacement, line, flags=re.IGNORECASE)
+            lines[i] = line
+        content = "\n".join(lines)
 
         # Phase 2: inject nf values on transistor lines
         for name, value in resolved.items():
@@ -343,10 +435,31 @@ class NetlistTemplate:
             content = re.sub(pattern, rf"\g<1>{nf_int}", content, flags=re.IGNORECASE)
 
             # Replace nf on transistor lines that reference this width parameter
-            # Handles both HSPICE (w='Wtail') and Spectre (w=Wtail) formats
-            line_pattern = rf"(w='?{re.escape(wname)}'?.*?nf=)\S+"
+            # Handles W='Wtail' / w='Wtail' / W=Wtail / w=Wtail  (case-insensitive)
+            line_pattern = rf"([wW]='?{re.escape(wname)}'?.*?nf=)\S+"
             line_replacement = rf"\g<1>{nf_int}"
             content = re.sub(line_pattern, line_replacement, content)
+
+        # Phase 3: resolve parameter references on transistor lines
+        # Spectre (HSPICE mode) may not expand 'L2' to its .param value on
+        # instance lines (L='L2'), so we replace references with literal values.
+        # Patterns: W='Wtail' / W=Wtail / L='Ltail' / L=Ltail
+        for name, value in resolved.items():
+            if name.startswith("nf_"):
+                continue
+            formatted = _format_spice_value(value)
+            # Replace with-quotes form: W='Wtail' → W=5u
+            content = re.sub(
+                rf"(\b[WL]\s*=\s*)'{re.escape(name)}'",
+                rf"\g<1>{formatted}",
+                content,
+            )
+            # Replace without-quotes form: W=Wtail → W=5u
+            content = re.sub(
+                rf"(\b[WL]\s*=\s*){re.escape(name)}\b",
+                rf"\g<1>{formatted}",
+                content,
+            )
 
         return content
 
@@ -461,7 +574,24 @@ def _format_spice_value(value: float) -> str:
 
 
 def _quantize_wl(name: str, value: float, step: float) -> float:
-    """如果参数名以 W 或 L 开头，按 step 取整到最近整数倍。"""
+    """如果参数名以 W 或 L 开头，按 step 取整到最近整数倍，且不低于 step。"""
     if name.startswith(("W", "L")):
-        return round(value / step) * step
+        return max(step, round(value / step) * step)
     return value
+
+
+def _parse_spice_suffix(s: str) -> float:
+    """Parse a SPICE value string with suffix to float.
+
+    Examples: '5u' -> 5e-6, '180n' -> 180e-9, '10k' -> 10e3
+    """
+    s = s.strip().lower()
+    suffixes = {
+        "t": 1e12, "g": 1e9, "meg": 1e6, "k": 1e3,
+        "m": 1e-3, "u": 1e-6, "n": 1e-9, "p": 1e-12, "f": 1e-15,
+    }
+    for suffix, multiplier in sorted(suffixes.items(), key=lambda x: -len(x[0])):
+        if s.endswith(suffix):
+            num_part = s[:-len(suffix)]
+            return float(num_part) * multiplier
+    return float(s)

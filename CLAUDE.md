@@ -21,14 +21,15 @@
       │
       ▼
 ② 在 <circuit_name>/ 文件夹下生成文件（名称由LLM根据电路决定）:
-   ├── <circuit_name>.cir          # DUT 子电路（含 .param 可调参数）
+   ├── <circuit_name>.cir          # DUT 子电路（含 .param 可调参数，系统自动提取搜索空间）
    ├── tb_<circuit_name>_ac.sp     # AC 仿真 testbench（含 .meas）
    ├── tb_<circuit_name>_tran.sp   # （可选）Transient 仿真 testbench
-   ├── params.json                 # 参数搜索空间
+   ├── params.json                 # （可选）参数搜索空间，省略时自动从网表提取
    └── requirements.json           # 设计指标
       │
       ▼
-③ 调用 python main.py --netlist <circuit_name>/<circuit_name>.cir --testbench <circuit_name>/tb_<circuit_name>_ac.sp <circuit_name>/tb_<circuit_name>_tran.sp --params <circuit_name>/params.json --requirements <circuit_name>/requirements.json
+③ 调用 python main.py --netlist <circuit_name>/<circuit_name>.cir --testbench <circuit_name>/tb_<circuit_name>_ac.sp <circuit_name>/tb_<circuit_name>_tran.sp --requirements <circuit_name>/requirements.json
+   （--params 可省略，系统自动从网表 .param 声明中提取搜索空间并分配合理边界）
       │
       ▼
 ④ 读取 outputs/<project_name>/results.json，向用户汇报结果
@@ -60,13 +61,17 @@
 - 无论 .cir 还是 .sp 文件，开头第一行必须是注释，不允许写有效代码
 - W 和 L 的最小单位是 10n，只能是 10n 的倍数增减
 
-### 2.2 params.json — 参数搜索空间
+### 2.2 params.json — 参数搜索空间（可选）
 
-**格式规范：**
+> **params.json 已变为可选**。如果省略，系统会自动从网表的 `.param` 声明中提取所有参数，并根据命名规则（W→宽度、L→长度、C→电容、R→电阻、I→电流）分配合理的搜索边界。
+
+仅在需要手动控制搜索范围时才需要写 params.json，格式规范如下：
+
 - Width 参数：必有 `max_per_finger: 3e-6`
 - Length 参数：不要 `max_per_finger`
 - `log_scale: true` 适用于 W/L/C/R
 - **绝对不要包含 nf 或 M 参数**（系统自动管理）
+- **必须包含所有 .param 声明的变量**（不止 W/L，还要 Cc、Rz、Ibias 等）
 
 ```json
 [
@@ -107,7 +112,6 @@ cd Agent_LLM_BO/circuit_agent
 python main.py \
   --netlist /path/to/<circuit_name>/<circuit_name>.cir \
   --testbench /path/to/<circuit_name>/tb_<circuit_name>_ac.sp \
-  --params /path/to/<circuit_name>/params.json \
   --requirements /path/to/<circuit_name>/requirements.json
 ```
 
@@ -125,7 +129,6 @@ python main.py \
 python main.py \
   --netlist <circuit_name>/<circuit_name>.cir \
   --testbench <circuit_name>/tb_<circuit_name>_ac.sp \
-  --params <circuit_name>/params.json \
   --gain 40 --bw 500e6 --pm 60 --power 0.001 --load-cap 500e-15
 ```
 
@@ -204,7 +207,6 @@ cp .env.example .env
 # 2. 生成网表后运行优化（带 dry-run 测试）
 python main.py \
   --netlist <circuit_name>/<circuit_name>.cir \
-  --params <circuit_name>/params.json \
   --gain 40 --bw 500e6 --pm 60 --power 0.001 \
   --dry-run
 
