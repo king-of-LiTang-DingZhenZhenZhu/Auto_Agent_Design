@@ -1,0 +1,18 @@
+* test_ota.cir -- 测试用 OTA（含 W/L/Cc/Rz/Ibias 参数）
+.lib '/PDKS/TSMC28nm/models/hspice/toplevel.l' TOP_TT
+.options redefinedparams=ignore
+.param Wtail=15u Ltail=100n Wdp=12u Ldp=80n Wcm=8u Lcm=120n Cc=1.5p Rz=5k Ibias=30u
+
+.subckt test_ota vip vin vout vdd vss
+* --- Tail current source ---
+Mtail ntail vtail vss vss nch_mac W='Wtail' L='Ltail' nf=1
+* --- Differential pair ---
+Mdp1 vx1 vip ntail vss nch_mac W='Wdp' L='Ldp' nf=1
+Mdp2 vout vin ntail vss nch_mac W='Wdp' L='Ldp' nf=1
+* --- Active load ---
+Mcm1 vx1 vx1 vdd vdd pch_mac W='Wcm' L='Lcm' nf=1
+Mcm2 vout vx1 vdd vdd pch_mac W='Wcm' L='Lcm' nf=1
+* --- Compensation ---
+Cc vout vx1 Cc
+Rz vout vx1 Rz
+.ends test_ota

@@ -1,10 +1,13 @@
-"""LLM + Bayesian Optimization hybrid optimization engine."""
+"""Bayesian Optimization engine with optional LLM parameter validation.
+
+Netlist generation is handled by the hard-constrained topology library.
+LLM is only used for physical-feasibility checks during BO.
+"""
 
 from __future__ import annotations
 
 import json
 import logging
-import time
 from pathlib import Path
 
 import optuna
@@ -30,10 +33,12 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 
 class HybridOptimizer:
-    """LLM + Bayesian Optimization hybrid optimization engine.
+    """BO-driven optimization with LLM parameter validation.
 
-    BO handles continuous parameter search efficiently.
-    LLM validates physical feasibility, repairs errors, and suggests topology changes.
+    BO handles continuous parameter search.
+    LLM validates physical feasibility every N iterations.
+    Topology changes use predefined escalation paths (not LLM).
+    Netlist repair is unnecessary — topologies are correct-by-construction.
     """
 
     def __init__(
@@ -64,8 +69,9 @@ class HybridOptimizer:
         circuit_files: CircuitFiles | None = None,
         max_iterations: int | None = None,
         on_iteration: callable = None,
+        topology_name: str = "",
     ) -> OptimizationState:
-        """Run the full LLM+BO optimization loop.
+        """Run the full BO optimization loop.
 
         Args:
             template: Initial parametrized SPICE netlist template (circuit DUT only)
@@ -75,6 +81,7 @@ class HybridOptimizer:
                           renders circuit.cir + tb.sp per iteration.
             max_iterations: Override max iterations
             on_iteration: Callback(iteration, params, result, reward) for progress display
+            topology_name: Registry key for the current topology (for escalation)
 
         Returns:
             OptimizationState with full history and best result
@@ -111,6 +118,7 @@ class HybridOptimizer:
                         circuit_template=current_template.template_content,
                         dialogue_dir=str(self.config.get_workspace_path() / "LLM_DIALOGUE"),
                         iteration=iteration,
+                        topology_name=topology_name,
                     )
                 except Exception as e:
                     logger.warning(f"LLM validation failed, using BO params: {e}")
@@ -131,11 +139,8 @@ class HybridOptimizer:
                     w_l_grid_step=self.config.w_l_grid_step,
                 )
 
-            # Step 4: Run simulation (with error repair on primary, then extras)
-            sim_result = self._run_with_repair(
-                tb_paths, run_dir, current_template, proposed_params,
-                testbenches=current_testbenches,
-            )
+            # Step 4: Run simulation (no LLM repair — netlists are correct-by-construction)
+            sim_result = self._run_simulation(tb_paths, run_dir)
 
             # Step 5: Compute reward
             reward = self.compute_reward(sim_result, targets)
@@ -162,28 +167,30 @@ class HybridOptimizer:
                 logger.info(f"All targets met at iteration {iteration + 1}!")
                 break
 
-            # Step 7: Check stagnation and trigger topology change
+            # Step 7: Check stagnation and attempt topology escalation
             if self._detect_stagnation(state):
                 if topology_changes < self.config.max_topology_changes:
-                    logger.info("Optimization stagnant, requesting LLM topology change")
-                    new_topology = self._request_topology_change(
-                        state, targets, current_template
-                    )
+                    logger.info("Optimization stagnant, attempting topology escalation")
+                    new_topology = self._request_topology_change(topology_name)
                     if new_topology:
-                        new_circuit_files, param_space = new_topology
-                        current_template = NetlistTemplate.from_netlist(new_circuit_files.circuit_netlist)
+                        new_circuit_files, new_param_space, next_name = new_topology
+                        current_template = NetlistTemplate.from_netlist(
+                            new_circuit_files.circuit_netlist
+                        )
                         current_testbenches = new_circuit_files.testbenches
-                        state.param_space = param_space
+                        param_space = new_param_space
+                        topology_name = next_name
+                        state.param_space = new_param_space
                         state.topology_changes += 1
                         topology_changes += 1
                         # Recreate study with new param space
                         study = optuna.create_study(
                             direction="maximize", sampler=TPESampler(seed=42)
                         )
-                        logger.info("Topology changed, restarting BO search")
+                        logger.info("Topology escalated to %s, restarting BO search", next_name)
                 else:
                     logger.warning(
-                        f"Max topology changes ({self.config.max_topology_changes}) reached"
+                        "Max topology changes (%d) reached", self.config.max_topology_changes
                     )
 
         # Save history
@@ -291,63 +298,35 @@ class HybridOptimizer:
 
         return reward
 
-    def _run_with_repair(
+    def _run_simulation(
         self,
         tb_paths: list[Path],
         run_dir: Path,
-        template: NetlistTemplate,
-        params: dict[str, float],
-        testbenches: list[str] | None = None,
     ) -> SimResult:
-        """Run simulation with automatic error repair via LLM.
+        """Run primary and extra testbenches, merge results.
 
-        Runs primary testbench (tb_paths[0]) with repair loop. Then runs extra
-        testbenches sequentially and merges their results.
+        No LLM repair — netlists generated by the topology library are
+        syntactically correct by construction.  Failures are typically
+        convergence issues from extreme parameter values.
         """
         primary_path = tb_paths[0]
-        has_split = bool(testbenches)
 
-        # --- Primary simulation with repair ---
-        for attempt in range(self.config.max_repair_attempts + 1):
-            success, log_content, error_msg = self.sim.run_spectre(primary_path, run_dir)
+        success, log_content, error_msg = self.sim.run_spectre(primary_path, run_dir)
 
-            if success:
-                merged = self.sim.parse_simulation_log(log_content)
-                break  # proceed to extra simulations
-
+        if not success:
             error_type = self.sim.classify_error(log_content or error_msg)
             logger.warning(
-                f"Simulation failed (attempt {attempt+1}): {error_type} - {error_msg[:100]}"
+                "Simulation failed: %s — %s", error_type, (error_msg or "")[:150]
+            )
+            return SimResult(
+                converged=False, error_message=f"{error_type}: {(error_msg or '')[:200]}"
             )
 
-            if error_type in ("syntax", "node_floating") and attempt < self.config.max_repair_attempts:
-                try:
-                    if has_split:
-                        circuit_content = (run_dir / "circuit.cir").read_text(encoding="utf-8")
-                        tb_content = (run_dir / "tb.sp").read_text(encoding="utf-8")
-                        repaired_circuit, repaired_tb = self.llm.repair_netlist(
-                            circuit_content, log_content or error_msg, attempt + 1,
-                            testbench=tb_content,
-                        )
-                        (run_dir / "circuit.cir").write_text(repaired_circuit, encoding="utf-8")
-                        (run_dir / "tb.sp").write_text(repaired_tb, encoding="utf-8")
-                        logger.info(f"LLM repaired circuit + testbench (attempt {attempt + 1})")
-                    else:
-                        current_netlist = primary_path.read_text(encoding="utf-8")
-                        repaired = self.llm.repair_netlist(
-                            current_netlist, log_content or error_msg, attempt + 1
-                        )
-                        primary_path.write_text(repaired, encoding="utf-8")
-                        logger.info(f"LLM repaired netlist (attempt {attempt + 1})")
-                    continue
-                except Exception as e:
-                    logger.error(f"LLM repair failed: {e}")
+        merged = self.sim.parse_simulation_log(log_content)
 
-            return SimResult(converged=False, error_message=f"{error_type}: {error_msg[:200]}")
-
-        # --- Extra simulations ---
+        # Extra testbenches (e.g., transient)
         for tb_path in tb_paths[1:]:
-            logger.info(f"Running extra simulation: {tb_path.name}")
+            logger.info("Running extra simulation: %s", tb_path.name)
             ok, log, _ = self.sim.run_spectre(tb_path, run_dir)
             if ok:
                 extra = self.sim.parse_simulation_log(log)
@@ -362,7 +341,6 @@ class HybridOptimizer:
             return False
 
         recent = state.history[-window:]
-        best_recent = max(r.reward for r in recent)
 
         # Check if the global best was achieved before the recent window
         if state.best_iteration < len(state.history) - window:
@@ -377,50 +355,47 @@ class HybridOptimizer:
 
     def _request_topology_change(
         self,
-        state: OptimizationState,
-        targets: DesignTarget,
-        current_template: NetlistTemplate,
-    ) -> tuple[CircuitFiles, ParamSpace] | None:
-        """Ask LLM to suggest a topology change."""
-        # Build history summary
-        history_summary = self._build_history_summary(state)
+        topology_name: str,
+    ) -> tuple[CircuitFiles, ParamSpace, str] | None:
+        """Attempt topology escalation via predefined path.
 
-        best_record = state.best_record
-        if not best_record:
+        Uses TopologyMeta.escalation to find the next topology.
+        Returns (CircuitFiles, ParamSpace, new_topology_name) or None.
+        """
+        if not topology_name:
+            logger.warning("No topology name set — cannot escalate")
             return None
 
         try:
-            result = self.llm.suggest_topology_change(
-                best_record.result, targets, history_summary
-            )
-            return result
-        except Exception as e:
-            logger.error(f"LLM topology change request failed: {e}")
+            from topologies import get_topology
+
+            current = get_topology(topology_name)
+        except ValueError:
+            logger.warning("Unknown topology '%s' — cannot escalate", topology_name)
             return None
 
-    def _build_history_summary(self, state: OptimizationState) -> str:
-        """Build a concise summary of optimization history for LLM."""
-        if not state.history:
-            return "No optimization history yet."
-
-        lines = [
-            f"Total iterations: {state.total_iterations}",
-            f"Best reward: {state.best_reward:.1f} (iteration {state.best_iteration})",
-            f"Topology changes so far: {state.topology_changes}",
-            "",
-            "Recent 5 iterations:",
-        ]
-
-        for record in state.history[-5:]:
-            lines.append(
-                f"  Iter {record.iteration}: reward={record.reward:.1f} | "
-                f"{record.result.to_summary_str()}"
+        if not current.meta.escalation:
+            logger.warning(
+                "No escalation path defined for '%s' — recommend Claude agent intervention",
+                topology_name,
             )
+            return None
 
-        if state.best_record:
-            lines.append(f"\nBest params: {_format_params(state.best_record.params)}")
+        next_name = current.meta.escalation
+        logger.info("Escalating topology: %s → %s", topology_name, next_name)
 
-        return "\n".join(lines)
+        try:
+            next_topo = get_topology(next_name)
+            return (
+                next_topo.get_circuit_files(),
+                next_topo.get_param_space(),
+                next_name,
+            )
+        except ValueError:
+            logger.warning(
+                "Escalation target '%s' not yet implemented", next_name
+            )
+            return None
 
     def _save_history(self, state: OptimizationState) -> None:
         """Save optimization history to JSON."""
@@ -458,21 +433,3 @@ class HybridOptimizer:
             json.dumps(history_data, indent=2, default=str), encoding="utf-8"
         )
         logger.info(f"History saved to {output_path}")
-
-
-def _format_params(params: dict[str, float]) -> str:
-    """Format parameters for display."""
-    parts = []
-    for name, value in params.items():
-        abs_val = abs(value)
-        if abs_val >= 1e-3:
-            parts.append(f"{name}={value:.4g}")
-        elif abs_val >= 1e-6:
-            parts.append(f"{name}={value*1e6:.2f}u")
-        elif abs_val >= 1e-9:
-            parts.append(f"{name}={value*1e9:.1f}n")
-        elif abs_val >= 1e-12:
-            parts.append(f"{name}={value*1e12:.2f}p")
-        else:
-            parts.append(f"{name}={value:.2e}")
-    return ", ".join(parts)

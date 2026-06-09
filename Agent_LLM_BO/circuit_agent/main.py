@@ -63,14 +63,16 @@ def main():
         # --- File mode: user provides netlist directly ---
         run_from_file(args, llm, sim, optimizer, config)
     else:
-        # --- Interactive mode: LLM generates netlist ---
+        # --- Interactive mode: topology library generates netlist ---
         targets, original_text, project_name = conduct_dialogue(llm)
         if not targets:
             console.print("[yellow]No targets specified. Exiting.[/yellow]")
             return
         # Save requirements for traceability
         _save_requirements(targets, original_text=original_text, config=config, project_name=project_name)
-        run_pipeline(targets, llm, sim, optimizer, config, project_name=project_name)
+        topology_name = getattr(args, "topology", None) or ""
+        run_pipeline(targets, llm, sim, optimizer, config,
+                     project_name=project_name, topology_name=topology_name)
 
 
 def run_from_file(
@@ -244,27 +246,8 @@ def run_from_file(
 
     if not success:
         console.print(f"[yellow]Initial simulation failed: {error_msg[:100]}[/yellow]")
-        console.print("[dim]Attempting LLM repair before optimization...[/dim]")
-        try:
-            if circuit_files and circuit_files.testbenches:
-                circuit_content = (run_dir / "circuit.cir").read_text(encoding="utf-8")
-                tb_content = (run_dir / "tb.sp").read_text(encoding="utf-8")
-                repaired = llm.repair_netlist(circuit_content, log_content or error_msg, 1,
-                                               testbench=tb_content)
-                if isinstance(repaired, tuple):
-                    (run_dir / "circuit.cir").write_text(repaired[0], encoding="utf-8")
-                    (run_dir / "tb.sp").write_text(repaired[1], encoding="utf-8")
-                    template = NetlistTemplate.from_netlist(repaired[0])
-            else:
-                netlist_content = tb_paths[0].read_text(encoding="utf-8")
-                repaired = llm.repair_netlist(netlist_content, log_content or error_msg, 1)
-                tb_paths[0].write_text(repaired, encoding="utf-8")
-                template = NetlistTemplate.from_netlist(repaired)
-            success, log_content, error_msg = sim.run_spectre(tb_paths[0], run_dir)
-        except Exception:
-            pass
-
-    if success:
+        console.print("[dim]Proceeding to optimization — BO may find better parameters.[/dim]")
+    else:
         initial_result = sim.parse_simulation_log(log_content)
         # Run extra testbenches and merge results
         for tb_path in tb_paths[1:]:
@@ -282,12 +265,10 @@ def run_from_file(
                               targets=targets, project_name=project_name,
                               original_requirement=original_requirement_text)
             return
-    else:
-        console.print("[yellow]Initial simulation did not converge. Proceeding to optimization...[/yellow]")
 
     # --- Optimization loop ---
     console.print(
-        f"\n[bold blue][Phase 2][/bold blue] Starting LLM+BO optimization "
+        f"\n[bold blue][Phase 2][/bold blue] Starting BO optimization "
         f"(max {config.max_iterations} iterations)...\n"
     )
 
@@ -318,6 +299,7 @@ def run_from_file(
         targets=targets,
         circuit_files=circuit_files,
         on_iteration=on_iteration,
+        topology_name="",  # file mode: no topology metadata
     )
 
     # --- Output results ---
@@ -413,21 +395,34 @@ def run_pipeline(
     optimizer: HybridOptimizer,
     config: Settings,
     project_name: str = "",
+    topology_name: str = "",
 ) -> None:
-    """Execute the full optimization pipeline."""
+    """Execute the full optimization pipeline using the topology library."""
 
-    # --- Phase 1: Generate initial netlist ---
-    console.print("\n[bold blue][Phase 1][/bold blue] Generating initial SPICE netlist...")
+    # --- Phase 1: Select and instantiate topology ---
+    console.print("\n[bold blue][Phase 1][/bold blue] Selecting circuit topology...")
 
-    try:
-        circuit_files, param_space = llm.generate_initial_netlist(targets)
-    except Exception as e:
-        console.print(f"[red]Failed to generate initial netlist: {e}[/red]")
-        return
+    from topologies import get_topology, get_topology_for_targets
+
+    if not topology_name:
+        # Rule-based selection
+        topology_name = get_topology_for_targets(targets) or ""
+        if not topology_name:
+            # Fall back to LLM-assisted selection
+            available = [m.__dict__ for m in _list_topology_meta_dicts()]
+            topology_name = llm.select_topology(
+                targets.to_prompt_str(), available
+            ) or "5t_ota"
+
+    console.print(f"[green]✓[/green] Selected topology: [cyan]{topology_name}[/cyan]")
+
+    topology = get_topology(topology_name)
+    circuit_files = topology.get_circuit_files()
+    param_space = topology.get_param_space()
 
     template = NetlistTemplate.from_netlist(circuit_files.circuit_netlist)
 
-    console.print(f"[green]✓[/green] Netlist generated with {len(param_space.params)} optimizable parameters:")
+    console.print(f"[green]✓[/green] Circuit generated with {len(param_space.params)} optimizable parameters:")
     console.print(f"     Subcircuit: [cyan]{circuit_files.circuit_name}[/cyan]")
     for p in param_space.params:
         console.print(f"  {p.name}: [{_eng_fmt(p.low)} ~ {_eng_fmt(p.high)}]")
@@ -444,9 +439,8 @@ def run_pipeline(
     # --- Phase 2: Initial simulation ---
     console.print("\n[bold blue][Phase 2][/bold blue] Running initial Spectre simulation...")
 
-    # Use midpoint of parameter ranges as initial values
     initial_params = param_space.get_initial_params(
-        circuit_files.circuit_netlist if circuit_files else netlist_content
+        circuit_files.circuit_netlist if circuit_files else template.template_content
     )
 
     run_dir = config.get_run_dir(0)
@@ -459,29 +453,11 @@ def run_pipeline(
     success, log_content, error_msg = sim.run_spectre(tb_paths[0], run_dir)
 
     if not success:
-        console.print(f"[yellow]Initial simulation failed: {error_msg[:100]}[/yellow]")
-        console.print("[dim]Attempting LLM repair before optimization...[/dim]")
-        # Try repair of circuit + testbench
-        circuit_content = (run_dir / "circuit.cir").read_text(encoding="utf-8")
-        tb_content = (run_dir / "tb.sp").read_text(encoding="utf-8")
-        try:
-            repaired = llm.repair_netlist(circuit_content, log_content or error_msg, 1, testbench=tb_content)
-            if isinstance(repaired, tuple):
-                (run_dir / "circuit.cir").write_text(repaired[0], encoding="utf-8")
-                (run_dir / "tb.sp").write_text(repaired[1], encoding="utf-8")
-                template = NetlistTemplate.from_netlist(repaired[0])
-                circuit_files = CircuitFiles(
-                    circuit_netlist=repaired[0],
-                    testbenches=[repaired[1]],
-                    circuit_name=CircuitFiles.extract_subckt_name(repaired[0]),
-                )
-            else:
-                tb_paths[0].write_text(repaired, encoding="utf-8")
-                template = NetlistTemplate.from_netlist(repaired)
-            success, log_content, error_msg = sim.run_spectre(tb_paths[0], run_dir)
-        except Exception:
-            pass
-    if success:
+        console.print(
+            f"[yellow]Initial simulation failed: {(error_msg or '')[:100]}[/yellow]"
+        )
+        console.print("[dim]Proceeding to optimization — BO may find better parameters.[/dim]")
+    else:
         initial_result = sim.parse_simulation_log(log_content)
         for tb_path in tb_paths[1:]:
             ok, log, _ = sim.run_spectre(tb_path, run_dir)
@@ -498,12 +474,10 @@ def run_pipeline(
                               circuit_files=circuit_files, param_space=param_space,
                               targets=targets, project_name=project_name)
             return
-    else:
-        console.print("[yellow]Initial simulation did not converge. Proceeding to optimization...[/yellow]")
 
     # --- Phase 3: Optimization loop ---
     console.print(
-        f"\n[bold blue][Phase 3][/bold blue] Starting LLM+BO optimization "
+        f"\n[bold blue][Phase 3][/bold blue] Starting BO optimization "
         f"(max {config.max_iterations} iterations)...\n"
     )
 
@@ -534,6 +508,7 @@ def run_pipeline(
         targets=targets,
         circuit_files=circuit_files,
         on_iteration=on_iteration,
+        topology_name=topology_name,
     )
 
     # --- Phase 4: Output results ---
@@ -800,6 +775,27 @@ def _save_final_output(
     console.print(f"\n[dim]cd {project_root}[/dim]")
 
 
+def _list_topology_meta_dicts() -> list[dict]:
+    """Return metadata dicts for all registered topologies."""
+    try:
+        from topologies import list_topologies
+        return [
+            {
+                "name": m.name,
+                "display_name": m.display_name,
+                "description": m.description,
+                "min_gain_db": m.min_gain_db,
+                "max_gain_db": m.max_gain_db,
+                "min_bw_hz": m.min_bw_hz,
+                "max_bw_hz": m.max_bw_hz,
+                "typical_power_w": m.typical_power_w,
+            }
+            for m in list_topologies()
+        ]
+    except Exception:
+        return []
+
+
 def _build_circuit_files(netlist_content: str) -> CircuitFiles | None:
     """Attempt to split a netlist into circuit + testbench.
 
@@ -870,6 +866,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--load-cap", type=float, default=None, help="Load capacitance in F")
 
     # --- General options ---
+    parser.add_argument(
+        "--topology", type=str, default=None,
+        help="Topology name to use (e.g., '5t_ota'). Overrides auto-selection."
+    )
     parser.add_argument(
         "--dry-run", action="store_true",
         help="Run in mock mode without Spectre (for testing)"

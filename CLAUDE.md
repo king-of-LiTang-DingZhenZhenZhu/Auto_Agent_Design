@@ -4,10 +4,11 @@
 
 | 角色 | 职责 |
 |------|------|
-| **你 (Claude Code)** | 理解用户需求、生成网表文件、调用 Python 脚本、读取结果展示给用户 |
-| **Python 脚本** | 执行 Spectre 仿真、解析结果、运行 LLM+BO 优化循环（50轮迭代） |
+| **你 (Claude Code)** | 理解需求 → 查阅知识库选择拓扑 → 调 Python 拓扑库生成网表文件 → 调 main.py 运行优化 → 读取结果 |
+| **Python 拓扑库** (`topologies/`) | 硬约束生成 .cir / .sp 网表文件，保证语法正确 |
+| **Python 脚本** (`main.py`) | 执行 Spectre 仿真、解析结果、运行 BO 优化循环 |
 
-**你不会直接运行 Spectre 或修改参数** — 这些都交给 Python 脚本。
+**你不会直接写 SPICE 网表、运行 Spectre、或修改参数** — 网表由拓扑库生成，仿真/优化交给 main.py。
 
 ---
 
@@ -20,22 +21,28 @@
 ① 解析需求，提取指标
       │
       ▼
-② 在 <circuit_name>/ 文件夹下生成文件（名称由LLM根据电路决定）:
-   ├── <circuit_name>.cir          # DUT 子电路（含 .param 可调参数，系统自动提取搜索空间）
+② 查阅知识库，选择拓扑
+   ├── knowledge_base/topology_selection_guide.md   ← 拓扑选择决策指南
+   └── knowledge_base/pdk_constraints.md            ← TSMC N28 约束
+      │
+      ▼
+③ 调 Python 拓扑库生成网表文件（硬约束，语法保证正确）
+   在 <circuit_name>/ 文件夹下生成:
+   ├── <circuit_name>.cir          # DUT 子电路（含 .param，系统自动提取搜索空间）
    ├── tb_<circuit_name>_ac.sp     # AC 仿真 testbench（含 .meas）
    ├── tb_<circuit_name>_tran.sp   # （可选）Transient 仿真 testbench
    ├── params.json                 # （可选）参数搜索空间，省略时自动从网表提取
    └── requirements.json           # 设计指标
       │
       ▼
-③ 调用 python main.py --netlist <circuit_name>/<circuit_name>.cir --testbench <circuit_name>/tb_<circuit_name>_ac.sp <circuit_name>/tb_<circuit_name>_tran.sp --requirements <circuit_name>/requirements.json
+④ 调用 python main.py --netlist <circuit_name>/<circuit_name>.cir --testbench <circuit_name>/tb_<circuit_name>_ac.sp <circuit_name>/tb_<circuit_name>_tran.sp --requirements <circuit_name>/requirements.json
    （--params 可省略，系统自动从网表 .param 声明中提取搜索空间并分配合理边界）
       │
       ▼
-④ 读取 outputs/<project_name>/results.json，向用户汇报结果
+⑤ 读取 outputs/<project_name>/results.json，向用户汇报结果
 ```
 
-> **文件命名**：不要硬编码为 `circuit.cir`。根据电路拓扑命名，例如：5T OTA → `5t_ota.cir` + `tb_5t_ota_ac.sp`；两级运放 → `two_stage_ota.cir` + `tb_two_stage_ota_ac.sp`。所有生成的输入文件放在同名文件夹下，避免散落在根目录。
+> **文件命名**：根据电路拓扑命名，例如：5T OTA → `5t_ota.cir` + `tb_5t_ota_ac.sp`；两级运放 → `two_stage_ota.cir` + `tb_two_stage_ota_ac.sp`。所有生成的输入文件放在同名文件夹下。
 
 ---
 
@@ -49,42 +56,100 @@
 
 ---
 
-## 第二步：生成的各类文件的要求
+## 第二步：查阅知识库，选择拓扑
 
+### 2.1 阅读知识库
 
-### 2.1 网表文件 (.cir) 与 testbench (.sp)
+按顺序阅读：
+1. **[knowledge_base/topology_selection_guide.md](Agent_LLM_BO/circuit_agent/knowledge_base/topology_selection_guide.md)** — 有哪些可用拓扑、各自指标能力范围、选择决策树
+2. **[knowledge_base/pdk_constraints.md](Agent_LLM_BO/circuit_agent/knowledge_base/pdk_constraints.md)** — TSMC N28 工艺约束（器件模型、W/L 范围、电流密度）
 
-- 编写规范参考存放到了 `.claude/rules` 下
-- **文件命名**：不要硬编码为 `circuit.cir`，由 LLM 根据电路拓扑决定，如 `5t_ota.cir`、`two_stage_ota.cir`
+### 2.2 匹配拓扑
 
-**几个重要的点**
-- 无论 .cir 还是 .sp 文件，开头第一行必须是注释，不允许写有效代码
-- W 和 L 的最小单位是 10n，只能是 10n 的倍数增减
+根据用户需求指标，从知识库中的决策树选择最合适的拓扑：
 
-### 2.2 params.json — 参数搜索空间（可选）
-
-> **params.json 已变为可选**。如果省略，系统会自动从网表的 `.param` 声明中提取所有参数，并根据命名规则（W→宽度、L→长度、C→电容、R→电阻、I→电流）分配合理的搜索边界。
-
-仅在需要手动控制搜索范围时才需要写 params.json，格式规范如下：
-
-- Width 参数：必有 `max_per_finger: 3e-6`
-- Length 参数：不要 `max_per_finger`
-- `log_scale: true` 适用于 W/L/C/R
-- **绝对不要包含 nf 或 M 参数**（系统自动管理）
-- **必须包含所有 .param 声明的变量**（不止 W/L，还要 Cc、Rz、Ibias 等）
-
-```json
-[
-  {"name": "Wtail", "low": 0.5e-6, "high": 20e-6, "log_scale": true, "unit": "m", "max_per_finger": 3e-6},
-  {"name": "Ltail", "low": 30e-9,  "high": 500e-9, "log_scale": true, "unit": "m"},
-  {"name": "Wdp",   "low": 0.5e-6, "high": 20e-6, "log_scale": true, "unit": "m", "max_per_finger": 3e-6},
-  {"name": "Ldp",   "low": 30e-9,  "high": 500e-9, "log_scale": true, "unit": "m"},
-  {"name": "Wcm",   "low": 0.5e-6, "high": 20e-6, "log_scale": true, "unit": "m", "max_per_finger": 3e-6},
-  {"name": "Lcm",   "low": 30e-9,  "high": 1e-6,   "log_scale": true, "unit": "m"}
-]
+```
+gain ≥ 60 dB → two_stage_ota 或 folded_cascode
+gain < 60 dB → 5t_ota（最简单）
+power < 100uW → 5t_ota + 亚阈值偏置
 ```
 
-### 2.3 requirements.json — 设计指标
+> **原则**：在满足指标的前提下，优先选择复杂度最低的拓扑。
+
+### 2.3 查看可用拓扑列表
+
+```bash
+cd Agent_LLM_BO/circuit_agent
+conda run -n circuit_agent python -c "
+from topologies import list_topologies
+for m in list_topologies():
+    print(f'{m.name}: {m.display_name} (gain {m.min_gain_db}-{m.max_gain_db} dB)')
+"
+```
+
+---
+
+## 第三步：调 Python 拓扑库生成网表文件
+
+### 3.1 使用拓扑库生成文件
+
+```bash
+cd Agent_LLM_BO/circuit_agent
+
+# 生成网表文件到指定目录
+conda run -n circuit_agent python -c "
+from topologies import get_topology
+from pathlib import Path
+import json
+
+# 选择拓扑
+topo = get_topology('5t_ota')  # 根据第二步的决策选择
+
+# 生成文件
+cf = topo.get_circuit_files()
+out = Path('<circuit_name>')   # 例如: 5t_ota
+out.mkdir(parents=True, exist_ok=True)
+
+# 写 DUT 网表
+cir = out / '5t_ota.cir'
+cir.write_text(cf.circuit_netlist)
+print(f'Written: {cir}')
+
+# 写 AC testbench
+tb = out / 'tb_5t_ota_ac.sp'
+tb.write_text(cf.testbenches[0])
+print(f'Written: {tb}')
+
+# 写 requirements.json
+req = {
+    'original_requirement': '<用户原始输入>',
+    'targets': {
+        'gain_db': 40,
+        'bandwidth_hz': 500000000,
+        'phase_margin_deg': 60,
+        'power_w': 0.001,
+        'load_cap_f': 500e-15
+    },
+    'topology_hint': '5T OTA'
+}
+req_path = out / 'requirements.json'
+req_path.write_text(json.dumps(req, indent=2, ensure_ascii=False))
+print(f'Written: {req_path}')
+"
+```
+
+### 3.2 网表文件规范
+
+> Python 拓扑库生成的网表已经保证语法正确，无需手动检查。关键特性：
+> - 每个晶体管 `nf=1`，W 为总有效宽度（系统自动拆 finger）
+> - `.param` 声明所有可调参数
+> - NMOS bulk → gnd! (vss), PMOS bulk → vdd!
+> - `.meas` 名称匹配标准：`gain_dc`, `phase_dc`, `gbw_hz`, `phase_at_ugf`, `power_total`
+> - W/L 最小单位 10nm
+
+如需了解底层细节，见 [.claude/rules/circuit_cir_guide.md](.claude/rules/circuit_cir_guide.md) 和 [.claude/rules/testbench_sp_guide.md](.claude/rules/testbench_sp_guide.md)。
+
+### 3.3 requirements.json 格式
 
 ```json
 {
@@ -104,15 +169,15 @@
 
 ---
 
-## 第三步：调用 Python 脚本
+## 第四步：调用 Python 脚本运行优化
 
 ```bash
 cd Agent_LLM_BO/circuit_agent
 
 python main.py \
-  --netlist /path/to/<circuit_name>/<circuit_name>.cir \
-  --testbench /path/to/<circuit_name>/tb_<circuit_name>_ac.sp \
-  --requirements /path/to/<circuit_name>/requirements.json
+  --netlist <circuit_name>/<circuit_name>.cir \
+  --testbench <circuit_name>/tb_<circuit_name>_ac.sp \
+  --requirements <circuit_name>/requirements.json
 ```
 
 **常用可选参数：**
@@ -134,7 +199,7 @@ python main.py \
 
 ---
 
-## 第四步：读取结果
+## 第五步：读取结果
 
 脚本结束后，读取以下文件：
 
@@ -151,6 +216,7 @@ python main.py \
   },
   "params": {"Wtail": 12e-6, "Ltail": 80e-9, ...},
   "target_status": {"gain_db": true, "bandwidth_hz": true, ...},
+  "gap": {"gain_db": 2.3, ...},
   "all_targets_met": true
 }
 ```
@@ -167,7 +233,7 @@ outputs/<project_name>/
 ├── netlist/
 │   └── circuit.cir              # 最优参数渲染后的电路
 ├── simulation/
-│   └── tb_circuit_ac.sp         # 仿真 testbench
+│   └── tb_circuit.sp            # 仿真 testbench
 ├── data/
 │   ├── sim.log                  # 最优迭代的仿真日志
 │   └── raw/                     # Spectre PSF 数据
@@ -182,17 +248,20 @@ outputs/<project_name>/
 
 ### 仿真失败怎么办
 
-Python 脚本会自动尝试 LLM 修复（最多3次）。如果仍然失败：
+Python 脚本不再调用 LLM 修复网表（网表由拓扑库生成，语法正确）。仿真失败通常是收敛问题或参数极端值导致：
 
 1. 读取失败日志 `workspace/run_000/sim.log`
-2. 分析错误类型（语法错误 / 收敛问题 / 浮空节点 / 模型未找到）
-3. 修改 `.cir` 或 `.sp` 文件后重新运行
+2. 分析错误类型（收敛问题 → 调整偏置参数；模型未找到 → 检查 PDK 路径）
+3. 修改 `.cir` 或 `.sp` 文件（如有必要）后重新运行
 
 ### 优化结束仍未达标
 
 1. 检查 `summary_report.txt` 中的 gap 分析
 2. 看哪个指标差距最大
-3. 考虑：扩大参数搜索范围、建议用户放宽指标、或更换拓扑
+3. 考虑：
+   - 扩大参数搜索范围（通过手动 params.json）
+   - 建议用户放宽指标
+   - **换拓扑**：查阅拓扑指南中的升级路径（如 5t_ota → two_stage_ota），用新拓扑重新生成网表再优化
 
 ---
 
@@ -203,27 +272,60 @@ Python 脚本会自动尝试 LLM 修复（最多3次）。如果仍然失败：
 cd Agent_LLM_BO/circuit_agent
 cp .env.example .env
 # 编辑 .env，填入 DEEPSEEK_API_KEY
-# 或者直接在终端export DEEPSEEK_API_KEY=
-# 2. 生成网表后运行优化（带 dry-run 测试）
+
+# 2. 生成网表（使用拓扑库）
+conda run -n circuit_agent python -c "
+from topologies import get_topology
+from pathlib import Path
+import json
+
+topo = get_topology('5t_ota')
+cf = topo.get_circuit_files()
+out = Path('5t_ota')
+out.mkdir(parents=True, exist_ok=True)
+(out / '5t_ota.cir').write_text(cf.circuit_netlist)
+(out / 'tb_5t_ota_ac.sp').write_text(cf.testbenches[0])
+req = {'original_requirement': '5T OTA gain>40dB BW>500MHz', 'targets': {'gain_db': 40, 'bandwidth_hz': 5e8, 'phase_margin_deg': 60, 'power_w': 0.001}}
+(out / 'requirements.json').write_text(json.dumps(req, indent=2))
+print('Files generated in 5t_ota/')
+"
+
+# 3. 运行优化（dry-run 快速验证）
 python main.py \
-  --netlist <circuit_name>/<circuit_name>.cir \
-  --gain 40 --bw 500e6 --pm 60 --power 0.001 \
+  --netlist 5t_ota/5t_ota.cir \
+  --testbench 5t_ota/tb_5t_ota_ac.sp \
+  --requirements 5t_ota/requirements.json \
   --dry-run
 
-# 3. 查看结果
+# 4. 查看结果
 cat outputs/*/results.json
 ```
 
 ---
 
+## 架构说明
+
+```
+Agent (Claude Code)                    Python 脚本
+───────────────────                    ────────────
+• 解析用户需求                          • main.py: 接收文件路径
+• 查阅知识库选择拓扑                     • BO 优化循环
+• 调 topologies/ 库生成网表文件           • 调用 Spectre 仿真
+• 调用 main.py --netlist ...            • 解析结果，返回给 Agent
+• 读 results.json，汇报用户
+```
+
+> **LLM 的角色已收敛**：仅用于 (1) `parse_user_requirements()` 解析自然语言需求，(2) `validate_and_adjust_params()` 在 BO 迭代中检查参数物理可行性。网表生成、修复、拓扑变更全部由 Python 硬约束代码处理。
+
 ## 参考资源
 
-- **SPICE 脚本编写规范**：[.claude/rules/circuit_cir_guide.md](.claude/rules/circuit_cir_guide.md) / [.claude/rules/testbench_sp_guide.md](.claude/rules/testbench_sp_guide.md)
-  - `.cir` 子电路网表 → `.claude/rules/circuit_cir_guide.md`
-  - `.sp` 仿真 testbench → `.claude/rules/testbench_sp_guide.md`
-- **Spectre SCS 脚本编写规范**：[Agent_LLM_BO/Scs_Scirpts/Spectre.scs脚本编写规范.md](Agent_LLM_BO/Scs_Scirpts/Spectre.scs脚本编写规范.md)
-  - 写 `.scs` 网表时参考：Spectre 原生语法、参数定义、仿真控制
-- 知识库：[Agent_LLM_BO/circuit_agent/knowledge_base/](Agent_LLM_BO/circuit_agent/knowledge_base/)
+- **拓扑库代码**：[Agent_LLM_BO/circuit_agent/topologies/](Agent_LLM_BO/circuit_agent/topologies/)
+  - `base.py` — 抽象基类
+  - `five_t_ota.py` — 5T OTA 实现
+  - `__init__.py` — 拓扑注册表 + 选择器
+- **知识库**：[Agent_LLM_BO/circuit_agent/knowledge_base/](Agent_LLM_BO/circuit_agent/knowledge_base/)
+  - `topology_selection_guide.md` — 拓扑选择决策指南
   - `pdk_constraints.md` — TSMC N28 PDK 约束
-- 代码入口：[Agent_LLM_BO/circuit_agent/main.py](Agent_LLM_BO/circuit_agent/main.py)
-- 配置文件：[Agent_LLM_BO/circuit_agent/config.py](Agent_LLM_BO/circuit_agent/config.py)
+- **SPICE 编写规范**：[.claude/rules/circuit_cir_guide.md](.claude/rules/circuit_cir_guide.md) / [.claude/rules/testbench_sp_guide.md](.claude/rules/testbench_sp_guide.md)
+- **代码入口**：[Agent_LLM_BO/circuit_agent/main.py](Agent_LLM_BO/circuit_agent/main.py)
+- **配置文件**：[Agent_LLM_BO/circuit_agent/config.py](Agent_LLM_BO/circuit_agent/config.py)
