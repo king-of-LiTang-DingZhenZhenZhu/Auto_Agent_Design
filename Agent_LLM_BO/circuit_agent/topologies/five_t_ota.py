@@ -30,7 +30,7 @@ class FiveTOTA(BaseTopology):
         max_bw_hz=2e9,
         typical_power_w=500e-6,
         complexity=1,
-        escalation="two_stage_ota",  # future
+        escalation="two_stage_ota",
     )
 
     # ------------------------------------------------------------------

@@ -48,7 +48,7 @@ class Settings(BaseSettings):
 
     # Paths
     workspace_dir: str = "./workspace"
-    knowledge_base_dir: str = "./knowledge_base"
+    knowledge_base_dir: str = "./Opamp_knowledge_base"
     outputs_dir: str = "./outputs"
 
     # Mode

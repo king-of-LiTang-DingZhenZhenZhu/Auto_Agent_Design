@@ -1,8 +1,8 @@
-"""Circuit Design Agent - Main entry point.
+"""Circuit Design Agent - batch optimization entry point.
 
-Supports two modes:
-1. Interactive mode (default): Dialogue to collect requirements, LLM generates netlist.
-2. File mode (--netlist): Provide pre-made netlist + param space, skip LLM generation.
+The agent/topology library is responsible for understanding user requirements
+and generating DUT/testbench/requirements files.  This script consumes those
+files and runs simulation plus BO optimization.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from rich.table import Table
 
 from config import Settings, settings
 from llm_client import LLMClient
-from models import CircuitFiles, DesignTarget, NetlistTemplate, OptimizationState, ParamSpace, SimResult
+from models import CircuitFiles, DesignTarget, NetlistTemplate, ParamSpace, SimResult
 from optimizer import HybridOptimizer
 from simulator import Simulator
 from utils import ensure_directories, setup_logging
@@ -41,6 +41,20 @@ def main():
     setup_logging(level="DEBUG" if args.verbose else "INFO")
     ensure_directories(config)
 
+    if not args.netlist:
+        _print_header(config)
+        console.print("[red]No netlist provided.[/red]")
+        console.print(
+            "Generate a project with the topology library first, then run "
+            "main.py in file mode, for example:"
+        )
+        console.print(
+            "[dim]python3 main.py --netlist <project>/<name>.cir "
+            "--testbench <project>/tb_<name>_ac.sp "
+            "--requirements <project>/requirements.json[/dim]"
+        )
+        sys.exit(2)
+
     # Validate config
     try:
         config.validate_required()
@@ -59,20 +73,7 @@ def main():
     sim = Simulator(config)
     optimizer = HybridOptimizer(llm, sim, config)
 
-    if args.netlist:
-        # --- File mode: user provides netlist directly ---
-        run_from_file(args, llm, sim, optimizer, config)
-    else:
-        # --- Interactive mode: topology library generates netlist ---
-        targets, original_text, project_name = conduct_dialogue(llm)
-        if not targets:
-            console.print("[yellow]No targets specified. Exiting.[/yellow]")
-            return
-        # Save requirements for traceability
-        _save_requirements(targets, original_text=original_text, config=config, project_name=project_name)
-        topology_name = getattr(args, "topology", None) or ""
-        run_pipeline(targets, llm, sim, optimizer, config,
-                     project_name=project_name, topology_name=topology_name)
+    run_from_file(args, llm, sim, optimizer, config)
 
 
 def run_from_file(
@@ -332,214 +333,6 @@ def run_from_file(
         console.print("[red]Optimization produced no valid results.[/red]")
 
 
-def conduct_dialogue(llm: LLMClient) -> tuple[DesignTarget | None, str, str]:
-    """Interactive dialogue to collect circuit requirements from user.
-
-    Returns:
-        (targets, original_text, project_name)
-    """
-    console.print(
-        "\n[bold cyan]Please describe the circuit you want to design.[/bold cyan]"
-    )
-    console.print(
-        "Include: topology, performance targets (gain, BW, PM, power), "
-        "and load conditions.\n"
-    )
-    console.print(
-        "[dim]Example: Design a 5T OTA, gain > 40dB, BW > 500MHz, "
-        "PM > 60 degrees, power < 1mW, load cap 500fF[/dim]\n"
-    )
-
-    user_input = console.input("[bold green]Your requirements > [/bold green]")
-
-    if not user_input.strip():
-        return None, "", ""
-
-    console.print("\n[dim]Parsing requirements...[/dim]")
-
-    project_name = ""
-    try:
-        targets, project_name = llm.parse_user_requirements(user_input)
-    except Exception as e:
-        console.print(f"[red]Failed to parse requirements: {e}[/red]")
-        console.print("Please try again with more specific numbers.")
-        return None, "", ""
-
-    # Sanitize project name
-    project_name = settings.sanitize_project_name(project_name)
-
-    # Display parsed targets for confirmation
-    _display_targets(targets)
-
-    confirm = console.input("\n[bold]Proceed with these targets? (yes/no/modify) > [/bold]")
-    if confirm.strip().lower() in ("n", "no"):
-        return None, user_input, project_name
-    if confirm.strip().lower() in ("m", "modify"):
-        console.print("[yellow]Please re-enter your requirements:[/yellow]")
-        user_input = console.input("[bold green]Your requirements > [/bold green]")
-        if user_input.strip():
-            try:
-                targets, project_name = llm.parse_user_requirements(user_input)
-                project_name = settings.sanitize_project_name(project_name)
-                _display_targets(targets)
-            except Exception:
-                return None, user_input, project_name
-
-    return targets, user_input, project_name
-
-
-def run_pipeline(
-    targets: DesignTarget,
-    llm: LLMClient,
-    sim: Simulator,
-    optimizer: HybridOptimizer,
-    config: Settings,
-    project_name: str = "",
-    topology_name: str = "",
-) -> None:
-    """Execute the full optimization pipeline using the topology library."""
-
-    # --- Phase 1: Select and instantiate topology ---
-    console.print("\n[bold blue][Phase 1][/bold blue] Selecting circuit topology...")
-
-    from topologies import get_topology, get_topology_for_targets
-
-    if not topology_name:
-        # Rule-based selection
-        topology_name = get_topology_for_targets(targets) or ""
-        if not topology_name:
-            # Fall back to LLM-assisted selection
-            available = [m.__dict__ for m in _list_topology_meta_dicts()]
-            topology_name = llm.select_topology(
-                targets.to_prompt_str(), available
-            ) or "5t_ota"
-
-    console.print(f"[green]✓[/green] Selected topology: [cyan]{topology_name}[/cyan]")
-
-    topology = get_topology(topology_name)
-    circuit_files = topology.get_circuit_files()
-    param_space = topology.get_param_space()
-
-    template = NetlistTemplate.from_netlist(circuit_files.circuit_netlist)
-
-    console.print(f"[green]✓[/green] Circuit generated with {len(param_space.params)} optimizable parameters:")
-    console.print(f"     Subcircuit: [cyan]{circuit_files.circuit_name}[/cyan]")
-    for p in param_space.params:
-        console.print(f"  {p.name}: [{_eng_fmt(p.low)} ~ {_eng_fmt(p.high)}]")
-
-    # Save initial template and testbench
-    workspace = config.get_workspace_path()
-    template_path = workspace / "circuit_template.sp"
-    template_path.write_text(circuit_files.circuit_netlist, encoding="utf-8")
-    for i, tb in enumerate(circuit_files.testbenches):
-        suffix = "" if i == 0 else f"_{i}"
-        tb_path = workspace / f"tb_template{suffix}.sp"
-        tb_path.write_text(tb, encoding="utf-8")
-
-    # --- Phase 2: Initial simulation ---
-    console.print("\n[bold blue][Phase 2][/bold blue] Running initial Spectre simulation...")
-
-    initial_params = param_space.get_initial_params(
-        circuit_files.circuit_netlist if circuit_files else template.template_content
-    )
-
-    run_dir = config.get_run_dir(0)
-    tb_paths = sim.render_circuit_and_testbench(
-        template, circuit_files.testbenches,
-        initial_params, run_dir, param_space=param_space,
-        w_l_grid_step=config.w_l_grid_step,
-    )
-
-    success, log_content, error_msg = sim.run_spectre(tb_paths[0], run_dir)
-
-    if not success:
-        console.print(
-            f"[yellow]Initial simulation failed: {(error_msg or '')[:100]}[/yellow]"
-        )
-        console.print("[dim]Proceeding to optimization — BO may find better parameters.[/dim]")
-    else:
-        initial_result = sim.parse_simulation_log(log_content)
-        for tb_path in tb_paths[1:]:
-            ok, log, _ = sim.run_spectre(tb_path, run_dir)
-            if ok:
-                initial_result = SimResult.merge(initial_result, sim.parse_simulation_log(log))
-        console.print(f"[green]✓[/green] Simulation converged")
-        _display_results_table(initial_result, targets, "Initial Results")
-
-        # Check if already meeting targets
-        all_met, _ = targets.is_satisfied(initial_result)
-        if all_met:
-            console.print("\n[bold green]All targets already met! No optimization needed.[/bold green]")
-            _save_final_output(template, initial_params, initial_result, config,
-                              circuit_files=circuit_files, param_space=param_space,
-                              targets=targets, project_name=project_name)
-            return
-
-    # --- Phase 3: Optimization loop ---
-    console.print(
-        f"\n[bold blue][Phase 3][/bold blue] Starting BO optimization "
-        f"(max {config.max_iterations} iterations)...\n"
-    )
-
-    iteration_count = [0]
-
-    def on_iteration(iteration, params, result, reward):
-        iteration_count[0] = iteration + 1
-        status = "[green]✓[/green]" if result.converged else "[red]✗[/red]"
-        metrics = []
-        if result.gain_db is not None:
-            metrics.append(f"Gain={result.gain_db:.1f}dB")
-        if result.bandwidth_hz is not None:
-            metrics.append(f"BW={_eng_fmt(result.bandwidth_hz)}Hz")
-        if result.phase_margin_deg is not None:
-            metrics.append(f"PM={result.phase_margin_deg:.1f}°")
-        if result.power_w is not None:
-            metrics.append(f"Power={_eng_fmt(result.power_w)}W")
-
-        metric_str = " ".join(metrics) if metrics else "N/A"
-        console.print(
-            f"  Iter {iteration+1:3d}/{config.max_iterations}: "
-            f"{status} {metric_str}  [dim][reward={reward:.1f}][/dim]"
-        )
-
-    state = optimizer.run_optimization_loop(
-        template=template,
-        param_space=param_space,
-        targets=targets,
-        circuit_files=circuit_files,
-        on_iteration=on_iteration,
-        topology_name=topology_name,
-    )
-
-    # --- Phase 4: Output results ---
-    console.print("")
-    best = state.best_record
-    if best:
-        all_met, _ = targets.is_satisfied(best.result)
-        if all_met:
-            console.print(
-                Panel(
-                    f"[bold green]ALL TARGETS MET at iteration {best.iteration + 1}![/bold green]",
-                    border_style="green",
-                )
-            )
-        else:
-            console.print(
-                Panel(
-                    f"[bold yellow]Optimization completed. Best result at iteration {best.iteration + 1}.[/bold yellow]",
-                    border_style="yellow",
-                )
-            )
-
-        _display_results_table(best.result, targets, "Final Results")
-        _display_params(best.params)
-        _save_final_output(template, best.params, best.result, config,
-                          circuit_files=circuit_files, param_space=param_space,
-                          targets=targets, project_name=project_name)
-    else:
-        console.print("[red]Optimization produced no valid results.[/red]")
-
-
 # --- Display helpers ---
 
 
@@ -775,27 +568,6 @@ def _save_final_output(
     console.print(f"\n[dim]cd {project_root}[/dim]")
 
 
-def _list_topology_meta_dicts() -> list[dict]:
-    """Return metadata dicts for all registered topologies."""
-    try:
-        from topologies import list_topologies
-        return [
-            {
-                "name": m.name,
-                "display_name": m.display_name,
-                "description": m.description,
-                "min_gain_db": m.min_gain_db,
-                "max_gain_db": m.max_gain_db,
-                "min_bw_hz": m.min_bw_hz,
-                "max_bw_hz": m.max_bw_hz,
-                "typical_power_w": m.typical_power_w,
-            }
-            for m in list_topologies()
-        ]
-    except Exception:
-        return []
-
-
 def _build_circuit_files(netlist_content: str) -> CircuitFiles | None:
     """Attempt to split a netlist into circuit + testbench.
 
@@ -824,7 +596,7 @@ def _eng_fmt(value: float | None) -> str:
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description="Circuit Design Agent - LLM + BO Automated Optimization"
+        description="Circuit Agent batch optimizer for generated netlist projects"
     )
 
     # --- File mode arguments ---
@@ -866,10 +638,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--load-cap", type=float, default=None, help="Load capacitance in F")
 
     # --- General options ---
-    parser.add_argument(
-        "--topology", type=str, default=None,
-        help="Topology name to use (e.g., '5t_ota'). Overrides auto-selection."
-    )
     parser.add_argument(
         "--dry-run", action="store_true",
         help="Run in mock mode without Spectre (for testing)"

@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 from models import CircuitFiles, ParamSpace
+
+if TYPE_CHECKING:
+    from models import DesignTarget
 
 
 @dataclass
@@ -62,6 +68,69 @@ class BaseTopology(ABC):
             testbenches=[tb_content],
             circuit_name=circuit_name,
         )
+
+    def write_project(
+        self,
+        project_dir: str | Path,
+        targets: DesignTarget | None = None,
+        params: dict[str, float] | None = None,
+        original_requirement: str = "",
+    ) -> Path:
+        """Write all project files into a single directory, ready for main.py.
+
+        Creates:
+            <project_dir>/
+            ├── <topo_name>.cir          # DUT subcircuit
+            ├── tb_<topo_name>_ac.sp     # AC testbench (always)
+            ├── tb_<topo_name>_tran.sp   # Transient testbench (if supported)
+            └── requirements.json        # Design targets
+
+        Args:
+            project_dir: Target directory (created if missing).
+            targets: Design targets. If given, writes requirements.json.
+            params: Override default sizing.  Uses topology defaults if None.
+            original_requirement: Free-text description for traceability.
+
+        Returns:
+            Path to the created project directory.
+        """
+        import datetime
+
+        out = Path(project_dir)
+        out.mkdir(parents=True, exist_ok=True)
+
+        cf = self.get_circuit_files(params)
+
+        # --- .cir ---
+        cir_path = out / f"{self.meta.name}.cir"
+        cir_path.write_text(cf.circuit_netlist, encoding="utf-8")
+
+        # --- testbench files ---
+        tb_files: list[Path] = []
+        tb_suffixes = ["ac", "tran", "dc", "noise"]
+        for i, tb_content in enumerate(cf.testbenches):
+            suffix = tb_suffixes[i] if i < len(tb_suffixes) else f"tb{i}"
+            tb_path = out / f"tb_{self.meta.name}_{suffix}.sp"
+            tb_path.write_text(tb_content, encoding="utf-8")
+            tb_files.append(tb_path)
+
+        # --- requirements.json ---
+        if targets:
+            req = targets.to_requirements_dict(
+                original_text=original_requirement
+            )
+            req["topology_name"] = self.meta.name
+            req["topology_display_name"] = self.meta.display_name
+            req["generated_at"] = datetime.datetime.now().isoformat()
+            req["default_params"] = self.get_default_params()
+
+            req_path = out / "requirements.json"
+            req_path.write_text(
+                json.dumps(req, indent=2, ensure_ascii=False, default=str),
+                encoding="utf-8",
+            )
+
+        return out
 
     # ------------------------------------------------------------------
     # Subclass contract

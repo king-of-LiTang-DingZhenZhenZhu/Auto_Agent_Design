@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING
 
 from topologies.base import BaseTopology, TopologyMeta
 from topologies.five_t_ota import FiveTOTA
+from topologies.folded_cascode import FoldedCascodeOTA
+from topologies.two_stage_ota import TwoStageOTA
 
 if TYPE_CHECKING:
     from models import DesignTarget
@@ -19,9 +21,8 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 TOPOLOGY_REGISTRY: dict[str, type[BaseTopology]] = {
     "5t_ota": FiveTOTA,
-    # Future:
-    # "two_stage_ota": TwoStageOTA,
-    # "folded_cascode": FoldedCascodeOTA,
+    "two_stage_ota": TwoStageOTA,
+    "folded_cascode": FoldedCascodeOTA,
 }
 
 

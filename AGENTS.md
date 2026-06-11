@@ -4,7 +4,7 @@
 
 | 角色 | 职责 |
 |------|------|
-| **你 (Claude Code)** | 理解需求 → 查阅知识库选择拓扑 → 调 Python 拓扑库生成网表文件 → 调 main.py 运行优化 → 读取结果 |
+| **你 (Codex)** | 理解需求 → 查阅知识库选择拓扑 → 调 Python 拓扑库生成网表文件 → 调 main.py 运行优化 → 读取结果 |
 | **Python 拓扑库** (`topologies/`) | 硬约束生成 .cir / .sp 网表文件，保证语法正确 |
 | **Python 脚本** (`main.py`) | 执行 Spectre 仿真、解析结果、运行 BO 优化循环 |
 
@@ -131,7 +131,7 @@ print(f'Project created: {out}')
 > - `.meas` 名称匹配标准：`gain_dc`, `phase_dc`, `gbw_hz`, `phase_at_ugf`, `power_total`
 > - W/L 最小单位 10nm
 
-如需了解底层细节，见 [.claude/rules/circuit_cir_guide.md](.claude/rules/circuit_cir_guide.md) 和 [.claude/rules/testbench_sp_guide.md](.claude/rules/testbench_sp_guide.md)。
+如需了解底层细节，见 [.Codex/rules/circuit_cir_guide.md](.Codex/rules/circuit_cir_guide.md) 和 [.Codex/rules/testbench_sp_guide.md](.Codex/rules/testbench_sp_guide.md)。
 
 ### 3.3 requirements.json 格式
 
@@ -284,7 +284,7 @@ cat outputs/*/results.json
 ## 架构说明
 
 ```
-Agent (Claude Code)                    Python 脚本
+Agent (Codex)                    Python 脚本
 ───────────────────                    ────────────
 • 解析用户需求                          • main.py: 接收文件路径
 • 查阅知识库选择拓扑                     • BO 优化循环
@@ -304,6 +304,6 @@ Agent (Claude Code)                    Python 脚本
 - **知识库**：[Agent_LLM_BO/circuit_agent/knowledge_base/](Agent_LLM_BO/circuit_agent/knowledge_base/)
   - `topology_selection_guide.md` — 拓扑选择决策指南
   - `pdk_constraints.md` — TSMC N28 PDK 约束
-- **SPICE 编写规范**：[.claude/rules/circuit_cir_guide.md](.claude/rules/circuit_cir_guide.md) / [.claude/rules/testbench_sp_guide.md](.claude/rules/testbench_sp_guide.md)
+- **SPICE 编写规范**：[.Codex/rules/circuit_cir_guide.md](.Codex/rules/circuit_cir_guide.md) / [.Codex/rules/testbench_sp_guide.md](.Codex/rules/testbench_sp_guide.md)
 - **代码入口**：[Agent_LLM_BO/circuit_agent/main.py](Agent_LLM_BO/circuit_agent/main.py)
 - **配置文件**：[Agent_LLM_BO/circuit_agent/config.py](Agent_LLM_BO/circuit_agent/config.py)
