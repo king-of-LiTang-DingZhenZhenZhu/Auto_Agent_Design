@@ -33,6 +33,12 @@ class Settings(BaseSettings):
     nmos_model: str = "nch_mac"
     pmos_model: str = "pch_mac"
 
+    # gm/Id lookup table path
+    gmid_table_path: str = (
+        "/home/userone/Desktop/analog_circuit_projects/gmid_tsmc28/output/"
+        "gm_id_tables_tsmc28.json"
+    )
+
     # Spectre
     spectre_timeout: int = 300
     spectre_cmd_template: str = (

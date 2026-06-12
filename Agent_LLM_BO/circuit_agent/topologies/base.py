@@ -44,6 +44,14 @@ class BaseTopology(ABC):
 
     The generated netlist files are syntactically correct by construction —
     no LLM hallucination risk.
+
+    **gm/Id mode (optional):**  Subclasses may override ``get_gmid_spec()``
+    to return a :class:`GmidTopologySpec`.  When they do, the optimizer
+    automatically switches to gm/Id-based sizing — BO searches over gm_id,
+    L, and branch currents instead of raw W/L.  The :class:`GmidSizer`
+    (from ``gmid_lookup.py``) converts back to physical W/L before netlist
+    rendering, so ``generate_circuit()`` always receives W/L values
+    regardless of mode.
     """
 
     meta: TopologyMeta  # set by each subclass
@@ -131,6 +139,24 @@ class BaseTopology(ABC):
             )
 
         return out
+
+    # ------------------------------------------------------------------
+    # gm/Id support (optional — override to enable gm/Id sizing mode)
+    # ------------------------------------------------------------------
+
+    def get_gmid_spec(self):
+        """Return a :class:`GmidTopologySpec` to enable gm/Id-based sizing.
+
+        The default returns ``None`` — no gm/Id mode (backward compatible).
+        Subclasses that want gm/Id sizing override this to return a spec.
+
+        When this returns a non-None value, the optimizer automatically:
+        1. Searches gm_id, L, and branch currents (instead of raw W/L).
+        2. Uses :class:`GmidSizer` to convert back to physical W/L before
+           netlist rendering.
+        3. ``generate_circuit()`` still receives W/L values as before.
+        """
+        return None
 
     # ------------------------------------------------------------------
     # Subclass contract

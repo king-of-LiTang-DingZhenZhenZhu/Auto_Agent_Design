@@ -293,6 +293,119 @@ class FoldedCascodeOTA(BaseTopology):
             ]
         )
 
+    def get_gmid_spec(self):
+        """Return gm/Id spec for folded cascode — reduces 26 → 17 params."""
+        from models import BranchCurrentSpec, GmidTopologySpec, TransistorSpec
+
+        return GmidTopologySpec(
+            branch_currents=[
+                # Tail current for PMOS diff pair
+                BranchCurrentSpec(
+                    name="I_tail", low=1e-6, high=200e-6, default=20e-6,
+                ),
+                # NMOS folded-branch DC current (per side)
+                BranchCurrentSpec(
+                    name="I_fold", low=1e-6, high=200e-6, default=15e-6,
+                ),
+                # Second-stage PMOS CS bias current
+                BranchCurrentSpec(
+                    name="I_cs", low=1e-6, high=500e-6, default=40e-6,
+                ),
+            ],
+            transistors=[
+                # -- PMOS tail current source --
+                TransistorSpec(
+                    role="tail_pmos",
+                    w_param="Wtailp", l_param="Ltailp",
+                    model="pch_mac",
+                    current_source="I_tail", current_fraction=1.0,
+                    gm_id_low=5, gm_id_high=20, gm_id_default=8,
+                    L_low=100e-9, L_high=900e-9, L_default=200e-9,
+                    Vds_estimate=0.4,
+                ),
+                # -- PMOS diff pair (each side carries I_tail / 2) --
+                TransistorSpec(
+                    role="diff_pair_pmos",
+                    w_param="Wdiffp", l_param="Ldiffp",
+                    model="pch_mac",
+                    current_source="I_tail", current_fraction=0.5,
+                    gm_id_low=10, gm_id_high=22, gm_id_default=14,
+                    L_low=60e-9, L_high=500e-9, L_default=80e-9,
+                    Vds_estimate=0.25, multiplicity=2,
+                ),
+                # -- NMOS folded-branch current sources --
+                TransistorSpec(
+                    role="fold_nmos",
+                    w_param="Wfoldn", l_param="Lfoldn",
+                    model="nch_mac",
+                    current_source="I_fold", current_fraction=1.0,
+                    gm_id_low=8, gm_id_high=22, gm_id_default=12,
+                    L_low=100e-9, L_high=900e-9, L_default=200e-9,
+                    Vds_estimate=0.25, multiplicity=2,
+                ),
+                # -- NMOS common-gate cascode devices --
+                TransistorSpec(
+                    role="cas_nmos",
+                    w_param="Wcasn", l_param="Lcasn",
+                    model="nch_mac",
+                    current_source="I_fold", current_fraction=1.0,
+                    gm_id_low=10, gm_id_high=24, gm_id_default=15,
+                    L_low=80e-9, L_high=500e-9, L_default=120e-9,
+                    Vds_estimate=0.35, multiplicity=2,
+                ),
+                # -- PMOS current mirror devices --
+                TransistorSpec(
+                    role="mirr_pmos",
+                    w_param="Wmirrp", l_param="Lmirrp",
+                    model="pch_mac",
+                    current_source="I_fold", current_fraction=1.0,
+                    gm_id_low=8, gm_id_high=20, gm_id_default=12,
+                    L_low=100e-9, L_high=900e-9, L_default=200e-9,
+                    Vds_estimate=0.3, multiplicity=2,
+                ),
+                # -- PMOS cascode mirror devices --
+                TransistorSpec(
+                    role="casp_pmos",
+                    w_param="Wcasp", l_param="Lcasp",
+                    model="pch_mac",
+                    current_source="I_fold", current_fraction=1.0,
+                    gm_id_low=10, gm_id_high=24, gm_id_default=16,
+                    L_low=80e-9, L_high=500e-9, L_default=120e-9,
+                    Vds_estimate=0.3, multiplicity=2,
+                ),
+                # -- Second-stage PMOS common-source amplifier --
+                TransistorSpec(
+                    role="cs_pmos",
+                    w_param="Wcs", l_param="Lcs",
+                    model="pch_mac",
+                    current_source="I_cs", current_fraction=1.0,
+                    gm_id_low=8, gm_id_high=22, gm_id_default=12,
+                    L_low=60e-9, L_high=300e-9, L_default=120e-9,
+                    Vds_estimate=0.6,
+                ),
+                # -- Second-stage NMOS current-source load --
+                TransistorSpec(
+                    role="load_nmos",
+                    w_param="Wload", l_param="Lload",
+                    model="nch_mac",
+                    current_source="I_cs", current_fraction=1.0,
+                    gm_id_low=5, gm_id_high=20, gm_id_default=8,
+                    L_low=100e-9, L_high=900e-9, L_default=200e-9,
+                    Vds_estimate=0.4,
+                ),
+            ],
+            pass_through_params=[
+                ParamDef(
+                    name="Cc", low=0.01e-12, high=5e-12,
+                    log_scale=True, unit="F",
+                ),
+                ParamDef(
+                    name="Rz", low=1.0, high=100e3,
+                    log_scale=True, unit="Ohm",
+                ),
+            ],
+        )
+
 
 _CIRCUIT_TEMPLATE = """\
 * folded_cascode.cir -- Folded-Cascode Miller OTA (Python-generated)

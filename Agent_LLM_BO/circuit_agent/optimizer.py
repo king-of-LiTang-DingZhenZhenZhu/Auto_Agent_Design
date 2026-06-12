@@ -70,6 +70,7 @@ class HybridOptimizer:
         max_iterations: int | None = None,
         on_iteration: callable = None,
         topology_name: str = "",
+        gmid_sizer=None,  # GmidSizer | None
     ) -> OptimizationState:
         """Run the full BO optimization loop.
 
@@ -82,6 +83,9 @@ class HybridOptimizer:
             max_iterations: Override max iterations
             on_iteration: Callback(iteration, params, result, reward) for progress display
             topology_name: Registry key for the current topology (for escalation)
+            gmid_sizer: Optional :class:`GmidSizer` instance.  When provided,
+                        BO searches over gm/Id-space parameters, and this sizer
+                        converts them to physical W/L before netlist rendering.
 
         Returns:
             OptimizationState with full history and best result
@@ -106,15 +110,20 @@ class HybridOptimizer:
             # Step 1: BO suggests parameters
             proposed_params = param_space.suggest_from_trial(trial)
 
-            # Step 2: LLM validates (every N iterations)
+            # Step 2a: If gm/Id mode, convert gm_id/L/I params to physical W/L
+            physical_params = proposed_params  # default: same (physical W/L mode)
+            if gmid_sizer is not None:
+                physical_params = gmid_sizer.size(proposed_params)
+
+            # Step 2b: LLM validates (every N iterations)
             if (iteration + 1) % self.config.llm_validation_frequency == 0:
                 logger.info(f"[Iter {iteration+1}] LLM parameter validation")
                 last_result = (
                     state.history[-1].result if state.history else None
                 )
                 try:
-                    proposed_params = self.llm.validate_and_adjust_params(
-                        proposed_params, last_result, param_space, targets,
+                    physical_params = self.llm.validate_and_adjust_params(
+                        physical_params, last_result, param_space, targets,
                         circuit_template=current_template.template_content,
                         dialogue_dir=str(self.config.get_workspace_path() / "LLM_DIALOGUE"),
                         iteration=iteration,
@@ -123,18 +132,18 @@ class HybridOptimizer:
                 except Exception as e:
                     logger.warning(f"LLM validation failed, using BO params: {e}")
 
-            # Step 3: Render netlist
+            # Step 3: Render netlist (always uses physical W/L params)
             run_dir = self.config.get_run_dir(iteration)
             if current_testbenches:
                 tb_paths = self.sim.render_circuit_and_testbench(
                     current_template, current_testbenches,
-                    proposed_params, run_dir, param_space=param_space,
+                    physical_params, run_dir, param_space=param_space,
                     w_l_grid_step=self.config.w_l_grid_step,
                 )
             else:
                 tb_paths = [run_dir / "circuit.spi"]
                 self.sim.render_netlist(
-                    current_template, proposed_params, tb_paths[0],
+                    current_template, physical_params, tb_paths[0],
                     param_space=param_space,
                     w_l_grid_step=self.config.w_l_grid_step,
                 )
@@ -148,18 +157,27 @@ class HybridOptimizer:
             # Report to Optuna
             study.tell(trial, reward)
 
-            # Record iteration
-            record = IterationRecord(
-                iteration=iteration,
-                params=proposed_params,
-                result=sim_result,
-                reward=reward,
-            )
+            # Record iteration — store gm/Id params as primary, physical as metadata
+            if gmid_sizer is not None:
+                record = IterationRecord(
+                    iteration=iteration,
+                    params=proposed_params,           # gm/Id-space
+                    result=sim_result,
+                    reward=reward,
+                    physical_params=physical_params,   # resolved W/L
+                )
+            else:
+                record = IterationRecord(
+                    iteration=iteration,
+                    params=physical_params,            # physical W/L (no gm/Id)
+                    result=sim_result,
+                    reward=reward,
+                )
             state.update(record)
 
-            # Callback for progress display
+            # Callback for progress display (show physical params for readability)
             if on_iteration:
-                on_iteration(iteration, proposed_params, sim_result, reward)
+                on_iteration(iteration, physical_params, sim_result, reward)
 
             # Step 6: Check termination - all targets met
             all_met, _ = targets.is_satisfied(sim_result)

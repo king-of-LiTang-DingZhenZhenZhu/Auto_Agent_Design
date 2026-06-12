@@ -51,3 +51,11 @@ Agent_LLM_BO/circuit_agent/cache/
 
 # Documentation
 GIT_GUIDE.md
+
+# Generated circuit project directories (created by topologies/*.write_project())
+Agent_LLM_BO/circuit_agent/folded_cascode_opamp/
+Agent_LLM_BO/circuit_agent/5t_ota/
+Agent_LLM_BO/circuit_agent/two_stage_ota/
+Agent_LLM_BO/circuit_agent/folded_cascode/
+Agent_LLM_BO/circuit_agent/nmcf_three_stage/
+two_stage_miller_ota/

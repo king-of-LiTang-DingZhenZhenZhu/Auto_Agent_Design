@@ -181,6 +181,35 @@ def run_from_file(
     else:
         project_name = settings.sanitize_project_name(netlist_path.stem)
 
+    # --- Detect gm/Id mode ---
+    gmid_sizer = None
+    topology_name_val = ""
+    if args.requirements:
+        try:
+            with open(args.requirements) as f:
+                _req_data = json.load(f)
+            topology_name_val = _req_data.get("topology_name", "")
+        except Exception:
+            pass
+
+    if topology_name_val:
+        try:
+            from topologies import get_topology
+            topo = get_topology(topology_name_val)
+            gmid_spec = topo.get_gmid_spec()
+            if gmid_spec is not None:
+                from gmid_lookup import get_lookup, GmidSizer
+                lu = get_lookup()
+                gmid_sizer = GmidSizer(gmid_spec, lu)
+                # Use gm/Id param space instead of physical W/L
+                param_space = gmid_spec.build_param_space()
+                console.print(
+                    f"[green]✓[/green] gm/Id mode enabled for "
+                    f"'{topology_name_val}' ({len(param_space.params)} params)"
+                )
+        except Exception as e:
+            console.print(f"[yellow]gm/Id mode unavailable: {e}[/yellow]")
+
     # Save requirements to workspace for traceability
     _save_requirements(targets, original_text=original_requirement_text, config=config, project_name=project_name)
 
@@ -226,9 +255,15 @@ def run_from_file(
     # --- Run initial simulation ---
     console.print("\n[bold blue][Phase 1][/bold blue] Running initial Spectre simulation...")
 
-    initial_params = param_space.get_initial_params(
-        circuit_files.circuit_netlist if circuit_files else netlist_content
-    )
+    if gmid_sizer is not None:
+        # gm/Id mode: initial params are gm_id/L/current, convert to W/L
+        netlist_for_init = circuit_files.circuit_netlist if circuit_files else netlist_content
+        gmid_init = gmid_sizer.get_initial_gmid_params(netlist_for_init)
+        initial_params = gmid_sizer.size(gmid_init)
+    else:
+        initial_params = param_space.get_initial_params(
+            circuit_files.circuit_netlist if circuit_files else netlist_content
+        )
 
     run_dir = config.get_run_dir(0)
     if circuit_files and circuit_files.testbenches:
@@ -300,7 +335,8 @@ def run_from_file(
         targets=targets,
         circuit_files=circuit_files,
         on_iteration=on_iteration,
-        topology_name="",  # file mode: no topology metadata
+        topology_name=topology_name_val,
+        gmid_sizer=gmid_sizer,
     )
 
     # --- Output results ---

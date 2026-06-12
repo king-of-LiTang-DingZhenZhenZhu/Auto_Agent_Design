@@ -8,6 +8,163 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
+# ======================================================================
+# gm/Id-based transistor sizing models (universal across all topologies)
+# ======================================================================
+
+
+@dataclass
+class TransistorSpec:
+    """Describes one transistor (or group) for gm/Id-based sizing.
+
+    This is the core abstraction that makes gm/Id sizing universal across
+    all circuit topologies.  Each topology declares its transistors by
+    functional role, and the :class:`GmidSizer` computes W automatically
+    from the gm/Id lookup tables.
+
+    Attributes:
+        role: Functional name, e.g. ``"diff_pair_pmos"``.
+        w_param: SPICE ``.param`` name for total width, e.g. ``"Wdiffp"``.
+        l_param: SPICE ``.param`` name for length, e.g. ``"Ldiffp"``.
+        model: SPICE model name (``"nch_mac"``, ``"pch_mac"``, …).
+        current_source: Name of the branch current this transistor draws from.
+        current_fraction: Fraction of ``current_source`` carried by this
+            transistor (0.5 for each side of a diff pair).
+        gm_id_low: Lower BO search bound for gm/Id (strong inversion).
+        gm_id_high: Upper BO search bound for gm/Id (weak inversion).
+        gm_id_default: Initial gm/Id value.
+        L_low: Lower BO bound for channel length (m).
+        L_high: Upper BO bound for channel length (m).
+        L_default: Initial channel length (m).
+        Vds_estimate: Estimated Vds for gm/Id lookup (V).
+        Vbs: Bulk-source voltage for lookup (default 0).
+        max_per_finger: Max W per finger — used by finger splitting.
+        multiplicity: How many identical instances share this sizing
+            (e.g. 2 for diff pair, 1 for tail).
+    """
+
+    role: str
+    w_param: str
+    l_param: str
+    model: str = "nch_mac"
+    current_source: str = ""
+    current_fraction: float = 1.0
+
+    # gm/Id design ranges
+    gm_id_low: float = 5.0
+    gm_id_high: float = 25.0
+    gm_id_default: float = 12.0
+    L_low: float = 30e-9
+    L_high: float = 900e-9
+    L_default: float = 200e-9
+
+    # Operating point for lookup
+    Vds_estimate: float = 0.3
+    Vbs: float = 0.0
+
+    # Physical constraints
+    max_per_finger: float = 3e-6
+    multiplicity: int = 1
+
+
+@dataclass
+class BranchCurrentSpec:
+    """Defines an independent branch current that BO can tune.
+
+    Attributes:
+        name: Parameter name, e.g. ``"I_tail"``.
+        low: Lower BO bound (A).
+        high: Upper BO bound (A).
+        default: Default / initial value (A).
+    """
+
+    name: str
+    low: float = 1e-6
+    high: float = 500e-6
+    default: float = 20e-6
+
+
+@dataclass
+class GmidTopologySpec:
+    """Complete gm/Id specification for one circuit topology.
+
+    Separates the design space into:
+
+    * **Branch currents** — independent DOFs the BO searches.
+    * **Transistors** — each maps to a branch current (or fraction thereof)
+      and defines gm/Id + L search bounds.
+    * **Pass-through params** — traditional physical parameters (Cc, Rz, …)
+      that are still searched directly, not through gm/Id sizing.
+
+    Usage in a topology subclass::
+
+        def get_gmid_spec(self) -> GmidTopologySpec | None:
+            return GmidTopologySpec(
+                branch_currents=[BranchCurrentSpec(name="I_tail", ...)],
+                transistors=[
+                    TransistorSpec(role="diff_pair_pmos", w_param="Wdp",
+                                   l_param="Ldp", model="pch_mac",
+                                   current_source="I_tail",
+                                   current_fraction=0.5, ...),
+                    ...
+                ],
+                pass_through_params=[ParamDef(name="Cc", ...)],
+            )
+
+    ``build_param_space()`` converts this spec into an Optuna-compatible
+    :class:`ParamSpace` for the BO loop.
+    """
+
+    transistors: list[TransistorSpec] = field(default_factory=list)
+    branch_currents: list[BranchCurrentSpec] = field(default_factory=list)
+    pass_through_params: list[ParamDef] = field(default_factory=list)
+
+    def build_param_space(self) -> "ParamSpace":
+        """Convert the gm/Id spec into a :class:`ParamSpace` for BO.
+
+        The resulting space contains one param per branch current, one
+        ``gm_id_<role>`` + ``L_<role>`` per transistor spec, plus all
+        pass-through params.
+        """
+        params: list[ParamDef] = []
+
+        # Branch currents
+        for bc in self.branch_currents:
+            params.append(ParamDef(
+                name=bc.name, low=bc.low, high=bc.high,
+                log_scale=True, unit="A",
+            ))
+
+        # Transistor gm_id and L — deduplicate by (role, l_param)
+        seen_L: set[str] = set()
+        for ts in self.transistors:
+            # gm_id param — always unique per role
+            params.append(ParamDef(
+                name=f"gm_id_{ts.role}",
+                low=ts.gm_id_low, high=ts.gm_id_high,
+                log_scale=False,  # gm_id is naturally on a linear scale
+            ))
+            # L param — deduplicate when multiple transistors share the
+            # same l_param name (e.g. diff pair both use "Ldp")
+            if ts.l_param not in seen_L:
+                seen_L.add(ts.l_param)
+                params.append(ParamDef(
+                    name=f"L_{ts.role}",
+                    low=ts.L_low, high=ts.L_high,
+                    log_scale=True, unit="m",
+                ))
+
+        # Pass-through
+        params.extend(self.pass_through_params)
+
+        return ParamSpace(params=params)
+
+
+# ======================================================================
+# Core data models
+# ======================================================================
+
+
 @dataclass
 class DesignTarget:
     """User-specified performance targets for the circuit."""
@@ -540,12 +697,18 @@ class CircuitFiles:
 
 @dataclass
 class IterationRecord:
-    """Record of a single optimization iteration."""
+    """Record of a single optimization iteration.
+
+    When gm/Id mode is active, ``params`` holds the gm/Id-space parameters
+    (gm_id_*, L_*, I_*) and ``physical_params`` (if set) holds the resolved
+    W/L physical parameters actually rendered into the netlist.
+    """
 
     iteration: int
     params: dict[str, float]
     result: SimResult
     reward: float
+    physical_params: dict[str, float] | None = None
 
 
 @dataclass
