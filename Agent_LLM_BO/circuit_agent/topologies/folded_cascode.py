@@ -309,14 +309,14 @@ _CIRCUIT_TEMPLATE = """\
 .param Wbn_big={Wbn_big} Lbn_big={Lbn_big} Wbn_small={Wbn_small} Lbn_small={Lbn_small}
 .param Cc={Cc} Rz={Rz}
 
-.subckt folded_cascode vip vin vout Iref vdd vss
+.subckt folded_cascode vip vin vout ibias vdd vss
 * --- Bias ---
 M7 VB1 VB2 net4 vdd pch_lvt_mac W='Wbp_big' L='Lbp_big' nf=1
 M6 net4 VB1 vdd vdd pch_lvt_mac W='Wbp_big' L='Lbp_big' nf=1
 M4 VB2 VB2 vdd vdd pch_lvt_mac W='Wbp_small' L='Lbp_small' nf=1
-M2 VB4 Iref vdd vdd pch_lvt_mac W='Wbp_big' L='Lbp_big' nf=1
-M1 VB3 Iref vdd vdd pch_lvt_mac W='Wbp_big' L='Lbp_big' nf=1
-M0 Iref Iref vdd vdd pch_lvt_mac W='Wbp_big' L='Lbp_big' nf=1
+M2 VB4 ibias vdd vdd pch_lvt_mac W='Wbp_big' L='Lbp_big' nf=1
+M1 VB3 ibias vdd vdd pch_lvt_mac W='Wbp_big' L='Lbp_big' nf=1
+M0 ibias ibias vdd vdd pch_lvt_mac W='Wbp_big' L='Lbp_big' nf=1
 M13 net6 VB4 vss vss nch_lvt_mac W='Wbn_big' L='Lbn_big' nf=1
 M12 VB1 VB3 net6 vss nch_lvt_mac W='Wbn_big' L='Lbn_big' nf=1
 M11 net2 VB4 vss vss nch_lvt_mac W='Wbn_big' L='Lbn_big' nf=1
@@ -359,7 +359,7 @@ _TB_AC_TEMPLATE = """\
 * --- Power supply ---
 VDD vdd 0 DC {VDD}
 VSS vss 0 DC 0
-Iibias Iref vss DC {IBIAS}
+Iibias ibias vss DC {IBIAS}
 
 * --- Input stimulus ---
 Vcm vcm 0 DC {VCM}
@@ -396,7 +396,7 @@ _TB_TRAN_TEMPLATE = """\
 * --- Power supply ---
 VDD vdd 0 DC {VDD}
 VSS vss 0 DC 0
-Iibias Iref vss DC {IBIAS}
+Iibias ibias vss DC {IBIAS}
 
 * --- Unity-gain buffer: vout feeds back to vin ---
 Vcm vcm 0 DC {VCM}
