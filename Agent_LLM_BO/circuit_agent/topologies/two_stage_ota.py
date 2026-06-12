@@ -161,6 +161,99 @@ class TwoStageOTA(BaseTopology):
         )
 
     # ------------------------------------------------------------------
+    # gm/Id support
+    # ------------------------------------------------------------------
+
+    def get_gmid_spec(self):
+        """Return gm/Id spec for two-stage OTA — reduces 10 → 14 params.
+
+        Two independent branch currents:
+        - I_tail: first-stage NMOS tail current
+        - I_cs: second-stage PMOS CS bias current
+
+        Transistor roles:
+        - tail_nmos (NMOS tail current source, gate=vb)
+        - diff_pair_nmos (NMOS input pair, each I_tail/2)
+        - mirror_pmos (PMOS current mirror load, each I_tail/2)
+        - cs_pmos (second-stage PMOS CS amplifier)
+        - load_nmos (second-stage NMOS current-source load, gate=vb)
+        """
+        from models import BranchCurrentSpec, GmidTopologySpec, TransistorSpec
+
+        return GmidTopologySpec(
+            branch_currents=[
+                BranchCurrentSpec(
+                    name="I_tail", low=1e-6, high=200e-6, default=15e-6,
+                ),
+                BranchCurrentSpec(
+                    name="I_cs", low=1e-6, high=500e-6, default=40e-6,
+                ),
+            ],
+            transistors=[
+                # -- First stage: NMOS tail current source --
+                TransistorSpec(
+                    role="tail_nmos",
+                    w_param="Wtail", l_param="Ltail",
+                    model="nch_mac",
+                    current_source="I_tail", current_fraction=1.0,
+                    gm_id_low=5, gm_id_high=20, gm_id_default=8,
+                    L_low=100e-9, L_high=900e-9, L_default=200e-9,
+                    Vds_estimate=0.35,
+                ),
+                # -- First stage: NMOS diff pair (each I_tail/2) --
+                TransistorSpec(
+                    role="diff_pair_nmos",
+                    w_param="Wdiff", l_param="Ldiff",
+                    model="nch_mac",
+                    current_source="I_tail", current_fraction=0.5,
+                    gm_id_low=10, gm_id_high=24, gm_id_default=14,
+                    L_low=60e-9, L_high=500e-9, L_default=60e-9,
+                    Vds_estimate=0.25, multiplicity=2,
+                ),
+                # -- First stage: PMOS current mirror load (each I_tail/2) --
+                TransistorSpec(
+                    role="mirror_pmos",
+                    w_param="Wmirr", l_param="Lmirr",
+                    model="pch_mac",
+                    current_source="I_tail", current_fraction=0.5,
+                    gm_id_low=8, gm_id_high=24, gm_id_default=12,
+                    L_low=60e-9, L_high=500e-9, L_default=100e-9,
+                    Vds_estimate=0.3, multiplicity=2,
+                ),
+                # -- Second stage: PMOS common-source amplifier --
+                TransistorSpec(
+                    role="cs_pmos",
+                    w_param="Wcs", l_param="Lcs",
+                    model="pch_mac",
+                    current_source="I_cs", current_fraction=1.0,
+                    gm_id_low=8, gm_id_high=22, gm_id_default=12,
+                    L_low=60e-9, L_high=300e-9, L_default=100e-9,
+                    Vds_estimate=0.6,
+                ),
+                # -- Second stage: NMOS current-source load --
+                TransistorSpec(
+                    role="load_nmos",
+                    w_param="Wload", l_param="Lload",
+                    model="nch_mac",
+                    current_source="I_cs", current_fraction=1.0,
+                    gm_id_low=5, gm_id_high=20, gm_id_default=8,
+                    L_low=100e-9, L_high=900e-9, L_default=200e-9,
+                    Vds_estimate=0.4,
+                ),
+            ],
+            pass_through_params=[
+                ParamDef(
+                    name="Cc", low=0.01e-12, high=10e-12,
+                    log_scale=True, unit="F",
+                ),
+                ParamDef(
+                    name="Rz", low=1.0, high=100e3,
+                    log_scale=True, unit="Ohm",
+                ),
+            ],
+        )
+
+    # ------------------------------------------------------------------
     # get_default_params
     # ------------------------------------------------------------------
     def get_default_params(self) -> dict[str, float]:

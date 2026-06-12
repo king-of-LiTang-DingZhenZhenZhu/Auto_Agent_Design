@@ -92,6 +92,61 @@ class FiveTOTA(BaseTopology):
         )
 
     # ------------------------------------------------------------------
+    # gm/Id support
+    # ------------------------------------------------------------------
+
+    def get_gmid_spec(self):
+        """Return gm/Id spec for 5T OTA — reduces 6 → 7 params.
+
+        The topology has one branch current (I_tail) driving:
+        - PMOS tail current source
+        - PMOS diff pair (each side carries I_tail/2)
+        - NMOS current mirror load (each side carries I_tail/2)
+        """
+        from models import BranchCurrentSpec, GmidTopologySpec, TransistorSpec
+
+        return GmidTopologySpec(
+            branch_currents=[
+                BranchCurrentSpec(
+                    name="I_tail", low=1e-6, high=200e-6, default=10e-6,
+                ),
+            ],
+            transistors=[
+                # -- PMOS tail current source --
+                TransistorSpec(
+                    role="tail_pmos",
+                    w_param="Wtail", l_param="Ltail",
+                    model="pch_mac",
+                    current_source="I_tail", current_fraction=1.0,
+                    gm_id_low=5, gm_id_high=20, gm_id_default=8,
+                    L_low=100e-9, L_high=900e-9, L_default=200e-9,
+                    Vds_estimate=0.3,
+                ),
+                # -- PMOS diff pair (each side carries I_tail / 2) --
+                TransistorSpec(
+                    role="diff_pair_pmos",
+                    w_param="Wdp", l_param="Ldp",
+                    model="pch_mac",
+                    current_source="I_tail", current_fraction=0.5,
+                    gm_id_low=10, gm_id_high=24, gm_id_default=14,
+                    L_low=60e-9, L_high=500e-9, L_default=60e-9,
+                    Vds_estimate=0.25, multiplicity=2,
+                ),
+                # -- NMOS current mirror load (each side carries I_tail / 2) --
+                TransistorSpec(
+                    role="mirror_nmos",
+                    w_param="Wcm", l_param="Lcm",
+                    model="nch_mac",
+                    current_source="I_tail", current_fraction=0.5,
+                    gm_id_low=8, gm_id_high=24, gm_id_default=12,
+                    L_low=60e-9, L_high=500e-9, L_default=100e-9,
+                    Vds_estimate=0.35, multiplicity=2,
+                ),
+            ],
+            pass_through_params=[],
+        )
+
+    # ------------------------------------------------------------------
     # get_default_params
     # ------------------------------------------------------------------
     def get_default_params(self) -> dict[str, float]:

@@ -164,6 +164,124 @@ class NMCFThreeStageOTA(BaseTopology):
             circuit_name=circuit_name,
         )
 
+    # ------------------------------------------------------------------
+    # gm/Id support
+    # ------------------------------------------------------------------
+
+    def get_gmid_spec(self):
+        """Return gm/Id spec for NMCF three-stage OTA — reduces 17 → 25 params.
+
+        Three independent branch currents:
+        - I_tail1: Stage 1 PMOS tail current
+        - I_s2: Stage 2 NMOS gain + PMOS load bias current
+        - I_s3: Stage 3 PMOS output + NMOS load bias current
+
+        Bias transistors (Wbiasn, Wbiasp) remain at DEFAULT_PARAMS — not
+        part of the gm/Id search space.  They are small fixed-size devices
+        that generate vbiasn/vbiasp from the external ibias current.
+        """
+        from models import BranchCurrentSpec, GmidTopologySpec, TransistorSpec
+
+        return GmidTopologySpec(
+            branch_currents=[
+                BranchCurrentSpec(
+                    name="I_tail1", low=1e-6, high=200e-6, default=25e-6,
+                ),
+                BranchCurrentSpec(
+                    name="I_s2", low=1e-6, high=300e-6, default=30e-6,
+                ),
+                BranchCurrentSpec(
+                    name="I_s3", low=1e-6, high=500e-6, default=50e-6,
+                ),
+            ],
+            transistors=[
+                # -- Stage 1: PMOS tail current source (gate=vbiasp) --
+                TransistorSpec(
+                    role="stage1_tail_pmos",
+                    w_param="Wtail1", l_param="Ltail1",
+                    model="pch_mac",
+                    current_source="I_tail1", current_fraction=1.0,
+                    gm_id_low=5, gm_id_high=20, gm_id_default=8,
+                    L_low=100e-9, L_high=900e-9, L_default=200e-9,
+                    Vds_estimate=0.3,
+                ),
+                # -- Stage 1: PMOS diff pair (each I_tail1/2) --
+                TransistorSpec(
+                    role="stage1_diff_pmos",
+                    w_param="Wdiff1", l_param="Ldiff1",
+                    model="pch_mac",
+                    current_source="I_tail1", current_fraction=0.5,
+                    gm_id_low=10, gm_id_high=24, gm_id_default=14,
+                    L_low=60e-9, L_high=500e-9, L_default=80e-9,
+                    Vds_estimate=0.25, multiplicity=2,
+                ),
+                # -- Stage 1: NMOS current mirror load (each I_tail1/2) --
+                TransistorSpec(
+                    role="stage1_load_nmos",
+                    w_param="Wload1", l_param="Lload1",
+                    model="nch_mac",
+                    current_source="I_tail1", current_fraction=0.5,
+                    gm_id_low=8, gm_id_high=24, gm_id_default=12,
+                    L_low=60e-9, L_high=500e-9, L_default=100e-9,
+                    Vds_estimate=0.3, multiplicity=2,
+                ),
+                # -- Stage 2: NMOS common-source gain stage (gate=s1_out) --
+                TransistorSpec(
+                    role="stage2_gain_nmos",
+                    w_param="Wgm2", l_param="Lgm2",
+                    model="nch_mac",
+                    current_source="I_s2", current_fraction=1.0,
+                    gm_id_low=10, gm_id_high=24, gm_id_default=15,
+                    L_low=60e-9, L_high=500e-9, L_default=80e-9,
+                    Vds_estimate=0.3,
+                ),
+                # -- Stage 2: PMOS current-source load (gate=vbiasp) --
+                TransistorSpec(
+                    role="stage2_load_pmos",
+                    w_param="Wload2", l_param="Lload2",
+                    model="pch_mac",
+                    current_source="I_s2", current_fraction=1.0,
+                    gm_id_low=5, gm_id_high=20, gm_id_default=8,
+                    L_low=100e-9, L_high=900e-9, L_default=120e-9,
+                    Vds_estimate=0.4,
+                ),
+                # -- Stage 3: PMOS common-source output (gate=s2_out) --
+                TransistorSpec(
+                    role="stage3_gain_pmos",
+                    w_param="Wgm3", l_param="Lgm3",
+                    model="pch_mac",
+                    current_source="I_s3", current_fraction=1.0,
+                    gm_id_low=8, gm_id_high=22, gm_id_default=12,
+                    L_low=60e-9, L_high=300e-9, L_default=100e-9,
+                    Vds_estimate=0.55,
+                ),
+                # -- Stage 3: NMOS current-source load (gate=vbiasn=ibias) --
+                TransistorSpec(
+                    role="stage3_load_nmos",
+                    w_param="Wload3", l_param="Lload3",
+                    model="nch_mac",
+                    current_source="I_s3", current_fraction=1.0,
+                    gm_id_low=5, gm_id_high=20, gm_id_default=8,
+                    L_low=100e-9, L_high=900e-9, L_default=180e-9,
+                    Vds_estimate=0.35,
+                ),
+            ],
+            pass_through_params=[
+                ParamDef(
+                    name="Cc1", low=0.05e-12, high=10e-12,
+                    log_scale=True, unit="F",
+                ),
+                ParamDef(
+                    name="Rz1", low=1.0, high=100e3,
+                    log_scale=True, unit="Ohm",
+                ),
+                ParamDef(
+                    name="Cc2", low=0.05e-12, high=10e-12,
+                    log_scale=True, unit="F",
+                ),
+            ],
+        )
+
     def get_default_params(self) -> dict[str, float]:
         return dict(self.DEFAULT_PARAMS)
 
@@ -264,6 +382,7 @@ _CIRCUIT_TEMPLATE = """\
 * Stage 2: NMOS common-source gain stage + PMOS current-source load
 * Stage 3: PMOS common-source output stage + NMOS current-source load
 * Compensation: nested Miller (Cc1 + Rz1, Cc2)
+* Bias: internal MOS bias generator from external ibias pin
 .lib '/PDKS/TSMC28nm/models/hspice/toplevel.l' TOP_TT
 .options redefinedparams=ignore
 .param Wtail1={Wtail1} Ltail1={Ltail1} Wdiff1={Wdiff1} Ldiff1={Ldiff1}
@@ -274,7 +393,29 @@ _CIRCUIT_TEMPLATE = """\
 .param Cc1={Cc1} Rz1={Rz1} Cc2={Cc2}
 
 .subckt nmcf_three_stage vip vin vout ibias vdd vss
-*
+* --- Bias generator ---
+* External Ibias enters ibias pin → Mbn1 diode to vss generates vbiasn
+* Mbp1 (PMOS diode) + Mbn2 (NMOS mirror) generate vbiasp
+Mbn1 ibias  ibias  vss vss nch_mac W='Wbiasn' L='Lbiasn' nf=1
+Mbn2 vbiasp ibias  vss vss nch_mac W='Wbiasn' L='Lbiasn' nf=1
+Mbp1 vbiasp vbiasp vdd vdd pch_mac W='Wbiasp' L='Lbiasp' nf=1
+* --- Stage 1: PMOS input diff pair + NMOS mirror load ---
+Mtail1  tail     vbiasp  vdd vdd pch_mac W='Wtail1' L='Ltail1' nf=1
+Mdiff1a s1_mirr  vip     tail vdd pch_mac W='Wdiff1' L='Ldiff1' nf=1
+Mdiff1b s1_out   vin     tail vdd pch_mac W='Wdiff1' L='Ldiff1' nf=1
+Mload1a s1_mirr  s1_mirr vss vss nch_mac W='Wload1' L='Lload1' nf=1
+Mload1b s1_out   s1_mirr vss vss nch_mac W='Wload1' L='Lload1' nf=1
+* --- Stage 2: NMOS CS gain + PMOS current-source load ---
+Mgm2   s2_out s1_out vss vss nch_mac W='Wgm2' L='Lgm2' nf=1
+Mload2 s2_out vbiasp vdd vdd pch_mac W='Wload2' L='Lload2' nf=1
+* --- Stage 3: PMOS CS output + NMOS current-source load ---
+Mgm3   vout s2_out vdd vdd pch_mac W='Wgm3' L='Lgm3' nf=1
+Mload3 vout ibias  vss vss nch_mac W='Wload3' L='Lload3' nf=1
+* --- Nested Miller compensation ---
+Rz1 s1_out n_rz1 R='Rz1'
+Cc1 n_rz1  s2_out C='Cc1'
+Cc2 s2_out vout   C='Cc2'
+.ends nmcf_three_stage
 """
 
 _TB_AC_TEMPLATE = """\
