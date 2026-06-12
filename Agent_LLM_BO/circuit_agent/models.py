@@ -178,7 +178,7 @@ class ParamSpace:
         initial = {}
         for p in self.params:
             if p.name in netlist_params:
-                initial[p.name] = netlist_params[p.name]
+                initial[p.name] = min(max(netlist_params[p.name], p.low), p.high)
             elif p.log_scale:
                 initial[p.name] = math.exp((math.log(p.low) + math.log(p.high)) / 2)
             else:
@@ -265,16 +265,23 @@ class ParamSpace:
         for name, initial in param_entries:
             if name.startswith("W") or name.upper().startswith("W"):
                 # Transistor total width
-                low = max(0.1e-6, initial * 0.1)
-                high = max(192e-6, initial * 10)
+                if _is_folded_bias_param(name):
+                    low = 0.2e-6
+                    high = 5e-6
+                    finger_limit = 5e-6
+                else:
+                    low = max(0.1e-6, initial * 0.1)
+                    high = max(192e-6, initial * 10)
+                    finger_limit = max_per_finger
                 params.append(ParamDef(
                     name=name, low=low, high=high,
-                    log_scale=True, unit="m", max_per_finger=max_per_finger,
+                    log_scale=True, unit="m", max_per_finger=finger_limit,
                 ))
             elif name.startswith("L") or name.upper().startswith("L"):
                 # Transistor length
                 low = max(30e-9, initial * 0.3)
-                high = max(1e-6, initial * 5)
+                high = min(max(900e-9, initial * 5), _length_upper_bound(name))
+                low = min(low, high)
                 params.append(ParamDef(
                     name=name, low=low, high=high,
                     log_scale=True, unit="m",
@@ -615,6 +622,19 @@ def _quantize_wl(name: str, value: float, step: float) -> float:
     if name.startswith(("W", "L")):
         return max(step, round(value / step) * step)
     return value
+
+
+def _length_upper_bound(name: str) -> float:
+    """Return the hard upper bound for transistor length parameters."""
+    if _is_folded_bias_param(name):
+        return 500e-9
+    return 900e-9
+
+
+def _is_folded_bias_param(name: str) -> bool:
+    """Detect folded-cascode internal bias generator W/L parameters."""
+    lname = name.lower()
+    return lname.startswith(("wbp_", "wbn_", "lbp_", "lbn_"))
 
 
 def _parse_spice_suffix(s: str) -> float:
