@@ -178,7 +178,7 @@ class TwoStageOTA(BaseTopology):
                     log_scale=True, unit="m", max_per_finger=3e-6,
                 ),
                 ParamDef(
-                    name="Ltail", low=30e-9, high=1e-6,
+                    name="Ltail", low=30e-9, high=900e-9,
                     log_scale=True, unit="m",
                 ),
                 # --- First stage: diff pair ---
@@ -187,7 +187,7 @@ class TwoStageOTA(BaseTopology):
                     log_scale=True, unit="m", max_per_finger=3e-6,
                 ),
                 ParamDef(
-                    name="Ldiff", low=30e-9, high=1e-6,
+                    name="Ldiff", low=30e-9, high=900e-9,
                     log_scale=True, unit="m",
                 ),
                 # --- First stage: current mirror ---
@@ -196,7 +196,7 @@ class TwoStageOTA(BaseTopology):
                     log_scale=True, unit="m", max_per_finger=3e-6,
                 ),
                 ParamDef(
-                    name="Lmirr", low=30e-9, high=1e-6,
+                    name="Lmirr", low=30e-9, high=900e-9,
                     log_scale=True, unit="m",
                 ),
                 # --- Second stage: PMOS CS amp ---
@@ -205,7 +205,7 @@ class TwoStageOTA(BaseTopology):
                     log_scale=True, unit="m", max_per_finger=3e-6,
                 ),
                 ParamDef(
-                    name="Lcs", low=30e-9, high=1e-6,
+                    name="Lcs", low=30e-9, high=900e-9,
                     log_scale=True, unit="m",
                 ),
                 # --- Second stage: NMOS load ---
@@ -214,7 +214,7 @@ class TwoStageOTA(BaseTopology):
                     log_scale=True, unit="m", max_per_finger=3e-6,
                 ),
                 ParamDef(
-                    name="Lload", low=30e-9, high=1e-6,
+                    name="Lload", low=30e-9, high=900e-9,
                     log_scale=True, unit="m",
                 ),
                 # --- Compensation ---

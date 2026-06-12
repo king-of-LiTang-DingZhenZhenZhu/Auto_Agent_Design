@@ -35,6 +35,27 @@ from topologies.base import BaseTopology, TopologyMeta
 from models import CircuitFiles, ParamDef, ParamSpace
 
 
+def _bias_w(name: str) -> ParamDef:
+    return ParamDef(
+        name=name,
+        low=0.2e-6,
+        high=5e-6,
+        log_scale=True,
+        unit="m",
+        max_per_finger=5e-6,
+    )
+
+
+def _bias_l(name: str) -> ParamDef:
+    return ParamDef(
+        name=name,
+        low=30e-9,
+        high=500e-9,
+        log_scale=True,
+        unit="m",
+    )
+
+
 class FoldedCascodeOTA(BaseTopology):
     """Folded-cascode two-stage OTA.
 
@@ -58,7 +79,7 @@ class FoldedCascodeOTA(BaseTopology):
         max_bw_hz=1e9,
         typical_power_w=2e-3,
         complexity=3,
-        escalation=None,
+        escalation="nmcf_three_stage",
     )
 
     DEFAULT_PARAMS: dict[str, float] = {
@@ -87,10 +108,14 @@ class FoldedCascodeOTA(BaseTopology):
         "Wload": 15e-6,
         "Lload": 200e-9,
         # Internal reference-bias generator
-        "Wbiasn": 4e-6,
-        "Lbiasn": 200e-9,
-        "Wbiasp": 8e-6,
-        "Lbiasp": 200e-9,
+        "Wbp_big": 2.4e-6,
+        "Lbp_big": 400e-9,
+        "Wbp_small": 0.8e-6,
+        "Lbp_small": 400e-9,
+        "Wbn_big": 1.2e-6,
+        "Lbn_big": 400e-9,
+        "Wbn_small": 0.4e-6,
+        "Lbn_small": 400e-9,
         # Compensation
         "Cc": 250e-15,
         "Rz": 1000.0,
@@ -119,10 +144,14 @@ class FoldedCascodeOTA(BaseTopology):
             Lcs=_fmt(p["Lcs"]),
             Wload=_fmt(p["Wload"]),
             Lload=_fmt(p["Lload"]),
-            Wbiasn=_fmt(p["Wbiasn"]),
-            Lbiasn=_fmt(p["Lbiasn"]),
-            Wbiasp=_fmt(p["Wbiasp"]),
-            Lbiasp=_fmt(p["Lbiasp"]),
+            Wbp_big=_fmt(p["Wbp_big"]),
+            Lbp_big=_fmt(p["Lbp_big"]),
+            Wbp_small=_fmt(p["Wbp_small"]),
+            Lbp_small=_fmt(p["Lbp_small"]),
+            Wbn_big=_fmt(p["Wbn_big"]),
+            Lbn_big=_fmt(p["Lbn_big"]),
+            Wbn_small=_fmt(p["Wbn_small"]),
+            Lbn_small=_fmt(p["Lbn_small"]),
             Cc=_fmt(p["Cc"]),
             Rz=_fmt(p["Rz"]),
         )
@@ -185,7 +214,7 @@ class FoldedCascodeOTA(BaseTopology):
                     log_scale=True, unit="m", max_per_finger=3e-6,
                 ),
                 ParamDef(
-                    name="Ltailp", low=30e-9, high=1e-6,
+                    name="Ltailp", low=30e-9, high=900e-9,
                     log_scale=True, unit="m",
                 ),
                 ParamDef(
@@ -193,7 +222,7 @@ class FoldedCascodeOTA(BaseTopology):
                     log_scale=True, unit="m", max_per_finger=3e-6,
                 ),
                 ParamDef(
-                    name="Ldiffp", low=30e-9, high=1e-6,
+                    name="Ldiffp", low=30e-9, high=900e-9,
                     log_scale=True, unit="m",
                 ),
                 ParamDef(
@@ -201,7 +230,7 @@ class FoldedCascodeOTA(BaseTopology):
                     log_scale=True, unit="m", max_per_finger=3e-6,
                 ),
                 ParamDef(
-                    name="Lfoldn", low=30e-9, high=1e-6,
+                    name="Lfoldn", low=30e-9, high=900e-9,
                     log_scale=True, unit="m",
                 ),
                 ParamDef(
@@ -209,7 +238,7 @@ class FoldedCascodeOTA(BaseTopology):
                     log_scale=True, unit="m", max_per_finger=3e-6,
                 ),
                 ParamDef(
-                    name="Lcasn", low=30e-9, high=1e-6,
+                    name="Lcasn", low=30e-9, high=900e-9,
                     log_scale=True, unit="m",
                 ),
                 ParamDef(
@@ -217,7 +246,7 @@ class FoldedCascodeOTA(BaseTopology):
                     log_scale=True, unit="m", max_per_finger=3e-6,
                 ),
                 ParamDef(
-                    name="Lmirrp", low=30e-9, high=1e-6,
+                    name="Lmirrp", low=30e-9, high=900e-9,
                     log_scale=True, unit="m",
                 ),
                 ParamDef(
@@ -225,7 +254,7 @@ class FoldedCascodeOTA(BaseTopology):
                     log_scale=True, unit="m", max_per_finger=3e-6,
                 ),
                 ParamDef(
-                    name="Lcasp", low=30e-9, high=1e-6,
+                    name="Lcasp", low=30e-9, high=900e-9,
                     log_scale=True, unit="m",
                 ),
                 ParamDef(
@@ -233,7 +262,7 @@ class FoldedCascodeOTA(BaseTopology):
                     log_scale=True, unit="m", max_per_finger=3e-6,
                 ),
                 ParamDef(
-                    name="Lcs", low=30e-9, high=1e-6,
+                    name="Lcs", low=30e-9, high=900e-9,
                     log_scale=True, unit="m",
                 ),
                 ParamDef(
@@ -241,25 +270,18 @@ class FoldedCascodeOTA(BaseTopology):
                     log_scale=True, unit="m", max_per_finger=3e-6,
                 ),
                 ParamDef(
-                    name="Lload", low=30e-9, high=1e-6,
+                    name="Lload", low=30e-9, high=900e-9,
                     log_scale=True, unit="m",
                 ),
-                ParamDef(
-                    name="Wbiasn", low=0.5e-6, high=50e-6,
-                    log_scale=True, unit="m", max_per_finger=3e-6,
-                ),
-                ParamDef(
-                    name="Lbiasn", low=30e-9, high=1e-6,
-                    log_scale=True, unit="m",
-                ),
-                ParamDef(
-                    name="Wbiasp", low=0.5e-6, high=50e-6,
-                    log_scale=True, unit="m", max_per_finger=3e-6,
-                ),
-                ParamDef(
-                    name="Lbiasp", low=30e-9, high=1e-6,
-                    log_scale=True, unit="m",
-                ),
+                # --- Internal bias generator ---
+                _bias_w("Wbp_big"),
+                _bias_l("Lbp_big"),
+                _bias_w("Wbp_small"),
+                _bias_l("Lbp_small"),
+                _bias_w("Wbn_big"),
+                _bias_l("Lbn_big"),
+                _bias_w("Wbn_small"),
+                _bias_l("Lbn_small"),
                 ParamDef(
                     name="Cc", low=0.01e-12, high=5e-12,
                     log_scale=True, unit="F",
@@ -283,43 +305,46 @@ _CIRCUIT_TEMPLATE = """\
 .param Wfoldn={Wfoldn} Lfoldn={Lfoldn} Wcasn={Wcasn} Lcasn={Lcasn}
 .param Wmirrp={Wmirrp} Lmirrp={Lmirrp} Wcasp={Wcasp} Lcasp={Lcasp}
 .param Wcs={Wcs} Lcs={Lcs} Wload={Wload} Lload={Lload}
-.param Wbiasn={Wbiasn} Lbiasn={Lbiasn} Wbiasp={Wbiasp} Lbiasp={Lbiasp}
+.param Wbp_big={Wbp_big} Lbp_big={Lbp_big} Wbp_small={Wbp_small} Lbp_small={Lbp_small}
+.param Wbn_big={Wbn_big} Lbn_big={Lbn_big} Wbn_small={Wbn_small} Lbn_small={Lbn_small}
 .param Cc={Cc} Rz={Rz}
 
-.subckt folded_cascode vip vin vout ibias vdd vss
-* --- Internal MOS bias generator from external reference current ---
-* External testbench injects IBIAS into ibias; this diode NMOS makes vbn_bias.
-Mbias_nref ibias ibias vss vss nch_mac W='Wbiasn' L='Lbiasn' nf=1
-* PMOS bias branches use the NMOS reference current as their sinks.
-Mbias_ptail nbp_tail nbp_tail vdd vdd pch_mac W='Wbiasp' L='Lbiasp' nf=1
-Mbias_ptail_sink nbp_tail ibias vss vss nch_mac W='Wbiasn' L='Lbiasn' nf=1
-Mbias_pcas nbp_cas nbp_cas vdd vdd pch_mac W='Wbiasp' L='Lbiasp' nf=1
-Mbias_pcas_sink nbp_cas ibias vss vss nch_mac W='Wbiasn' L='Lbiasn' nf=1
-* Stacked NMOS diode branch generates the higher NMOS cascode gate bias.
-Mbias_ncas_src nbn_cas nbp_tail vdd vdd pch_mac W='Wbiasp' L='Lbiasp' nf=1
-Mbias_ncas_top nbn_cas nbn_cas nbn_mid vss nch_mac W='Wbiasn' L='Lbiasn' nf=1
-Mbias_ncas_bot nbn_mid ibias vss vss nch_mac W='Wbiasn' L='Lbiasn' nf=1
+.subckt folded_cascode vip vin vout Iref vdd vss
+* --- Bias ---
+M7 VB1 VB2 net4 vdd pch_lvt_mac W='Wbp_big' L='Lbp_big' nf=1
+M6 net4 VB1 vdd vdd pch_lvt_mac W='Wbp_big' L='Lbp_big' nf=1
+M4 VB2 VB2 vdd vdd pch_lvt_mac W='Wbp_small' L='Lbp_small' nf=1
+M2 VB4 Iref vdd vdd pch_lvt_mac W='Wbp_big' L='Lbp_big' nf=1
+M1 VB3 Iref vdd vdd pch_lvt_mac W='Wbp_big' L='Lbp_big' nf=1
+M0 Iref Iref vdd vdd pch_lvt_mac W='Wbp_big' L='Lbp_big' nf=1
+M13 net6 VB4 vss vss nch_lvt_mac W='Wbn_big' L='Lbn_big' nf=1
+M12 VB1 VB3 net6 vss nch_lvt_mac W='Wbn_big' L='Lbn_big' nf=1
+M11 net2 VB4 vss vss nch_lvt_mac W='Wbn_big' L='Lbn_big' nf=1
+M10 VB2 VB3 net2 vss nch_lvt_mac W='Wbn_big' L='Lbn_big' nf=1
+M9 net3 VB4 vss vss nch_lvt_mac W='Wbn_big' L='Lbn_big' nf=1
+M8 VB4 VB3 net3 vss nch_lvt_mac W='Wbn_big' L='Lbn_big' nf=1
+M5 VB3 VB3 vss vss nch_lvt_mac W='Wbn_small' L='Lbn_small' nf=1
 
 * --- PMOS input differential pair ---
-Mtailp ntail nbp_tail vdd vdd pch_mac W='Wtailp' L='Ltailp' nf=1
-Mdiff1 nfold_l vip ntail vdd pch_mac W='Wdiffp' L='Ldiffp' nf=1
-Mdiff2 nfold_r vin ntail vdd pch_mac W='Wdiffp' L='Ldiffp' nf=1
+Mtailp ntail VB1 vdd vdd pch_lvt_mac W='Wtailp' L='Ltailp' nf=1
+Mdiff1 nfold_l vip ntail vdd pch_lvt_mac W='Wdiffp' L='Ldiffp' nf=1
+Mdiff2 nfold_r vin ntail vdd pch_lvt_mac W='Wdiffp' L='Ldiffp' nf=1
 
 * --- NMOS folded branches and common-gate cascodes ---
-Mfold1 nfold_l ibias vss vss nch_mac W='Wfoldn' L='Lfoldn' nf=1
-Mfold2 nfold_r ibias vss vss nch_mac W='Wfoldn' L='Lfoldn' nf=1
-Mcasn1 pmirr nbn_cas nfold_l vss nch_mac W='Wcasn' L='Lcasn' nf=1
-Mcasn2 nstage1 nbn_cas nfold_r vss nch_mac W='Wcasn' L='Lcasn' nf=1
+Mfold1 nfold_l VB4 vss vss nch_lvt_mac W='Wfoldn' L='Lfoldn' nf=1
+Mfold2 nfold_r VB4 vss vss nch_lvt_mac W='Wfoldn' L='Lfoldn' nf=1
+Mcasn1 pmirr VB3 nfold_l vss nch_lvt_mac W='Wcasn' L='Lcasn' nf=1
+Mcasn2 nstage1 VB3 nfold_r vss nch_lvt_mac W='Wcasn' L='Lcasn' nf=1
 
 * --- PMOS Low Voltage cascode current mirror load ---
-Mmirr1 npm_l pmirr vdd vdd pch_mac W='Wmirrp' L='Lmirrp' nf=1
-Mmirr2 npm_r pmirr vdd vdd pch_mac W='Wmirrp' L='Lmirrp' nf=1
-Mcasp1 pmirr nbp_cas npm_l vdd pch_mac W='Wcasp' L='Lcasp' nf=1
-Mcasp2 nstage1 nbp_cas npm_r vdd pch_mac W='Wcasp' L='Lcasp' nf=1
+Mmirr1 npm_l pmirr vdd vdd pch_lvt_mac W='Wmirrp' L='Lmirrp' nf=1
+Mmirr2 npm_r pmirr vdd vdd pch_lvt_mac W='Wmirrp' L='Lmirrp' nf=1
+Mcasp1 pmirr VB2 npm_l vdd pch_lvt_mac W='Wcasp' L='Lcasp' nf=1
+Mcasp2 nstage1 VB2 npm_r vdd pch_lvt_mac W='Wcasp' L='Lcasp' nf=1
 
 * --- Second Stage: PMOS common-source amplifier + NMOS load ---
-Mcs vout nstage1 vdd vdd pch_mac W='Wcs' L='Lcs' nf=1
-Mload vout ibias vss vss nch_mac W='Wload' L='Lload' nf=1
+Mcs vout nstage1 vdd vdd pch_lvt_mac W='Wcs' L='Lcs' nf=1
+Mload vout VB4 vss vss nch_lvt_mac W='Wload' L='Lload' nf=1
 
 * --- Miller compensation: Rz in series with Cc ---
 Rz nstage1 n_rz R='Rz'
@@ -334,7 +359,7 @@ _TB_AC_TEMPLATE = """\
 * --- Power supply ---
 VDD vdd 0 DC {VDD}
 VSS vss 0 DC 0
-Iibias vdd ibias DC {IBIAS}
+Iibias Iref vss DC {IBIAS}
 
 * --- Input stimulus ---
 Vcm vcm 0 DC {VCM}
@@ -371,7 +396,7 @@ _TB_TRAN_TEMPLATE = """\
 * --- Power supply ---
 VDD vdd 0 DC {VDD}
 VSS vss 0 DC 0
-Iibias vdd ibias DC {IBIAS}
+Iibias Iref vss DC {IBIAS}
 
 * --- Unity-gain buffer: vout feeds back to vin ---
 Vcm vcm 0 DC {VCM}

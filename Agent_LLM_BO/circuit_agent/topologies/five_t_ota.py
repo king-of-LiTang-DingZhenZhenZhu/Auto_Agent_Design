@@ -108,7 +108,7 @@ class FiveTOTA(BaseTopology):
                     log_scale=True, unit="m", max_per_finger=3e-6,
                 ),
                 ParamDef(
-                    name="Ltail", low=30e-9, high=1e-6,
+                    name="Ltail", low=30e-9, high=900e-9,
                     log_scale=True, unit="m",
                 ),
                 ParamDef(
@@ -116,7 +116,7 @@ class FiveTOTA(BaseTopology):
                     log_scale=True, unit="m", max_per_finger=3e-6,
                 ),
                 ParamDef(
-                    name="Ldp", low=30e-9, high=1e-6,
+                    name="Ldp", low=30e-9, high=900e-9,
                     log_scale=True, unit="m",
                 ),
                 ParamDef(
@@ -124,7 +124,7 @@ class FiveTOTA(BaseTopology):
                     log_scale=True, unit="m", max_per_finger=3e-6,
                 ),
                 ParamDef(
-                    name="Lcm", low=30e-9, high=1e-6,
+                    name="Lcm", low=30e-9, high=900e-9,
                     log_scale=True, unit="m",
                 ),
             ]

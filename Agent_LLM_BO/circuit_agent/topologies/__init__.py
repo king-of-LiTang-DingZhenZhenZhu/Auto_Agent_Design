@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 from topologies.base import BaseTopology, TopologyMeta
 from topologies.five_t_ota import FiveTOTA
 from topologies.folded_cascode import FoldedCascodeOTA
+from topologies.nmcf_three_stage import NMCFThreeStageOTA
 from topologies.two_stage_ota import TwoStageOTA
 
 if TYPE_CHECKING:
@@ -23,6 +24,7 @@ TOPOLOGY_REGISTRY: dict[str, type[BaseTopology]] = {
     "5t_ota": FiveTOTA,
     "two_stage_ota": TwoStageOTA,
     "folded_cascode": FoldedCascodeOTA,
+    "nmcf_three_stage": NMCFThreeStageOTA,
 }
 
 
@@ -50,6 +52,19 @@ def get_topology_for_targets(targets: DesignTarget) -> str | None:
 
     Returns None only when no topology can plausibly meet the targets.
     """
+    if "nmcf_three_stage" in TOPOLOGY_REGISTRY:
+        very_high_gain = (
+            targets.gain_db is not None and targets.gain_db >= 85
+        )
+        high_gain_heavy_load = (
+            targets.gain_db is not None
+            and targets.gain_db >= 75
+            and targets.load_cap_f is not None
+            and targets.load_cap_f >= 5e-12
+        )
+        if very_high_gain or high_gain_heavy_load:
+            return "nmcf_three_stage"
+
     candidates: list[tuple[int, int, str]] = []  # (score, complexity, name)
     for name, cls in TOPOLOGY_REGISTRY.items():
         meta = cls().meta
