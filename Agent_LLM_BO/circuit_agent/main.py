@@ -503,7 +503,34 @@ def _save_final_output(
         encoding="utf-8",
     )
 
-    # 5. Save summary report
+    # 5. Export Virtuoso SKILL schematic script (best-effort; no Cadence required)
+    virtuoso_report = None
+    try:
+        from virtuoso_export import export_netlist
+
+        virtuoso_report = export_netlist(
+            netlist_path=circuit_path,
+            lib_name="BO_Designs",
+            cell_name=f"{project_name}_opt",
+            out_path=project_root / "virtuoso" / "import_schematic.il",
+            results_path=result_path,
+        )
+        result_data["virtuoso_export"] = {
+            "skill_file": virtuoso_report["skill_file"],
+            "report_file": str(project_root / "virtuoso" / "export_report.json"),
+            "target": (
+                f"{virtuoso_report['target_lib']}/"
+                f"{virtuoso_report['target_cell']}/schematic"
+            ),
+        }
+        result_path.write_text(
+            json.dumps(result_data, indent=2, ensure_ascii=False, default=str),
+            encoding="utf-8",
+        )
+    except Exception as e:
+        console.print(f"[yellow]Virtuoso export skipped:[/yellow] {e}")
+
+    # 6. Save summary report
     report_lines = [
         "=" * 60,
         "Circuit Optimization Report",
@@ -539,21 +566,30 @@ def _save_final_output(
                 report_lines.append(f"  {mark} {metric}: gap={gap_val:+.2f}")
         report_lines.append(f"\nAll targets met: {'YES' if all_met else 'NO'}")
 
+    if virtuoso_report:
+        report_lines.append("")
+        report_lines.append("Virtuoso Export:")
+        report_lines.append(f"  SKILL: {virtuoso_report['skill_file']}")
+        report_lines.append(
+            "  Target: "
+            f"{virtuoso_report['target_lib']}/{virtuoso_report['target_cell']}/schematic"
+        )
+
     report_lines.append("")
     report_lines.append("=" * 60)
 
     report_path = project_root / "summary_report.txt"
     report_path.write_text("\n".join(report_lines), encoding="utf-8")
 
-    # 6. Copy optimization history
+    # 7. Copy optimization history
     if history_file.exists():
         shutil.copy2(history_file, project_root / "optimization_log.json")
 
-    # 7. Write .last_project marker
+    # 8. Write .last_project marker
     last_project_file = config.get_outputs_path() / ".last_project"
     last_project_file.write_text(project_name, encoding="utf-8")
 
-    # 8. Print summary
+    # 9. Print summary
     console.print(f"\n[bold green]Project saved to:[/bold green] {project_root}")
     console.print(f"\n[bold]Files:[/bold]")
     console.print(f"  • {circuit_path}")
@@ -563,6 +599,9 @@ def _save_final_output(
             console.print(f"  • {sim_dir / f'tb_circuit{suffix}.sp'}")
     console.print(f"  • {result_path}")
     console.print(f"  • {report_path}")
+    if virtuoso_report:
+        console.print(f"  • {virtuoso_report['skill_file']}")
+        console.print(f"  • {project_root / 'virtuoso' / 'export_report.json'}")
     if history_file.exists():
         console.print(f"  • {project_root / 'optimization_log.json'}")
     console.print(f"\n[dim]cd {project_root}[/dim]")
