@@ -435,13 +435,23 @@ class ParamSpace:
                     log_scale=True, unit="m", max_per_finger=finger_limit,
                 ))
             elif name.startswith("L") or name.upper().startswith("L"):
-                # Transistor length
-                low = max(30e-9, initial * 0.3)
+                # Transistor length — PDK minimum is ~108nm, use 120nm safe margin
+                low = max(120e-9, initial * 0.5)
                 high = min(max(900e-9, initial * 5), _length_upper_bound(name))
                 low = min(low, high)
                 params.append(ParamDef(
                     name=name, low=low, high=high,
                     log_scale=True, unit="m",
+                ))
+            elif name.startswith("V") or name.upper().startswith("V"):
+                # Voltage bias/param — tight range around initial value
+                # (VDD is only 0.9-1.1V, so bias voltages shouldn't exceed supply)
+                low = max(0.05, initial * 0.5)
+                high = min(1.5, initial * 1.5)
+                low = min(low, high)
+                params.append(ParamDef(
+                    name=name, low=low, high=high,
+                    log_scale=False, unit="V",
                 ))
             elif name.startswith("C") or name.upper().startswith("C"):
                 # Capacitor
@@ -595,8 +605,12 @@ class NetlistTemplate:
         Replaces .param lines: `.param W1 = 5u`
         Also injects nf values on transistor lines: `nf=1` → `nf=4`
         """
-        # Resolve finger splitting
-        resolved = param_space.resolve_params(params, max_width_per_finger) if param_space else dict(params)
+        # Resolve finger splitting.
+        # Start with all params (so gm/Id-mode params not in param_space survive),
+        # then overlay finger-split versions for params that ARE in param_space.
+        resolved = dict(params)
+        if param_space:
+            resolved.update(param_space.resolve_params(params, max_width_per_finger))
 
         content = self.template_content
 

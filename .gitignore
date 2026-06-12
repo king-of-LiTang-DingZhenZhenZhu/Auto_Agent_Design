@@ -59,3 +59,5 @@ Agent_LLM_BO/circuit_agent/two_stage_ota/
 Agent_LLM_BO/circuit_agent/folded_cascode/
 Agent_LLM_BO/circuit_agent/nmcf_three_stage/
 two_stage_miller_ota/
+5t_ota_defaults/
+Agent_LLM_BO/circuit_agent/5t_ota_defaults/

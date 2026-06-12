@@ -419,7 +419,7 @@ Cc2 s2_out vout   C='Cc2'
 """
 
 _TB_AC_TEMPLATE = """\
-* tb_nmcf_three_stage_ac.sp -- NMCF Three-Stage OTA AC Analysis
+* tb_nmcf_three_stage_ac.sp -- NMCF Three-Stage OTA AC Analysis (Open-Loop)
 .include "circuit.cir"
 
 * --- Power supply ---
@@ -427,17 +427,12 @@ VDD vdd 0 DC {VDD}
 VSS vss 0 DC 0
 Iibias vdd ibias DC {IBIAS}
 
-* --- Input stimulus ---
-Vcm vcm 0 DC {VCM}
-Vinp vinp vcm DC 0 AC 1
-Vinn vinn 0  DC 0
-
-* --- Closed-loop feedback for DC stability ---
-Rfb vout vinn 1G
-Cfb vinn 0 1
+* --- Input stimulus (open-loop, both inputs at VCM DC, AC differential) ---
+VIP vip 0 DC {VCM} AC 1
+VIN vin 0 DC {VCM} AC 0
 
 * --- DUT ---
-Xdut vinp vinn vout ibias vdd vss nmcf_three_stage
+Xdut vip vin vout ibias vdd vss nmcf_three_stage
 CL vout 0 {CL}
 
 * --- Analysis ---

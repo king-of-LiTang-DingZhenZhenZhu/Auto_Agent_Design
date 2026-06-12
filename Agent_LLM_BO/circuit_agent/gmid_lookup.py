@@ -643,11 +643,21 @@ class GmidSizer:
                     )
                 self._cache[cache_key] = w
 
-            # Apply PDK constraints
-            w = max(w, 100e-9)  # Min W = 100nm per PDK
-            L_val = max(L_val, 30e-9)  # Min L = 30nm
+            # Apply PDK constraints (TSMC N28 effective: Wmin≈90nm, Wmax=2.7µm/finger)
+            w = max(w, 200e-9)   # Min W = 200nm (safe margin above 90nm)
+            L_val = max(L_val, 120e-9)  # Min L = 120nm (above 108nm bin boundary)
 
-            result[ts.w_param] = w
+            # Finger splitting: if W exceeds max_per_finger, split into fingers
+            max_per_finger = ts.max_per_finger if ts.max_per_finger else 2.7e-6
+            if w > max_per_finger:
+                import math
+                nf = int(math.ceil(w / max_per_finger))
+                w_per_finger = w / nf
+                result[ts.w_param] = w_per_finger
+            else:
+                result[ts.w_param] = w
+                nf = 1
+            result[f"nf_{ts.w_param}"] = nf
             result[ts.l_param] = L_val
 
         # Step 3: Pass-through params (Cc, Rz, etc.)

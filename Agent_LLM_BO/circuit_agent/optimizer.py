@@ -234,12 +234,16 @@ class HybridOptimizer:
         if targets.gain_db is not None and result.gain_db is not None:
             if result.gain_db >= targets.gain_db:
                 reward += 10.0 * self.weights["gain_db"]
+            elif result.gain_db < 0:
+                # Dead circuit (negative gain): heavy penalty
+                reward -= 200.0 * self.weights["gain_db"]
+                all_met = False
             else:
                 gap = (targets.gain_db - result.gain_db) / max(abs(targets.gain_db), 1.0)
                 reward -= gap * 50.0 * self.weights["gain_db"]
                 all_met = False
         elif targets.gain_db is not None:
-            reward -= 50.0  # Missing measurement
+            reward -= 200.0  # Missing measurement in dead circuit
             all_met = False
 
         # Bandwidth
