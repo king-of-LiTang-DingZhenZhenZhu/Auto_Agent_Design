@@ -86,12 +86,41 @@ def parse_psf_results(raw_dir: Path, testbench_content: str) -> SimResult | None
         if tran_path:
             try:
                 tran_psf = PSF(str(tran_path))
-                time, vout = _signal_axis(
+                time, vinp = _signal_axis(
+                    tran_psf, ("vinp", "V(vinp)", "/vinp")
+                )
+                vout_time, vout = _signal_axis(
                     tran_psf, ("vout", "V(vout)", "/vout")
                 )
-                slew_rate = calculate_slew_rate(time, vout)
-                result.slew_rate_v_per_s = slew_rate
-                result.raw_metrics["slew_rate"] = slew_rate
+                if not np.array_equal(np.asarray(time), np.asarray(vout_time)):
+                    raise ValueError("vinp and vout use different transient time axes")
+                if tran_name.lower().startswith("st"):
+                    rise_st, fall_st, settling_time = calculate_settling_times(
+                        time, vinp, vout, tolerance=0.001
+                    )
+                    result.settling_time_s = settling_time
+                    result.raw_metrics.update(
+                        {
+                            "settling_time_rise": rise_st,
+                            "settling_time_fall": fall_st,
+                            "settling_time": settling_time,
+                            "settling_tolerance": 0.001,
+                        }
+                    )
+                else:
+                    sr_positive, sr_negative, slew_rate = calculate_slew_rates(
+                        time, vinp, vout
+                    )
+                    result.slew_rate_positive_v_per_s = sr_positive
+                    result.slew_rate_negative_v_per_s = sr_negative
+                    result.slew_rate_v_per_s = slew_rate
+                    result.raw_metrics.update(
+                        {
+                            "slew_rate_positive": sr_positive,
+                            "slew_rate_negative": sr_negative,
+                            "slew_rate": slew_rate,
+                        }
+                    )
                 found_metrics = True
             except Exception as exc:
                 logger.warning(
@@ -144,13 +173,180 @@ def calculate_ac_metrics(
     return gain_dc, ugf_hz, phase_margin_deg
 
 
-def calculate_slew_rate(time: Any, voltage: Any) -> float:
-    """Return the maximum absolute dV/dt from a transient waveform."""
+def calculate_slew_rates(
+    time: Any,
+    input_voltage: Any,
+    output_voltage: Any,
+) -> tuple[float, float, float]:
+    """Calculate SR+, SR- and their worst case inside the output 10-90% range.
+
+    Input midpoint crossings split the waveform into rising and falling
+    response windows. The output slope is considered only while vout is
+    between 10% and 90% of the input step, excluding unrelated spikes and
+    ringing outside the large-signal transition region.
+    """
     time_values = np.asarray(time, dtype=float)
-    voltage_values = np.asarray(voltage, dtype=float)
-    if time_values.size < 2 or voltage_values.size != time_values.size:
-        raise ValueError("Transient result must contain matching time and voltage arrays")
-    return float(np.max(np.abs(np.gradient(voltage_values, time_values))))
+    input_values = np.asarray(input_voltage, dtype=float)
+    output_values = np.asarray(output_voltage, dtype=float)
+    if (
+        time_values.size < 3
+        or input_values.size != time_values.size
+        or output_values.size != time_values.size
+    ):
+        raise ValueError(
+            "Transient result must contain matching time, input and output arrays"
+        )
+    if np.any(np.diff(time_values) <= 0):
+        raise ValueError("Transient time axis must be strictly increasing")
+
+    input_min = float(np.min(input_values))
+    input_max = float(np.max(input_values))
+    midpoint = 0.5 * (input_min + input_max)
+    low_samples = input_values[input_values < midpoint]
+    high_samples = input_values[input_values >= midpoint]
+    if not low_samples.size or not high_samples.size:
+        raise ValueError("Transient input does not contain both low and high levels")
+
+    low_level = float(np.median(low_samples))
+    high_level = float(np.median(high_samples))
+    step = high_level - low_level
+    if step <= 0:
+        raise ValueError("Transient input step amplitude must be positive")
+
+    low_10 = low_level + 0.1 * step
+    high_90 = low_level + 0.9 * step
+    rising_edges = np.where(
+        (input_values[:-1] < midpoint) & (input_values[1:] >= midpoint)
+    )[0]
+    falling_edges = np.where(
+        (input_values[:-1] >= midpoint) & (input_values[1:] < midpoint)
+    )[0]
+    all_edges = np.sort(np.concatenate((rising_edges, falling_edges)))
+    derivative = np.gradient(output_values, time_values)
+
+    positive_slopes: list[float] = []
+    negative_slopes: list[float] = []
+    for edge_index in all_edges:
+        next_edges = all_edges[all_edges > edge_index]
+        stop_index = int(next_edges[0] + 1) if next_edges.size else time_values.size
+        indices = np.arange(edge_index, stop_index)
+        in_output_range = (
+            (output_values[indices] >= low_10)
+            & (output_values[indices] <= high_90)
+        )
+        indices = indices[in_output_range]
+        if not indices.size:
+            continue
+
+        if edge_index in rising_edges:
+            slopes = derivative[indices]
+            slopes = slopes[slopes > 0]
+            if slopes.size:
+                positive_slopes.append(float(np.max(slopes)))
+        else:
+            slopes = derivative[indices]
+            slopes = slopes[slopes < 0]
+            if slopes.size:
+                negative_slopes.append(float(abs(np.min(slopes))))
+
+    if not positive_slopes:
+        raise ValueError("No valid rising 10-90% output transition found")
+    if not negative_slopes:
+        raise ValueError("No valid falling 90-10% output transition found")
+
+    sr_positive = max(positive_slopes)
+    sr_negative = max(negative_slopes)
+    return sr_positive, sr_negative, min(sr_positive, sr_negative)
+
+
+def calculate_settling_times(
+    time: Any,
+    input_voltage: Any,
+    output_voltage: Any,
+    tolerance: float = 0.001,
+) -> tuple[float, float, float]:
+    """Calculate rise, fall, and worst-case settling time.
+
+    Each input midpoint crossing starts a response window. The settled output
+    value is the median of the final 10% of that window. Settling is reached
+    after the last sample outside ``tolerance * input_step`` from that value.
+    """
+    time_values = np.asarray(time, dtype=float)
+    input_values = np.asarray(input_voltage, dtype=float)
+    output_values = np.asarray(output_voltage, dtype=float)
+    if (
+        time_values.size < 10
+        or input_values.size != time_values.size
+        or output_values.size != time_values.size
+    ):
+        raise ValueError(
+            "Transient result must contain matching time, input and output arrays"
+        )
+    if np.any(np.diff(time_values) <= 0):
+        raise ValueError("Transient time axis must be strictly increasing")
+    if tolerance <= 0:
+        raise ValueError("Settling tolerance must be positive")
+
+    input_min = float(np.min(input_values))
+    input_max = float(np.max(input_values))
+    midpoint = 0.5 * (input_min + input_max)
+    low_samples = input_values[input_values < midpoint]
+    high_samples = input_values[input_values >= midpoint]
+    if not low_samples.size or not high_samples.size:
+        raise ValueError("Transient input does not contain both low and high levels")
+
+    input_step = float(np.median(high_samples) - np.median(low_samples))
+    if input_step <= 0:
+        raise ValueError("Transient input step amplitude must be positive")
+    error_band = tolerance * input_step
+
+    rising_edges = np.where(
+        (input_values[:-1] < midpoint) & (input_values[1:] >= midpoint)
+    )[0]
+    falling_edges = np.where(
+        (input_values[:-1] >= midpoint) & (input_values[1:] < midpoint)
+    )[0]
+    all_edges = np.sort(np.concatenate((rising_edges, falling_edges)))
+    rise_times: list[float] = []
+    fall_times: list[float] = []
+
+    for edge_index in all_edges:
+        next_edges = all_edges[all_edges > edge_index]
+        stop_index = int(next_edges[0] + 1) if next_edges.size else time_values.size
+        start_index = int(edge_index + 1)
+        if stop_index - start_index < 10:
+            continue
+
+        window_length = stop_index - start_index
+        tail_start = stop_index - max(5, int(window_length * 0.1))
+        final_value = float(np.median(output_values[tail_start:stop_index]))
+        error = np.abs(output_values[start_index:stop_index] - final_value)
+        outside = np.where(error > error_band)[0]
+        settle_index = start_index if not outside.size else start_index + int(outside[-1]) + 1
+        if settle_index >= stop_index:
+            continue
+
+        edge_time = _interpolate_midpoint_crossing(
+            time_values[edge_index],
+            time_values[edge_index + 1],
+            input_values[edge_index],
+            input_values[edge_index + 1],
+            midpoint,
+        )
+        settling_time = float(time_values[settle_index] - edge_time)
+        if edge_index in rising_edges:
+            rise_times.append(settling_time)
+        else:
+            fall_times.append(settling_time)
+
+    if not rise_times:
+        raise ValueError("No valid rising-edge settling response found")
+    if not fall_times:
+        raise ValueError("No valid falling-edge settling response found")
+
+    rise_settling = max(rise_times)
+    fall_settling = max(fall_times)
+    return rise_settling, fall_settling, max(rise_settling, fall_settling)
 
 
 def _analysis_name(testbench_content: str, analysis_type: str) -> str | None:
@@ -205,3 +401,11 @@ def _linear_crossing(y0: float, y1: float, x0: float, x1: float) -> float:
     if y1 == y0:
         return x0
     return x0 + (0.0 - y0) * (x1 - x0) / (y1 - y0)
+
+
+def _interpolate_midpoint_crossing(
+    t0: float, t1: float, v0: float, v1: float, midpoint: float
+) -> float:
+    if v1 == v0:
+        return t0
+    return t0 + (midpoint - v0) * (t1 - t0) / (v1 - v0)

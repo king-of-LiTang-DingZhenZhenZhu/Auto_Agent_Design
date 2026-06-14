@@ -125,6 +125,8 @@ Extract and output a JSON object with these fields (use null if not specified):
   "phase_margin_deg": <number or null>,
   "power_w": <number or null>,
   "load_cap_f": <number or null>,
+  "slew_rate_v_per_s": <number or null>,
+  "settling_time_s": <number or null>,
   "topology_hint": "<string describing topology>",
   "project_name": "<short filesystem-safe name, e.g. 5T_OTA_G40dB_BW500M>"
 }}
@@ -138,6 +140,8 @@ Rules:
 - If user says "GBW > 100MHz", bandwidth_hz = 100e6
 - If user says "power < 2mW", power_w = 2e-3
 - If user says "CL = 1pF", load_cap_f = 1e-12
+- If user says "SR > 100V/us", slew_rate_v_per_s = 100e6
+- If user says "0.1% settling time < 10ns", settling_time_s = 10e-9
 - project_name: short, filesystem-safe, descriptive. Use underscores. Max 40 chars.
 """
 
@@ -154,6 +158,8 @@ Rules:
             phase_margin_deg=data.get("phase_margin_deg"),
             power_w=data.get("power_w"),
             load_cap_f=data.get("load_cap_f"),
+            slew_rate_v_per_s=data.get("slew_rate_v_per_s"),
+            settling_time_s=data.get("settling_time_s"),
             topology_hint=data.get("topology_hint", ""),
         ), project_name
 

@@ -73,12 +73,18 @@ class Simulator:
         circuit_path.write_text(circuit_content, encoding="utf-8")
         logger.debug(f"Rendered circuit to {circuit_path}")
 
-        # Write each testbench
+        # Render testbench-owned parameters (for example VBIAS) with the same
+        # trial values used for the DUT.
         tb_paths = []
         for i, tb_content in enumerate(testbench_contents):
             suffix = "" if i == 0 else f"_{i}"
             tb_path = run_dir / f"tb{suffix}.scs"
-            tb_path.write_text(tb_content, encoding="utf-8")
+            rendered_tb = NetlistTemplate.from_netlist(tb_content).render(
+                params,
+                param_space=None,
+                w_l_grid_step=None,
+            )
+            tb_path.write_text(rendered_tb, encoding="utf-8")
             logger.debug(f"Wrote testbench to {tb_path}")
             tb_paths.append(tb_path)
 
@@ -324,6 +330,14 @@ class Simulator:
         # Slew rate (V/s) — transient measurement
         if "slew_rate" in result.raw_metrics:
             result.slew_rate_v_per_s = abs(result.raw_metrics["slew_rate"])
+        if "slew_rate_positive" in result.raw_metrics:
+            result.slew_rate_positive_v_per_s = abs(
+                result.raw_metrics["slew_rate_positive"]
+            )
+        if "slew_rate_negative" in result.raw_metrics:
+            result.slew_rate_negative_v_per_s = abs(
+                result.raw_metrics["slew_rate_negative"]
+            )
 
         # Settling time (s) — transient measurement
         if "settling_time" in result.raw_metrics:

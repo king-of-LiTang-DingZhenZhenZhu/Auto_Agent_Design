@@ -114,11 +114,11 @@ class TwoStageOTA(BaseTopology):
 
         Args:
             params: Override defaults (VDD, VCM, VBIAS, CL).
-            analysis_type: "ac" → AC closed-loop; "tran" → unity-gain buffer.
+            analysis_type: "ac", "sr" (or legacy "tran"), or "st".
         """
         vdd = 1.0       # NMOS input needs ~0.75V ICMR min → VDD=1.0V
-        vcm = 0.6
-        vbias = 0.5     # shared bias for M5 (tail) and M7 (load)
+        vcm = 0.7
+        vbias = 0.55     # shared bias for M5 (tail) and M7 (load)
         cload = 2e-12   # 2 pF (typical for ADC driver)
 
         if params:
@@ -127,14 +127,19 @@ class TwoStageOTA(BaseTopology):
             vbias = params.get("VBIAS", vbias)
             cload = params.get("CL", cload)
 
-        if analysis_type == "tran":
-            return _TB_TRAN_TEMPLATE.format(
+        if analysis_type in ("tran", "sr"):
+            return _TB_SR_TEMPLATE.format(
                 VDD=vdd,
                 VCM=vcm,
                 VBIAS=vbias,
                 CL=_fmt(cload),
                 VHIGH=vcm + 0.2,
                 VLOW=vcm - 0.2,
+            )
+        if analysis_type == "st":
+            return _TB_ST_TEMPLATE.format(
+                VDD=vdd, VCM=vcm, VBIAS=vbias, CL=_fmt(cload),
+                VHIGH=vcm + 10e-3, VLOW=vcm,
             )
         return _TB_AC_TEMPLATE.format(
             VDD=vdd,
@@ -149,14 +154,15 @@ class TwoStageOTA(BaseTopology):
     def get_circuit_files(
         self, params: dict[str, float] | None = None
     ) -> CircuitFiles:
-        """Return CircuitFiles with both AC and transient testbenches."""
+        """Return AC, slew-rate, and 0.1% settling-time testbenches."""
         circuit_content = self.generate_circuit(params)
         tb_ac = self.generate_testbench(params, analysis_type="ac")
-        tb_tran = self.generate_testbench(params, analysis_type="tran")
+        tb_sr = self.generate_testbench(params, analysis_type="sr")
+        tb_st = self.generate_testbench(params, analysis_type="st")
         circuit_name = CircuitFiles.extract_subckt_name(circuit_content)
         return CircuitFiles(
             circuit_netlist=circuit_content,
-            testbenches=[tb_ac, tb_tran],
+            testbenches=[tb_ac, tb_sr, tb_st],
             circuit_name=circuit_name,
         )
 
@@ -385,9 +391,10 @@ save vout
 save VDDsrc:p
 """
 
-# Unity-gain buffer transient testbench (slew rate + settling time)
-_TB_TRAN_TEMPLATE = """\
-// tb_two_stage_ota_tran.scs -- Unity-gain transient analysis
+# Unity-gain large-signal slew-rate testbench
+_TB_SR_TEMPLATE = """\
+// tb_two_stage_ota_sr.scs -- Unity-gain large-signal slew-rate analysis
+// 对于 SR 的测量，不能把输出目标推到电路根本到不了的位置，比如 0.9V
 simulator lang=spectre insensitive=yes
 
 include "circuit.cir"
@@ -406,7 +413,32 @@ CLload (vout 0) capacitor c=CL
 
 tempOption options temp=27
 outOpts options rawfmt=psfascii
-tran1 tran stop=100n maxstep=10p
+srTran tran stop=200n maxstep=10p
+
+save vinp vout
+"""
+
+_TB_ST_TEMPLATE = """\
+// tb_two_stage_ota_st.scs -- Unity-gain 0.1% settling-time analysis
+simulator lang=spectre insensitive=yes
+
+include "circuit.cir"
+
+parameters VDD={VDD} VCM={VCM} VBIAS={VBIAS} CL={CL}
+parameters VLOW={VLOW} VHIGH={VHIGH}
+
+VDDsrc (vdd 0) vsource type=dc dc=VDD
+VSSsrc (vss 0) vsource type=dc dc=0
+VBIASsrc (vbias 0) vsource type=dc dc=VBIAS
+VIPsrc (vinp 0) vsource type=pulse val0=VLOW val1=VHIGH delay=5n rise=100p fall=100p width=80n period=160n
+VFBsrc (vin vout) vsource type=dc dc=0
+
+Xdut (vinp vin vout vbias vdd vss) two_stage_ota
+CLload (vout 0) capacitor c=CL
+
+tempOption options temp=27
+outOpts options rawfmt=psfascii
+stTran tran stop=180n maxstep=10p
 
 save vinp vout
 """

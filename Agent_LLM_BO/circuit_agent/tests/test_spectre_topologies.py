@@ -5,6 +5,8 @@ import unittest
 from pathlib import Path
 
 from models import NetlistTemplate
+from config import Settings
+from simulator import Simulator
 from topologies import get_topology, list_topologies
 
 
@@ -35,6 +37,8 @@ class SpectreTopologyTest(unittest.TestCase):
 
                 self.assertTrue(any(name.endswith(".scs") for name in file_names))
                 self.assertFalse(any(name.endswith(".sp") for name in file_names))
+                self.assertIn(f"tb_{meta.name}_sr.scs", file_names)
+                self.assertIn(f"tb_{meta.name}_st.scs", file_names)
 
                 ac_file = next(
                     project / name
@@ -47,6 +51,17 @@ class SpectreTopologyTest(unittest.TestCase):
                 self.assertIn("VIPsrc (vinp vcm) vsource type=dc dc=0 mag=1", ac_testbench)
                 self.assertIn("Rfb (vout vinn) resistor r=1G", ac_testbench)
                 self.assertIn("Cfb (vinn 0) capacitor c=1", ac_testbench)
+
+                sr_testbench = (
+                    project / f"tb_{meta.name}_sr.scs"
+                ).read_text(encoding="utf-8")
+                st_testbench = (
+                    project / f"tb_{meta.name}_st.scs"
+                ).read_text(encoding="utf-8")
+                self.assertIn("srTran tran", sr_testbench)
+                self.assertIn("stTran tran", st_testbench)
+                self.assertIn("save vinp vout", sr_testbench)
+                self.assertIn("save vinp vout", st_testbench)
 
     def test_spectre_parameter_rendering_and_finger_split(self):
         topo = get_topology("5t_ota")
@@ -67,6 +82,33 @@ class SpectreTopologyTest(unittest.TestCase):
         self.assertIn("parameters Wtail=3u Ltail=200n", rendered)
         self.assertIn("Mtail (tail vbias vdd vdd) pch_mac w=3u l=200n nf=4", rendered)
         self.assertNotIn("w=Wtail", rendered)
+
+    def test_5t_vbias_is_testbench_owned_and_rendered(self):
+        topo = get_topology("5t_ota")
+        files = topo.get_circuit_files()
+        self.assertNotIn("parameters VBIAS=", files.circuit_netlist)
+        self.assertTrue(
+            all("parameters VDD=" in tb and "VBIAS=" in tb for tb in files.testbenches)
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            simulator = Simulator(Settings(dry_run=True))
+            tb_paths = simulator.render_circuit_and_testbench(
+                NetlistTemplate.from_netlist(files.circuit_netlist),
+                files.testbenches,
+                {"VBIAS": 0.42},
+                run_dir,
+            )
+            self.assertNotIn(
+                "parameters VBIAS=",
+                (run_dir / "circuit.cir").read_text(encoding="utf-8"),
+            )
+            for tb_path in tb_paths:
+                self.assertIn(
+                    "VBIAS=420m",
+                    tb_path.read_text(encoding="utf-8"),
+                )
 
 
 if __name__ == "__main__":

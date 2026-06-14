@@ -134,14 +134,19 @@ class NMCFThreeStageOTA(BaseTopology):
             ibias = params.get("IBIAS", params.get("VBIAS", ibias))
             cload = params.get("CL", cload)
 
-        if analysis_type == "tran":
-            return _TB_TRAN_TEMPLATE.format(
+        if analysis_type in ("tran", "sr"):
+            return _TB_SR_TEMPLATE.format(
                 VDD=vdd,
                 VCM=vcm,
                 IBIAS=_fmt(ibias),
                 CL=_fmt(cload),
                 VHIGH=vcm + 0.15,
                 VLOW=vcm - 0.15,
+            )
+        if analysis_type == "st":
+            return _TB_ST_TEMPLATE.format(
+                VDD=vdd, VCM=vcm, IBIAS=_fmt(ibias), CL=_fmt(cload),
+                VHIGH=vcm + 10e-3, VLOW=vcm,
             )
         return _TB_AC_TEMPLATE.format(
             VDD=vdd,
@@ -153,14 +158,15 @@ class NMCFThreeStageOTA(BaseTopology):
     def get_circuit_files(
         self, params: dict[str, float] | None = None
     ) -> CircuitFiles:
-        """Return CircuitFiles with both AC and transient testbenches."""
+        """Return AC, slew-rate, and 0.1% settling-time testbenches."""
         circuit_content = self.generate_circuit(params)
         tb_ac = self.generate_testbench(params, analysis_type="ac")
-        tb_tran = self.generate_testbench(params, analysis_type="tran")
+        tb_sr = self.generate_testbench(params, analysis_type="sr")
+        tb_st = self.generate_testbench(params, analysis_type="st")
         circuit_name = CircuitFiles.extract_subckt_name(circuit_content)
         return CircuitFiles(
             circuit_netlist=circuit_content,
-            testbenches=[tb_ac, tb_tran],
+            testbenches=[tb_ac, tb_sr, tb_st],
             circuit_name=circuit_name,
         )
 
@@ -444,8 +450,8 @@ save vout
 save VDDsrc:p
 """
 
-_TB_TRAN_TEMPLATE = """\
-// tb_nmcf_three_stage_tran.scs -- Unity-gain transient analysis
+_TB_SR_TEMPLATE = """\
+// tb_nmcf_three_stage_sr.scs -- Unity-gain large-signal slew-rate analysis
 simulator lang=spectre insensitive=yes
 
 include "circuit.cir"
@@ -464,7 +470,32 @@ CLload (vout 0) capacitor c=CL
 
 tempOption options temp=27
 outOpts options rawfmt=psfascii
-tran1 tran stop=100n maxstep=10p
+srTran tran stop=120n maxstep=10p
+
+save vinp vout
+"""
+
+_TB_ST_TEMPLATE = """\
+// tb_nmcf_three_stage_st.scs -- Unity-gain 0.1% settling-time analysis
+simulator lang=spectre insensitive=yes
+
+include "circuit.cir"
+
+parameters VDD={VDD} VCM={VCM} IBIAS={IBIAS} CL={CL}
+parameters VLOW={VLOW} VHIGH={VHIGH}
+
+VDDsrc (vdd 0) vsource type=dc dc=VDD
+VSSsrc (vss 0) vsource type=dc dc=0
+IBIASsrc (vdd ibias) isource type=dc dc=IBIAS
+VIPsrc (vinp 0) vsource type=pulse val0=VLOW val1=VHIGH delay=5n rise=100p fall=100p width=50n period=100n
+VFBsrc (vin vout) vsource type=dc dc=0
+
+Xdut (vinp vin vout ibias vdd vss) nmcf_three_stage
+CLload (vout 0) capacitor c=CL
+
+tempOption options temp=27
+outOpts options rawfmt=psfascii
+stTran tran stop=120n maxstep=10p
 
 save vinp vout
 """

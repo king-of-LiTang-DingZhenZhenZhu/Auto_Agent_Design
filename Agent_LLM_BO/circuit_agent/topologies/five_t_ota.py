@@ -11,7 +11,7 @@ Topology:
 from __future__ import annotations
 
 from topologies.base import BaseTopology, TopologyMeta
-from models import ParamDef, ParamSpace
+from models import CircuitFiles, ParamDef, ParamSpace
 
 
 class FiveTOTA(BaseTopology):
@@ -62,7 +62,6 @@ class FiveTOTA(BaseTopology):
             Ldp=_fmt(p["Ldp"]),
             Wcm=_fmt(p["Wcm"]),
             Lcm=_fmt(p["Lcm"]),
-            VBIAS=_fmt(p["VBIAS"]),
         )
 
     # ------------------------------------------------------------------
@@ -73,7 +72,7 @@ class FiveTOTA(BaseTopology):
         params: dict[str, float] | None = None,
         analysis_type: str = "ac",
     ) -> str:
-        """Generate the Spectre-native AC testbench."""
+        """Generate AC, slew-rate, or settling-time Spectre testbench."""
         # Bias / supply defaults
         vdd = 0.9
         cload = 500e-15
@@ -81,14 +80,41 @@ class FiveTOTA(BaseTopology):
         if params:
             vdd = params.get("VDD", vdd)
             cload = params.get("CL", cload)
+        vbias = (params or {}).get("VBIAS", self.DEFAULT_PARAMS["VBIAS"])
 
         # PMOS input needs VCM near VSS for adequate Vsg headroom
         vcm = 0.15  # VDD=0.9V, PMOS input, VCM≈0.15V leaves Vsg≈0.75V
 
-        return _TB_TEMPLATE.format(
+        if analysis_type in ("tran", "sr"):
+            return _TB_SR_TEMPLATE.format(
+                VDD=vdd, VCM=vcm, VBIAS=vbias, CL=_fmt(cload),
+                VLOW=vcm - 0.1, VHIGH=vcm + 0.1,
+            )
+        if analysis_type == "st":
+            return _TB_ST_TEMPLATE.format(
+                VDD=vdd, VCM=vcm, VBIAS=vbias, CL=_fmt(cload),
+                VLOW=vcm, VHIGH=vcm + 10e-3,
+            )
+        return _TB_AC_TEMPLATE.format(
             VDD=vdd,
             VCM=vcm,
+            VBIAS=vbias,
             CL=_fmt(cload),
+        )
+
+    def get_circuit_files(
+        self, params: dict[str, float] | None = None
+    ) -> CircuitFiles:
+        """Return AC, slew-rate, and 0.1% settling-time testbenches."""
+        circuit_content = self.generate_circuit(params)
+        return CircuitFiles(
+            circuit_netlist=circuit_content,
+            testbenches=[
+                self.generate_testbench(params, "ac"),
+                self.generate_testbench(params, "sr"),
+                self.generate_testbench(params, "st"),
+            ],
+            circuit_name=CircuitFiles.extract_subckt_name(circuit_content),
         )
 
     # ------------------------------------------------------------------
@@ -208,7 +234,6 @@ include "/PDKS/TSMC28nm/models/spectre/toplevel.scs" section=top_tt
 parameters Wtail={Wtail} Ltail={Ltail}
 parameters Wdp={Wdp} Ldp={Ldp}
 parameters Wcm={Wcm} Lcm={Lcm}
-parameters VBIAS={VBIAS}
 subckt ota_5t (vip vin vout vbias vdd vss)
 // Tail current source (PMOS)
 Mtail (tail vbias vdd vdd) pch_mac w=Wtail l=Ltail nf=1
@@ -221,13 +246,13 @@ Mcm2 (vout lout vss vss) nch_mac w=Wcm l=Lcm nf=1
 ends ota_5t
 """
 
-_TB_TEMPLATE = """\
+_TB_AC_TEMPLATE = """\
 // tb_ota_ac.scs -- 5T OTA differential AC analysis
 simulator lang=spectre insensitive=yes
 
 include "circuit.cir"
 
-parameters VDD={VDD} VCM={VCM}  CL={CL}
+parameters VDD={VDD} VCM={VCM} VBIAS={VBIAS} CL={CL}
 
 // Power supply and bias
 VDDsrc (vdd 0) vsource type=dc dc=VDD
@@ -253,6 +278,56 @@ ac1 ac start=1 stop=10G dec=20
 
 save vout
 save VDDsrc:p
+"""
+
+_TB_SR_TEMPLATE = """\
+// tb_5t_ota_sr.scs -- Unity-gain large-signal slew-rate analysis
+simulator lang=spectre insensitive=yes
+
+include "circuit.cir"
+
+parameters VDD={VDD} VCM={VCM} VBIAS={VBIAS} CL={CL}
+parameters VLOW={VLOW} VHIGH={VHIGH}
+
+VDDsrc (vdd 0) vsource type=dc dc=VDD
+VSSsrc (vss 0) vsource type=dc dc=0
+VBIASsrc (vbias 0) vsource type=dc dc=VBIAS
+VIPsrc (vinp 0) vsource type=pulse val0=VLOW val1=VHIGH delay=2n rise=100p fall=100p width=50n period=100n
+VFBsrc (vinn vout) vsource type=dc dc=0
+
+Xdut (vinp vinn vout vbias vdd vss) ota_5t
+CLload (vout 0) capacitor c=CL
+
+tempOption options temp=27
+outOpts options rawfmt=psfascii
+srTran tran stop=120n maxstep=10p
+
+save vinp vout
+"""
+
+_TB_ST_TEMPLATE = """\
+// tb_5t_ota_st.scs -- Unity-gain 0.1% settling-time analysis
+simulator lang=spectre insensitive=yes
+
+include "circuit.cir"
+
+parameters VDD={VDD} VCM={VCM} VBIAS={VBIAS} CL={CL}
+parameters VLOW={VLOW} VHIGH={VHIGH}
+
+VDDsrc (vdd 0) vsource type=dc dc=VDD
+VSSsrc (vss 0) vsource type=dc dc=0
+VBIASsrc (vbias 0) vsource type=dc dc=VBIAS
+VIPsrc (vinp 0) vsource type=pulse val0=VLOW val1=VHIGH delay=5n rise=100p fall=100p width=50n period=100n
+VFBsrc (vinn vout) vsource type=dc dc=0
+
+Xdut (vinp vinn vout vbias vdd vss) ota_5t
+CLload (vout 0) capacitor c=CL
+
+tempOption options temp=27
+outOpts options rawfmt=psfascii
+stTran tran stop=120n maxstep=10p
+
+save vinp vout
 """
 
 

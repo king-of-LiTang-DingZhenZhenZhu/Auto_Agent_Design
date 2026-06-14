@@ -29,7 +29,8 @@
 folded_cascode/
 ├── folded_cascode.cir
 ├── tb_folded_cascode_ac.scs
-├── tb_folded_cascode_tran.scs
+├── tb_folded_cascode_sr.scs
+├── tb_folded_cascode_st.scs
 └── requirements.json
 ```
 
@@ -37,7 +38,8 @@ folded_cascode/
 
 - `folded_cascode.cir` 是 DUT 子电路模板。
 - `tb_folded_cascode_ac.scs` 是 AC 仿真模板。
-- `tb_folded_cascode_tran.scs` 是可选的瞬态仿真模板。
+- `tb_folded_cascode_sr.scs` 是大信号压摆率仿真模板。
+- `tb_folded_cascode_st.scs` 是 0.1% 建立时间仿真模板。
 - `requirements.json` 保存用户要求和拓扑信息。
 
 DUT 网表中的 W/L 通常仍然使用参数名，例如：
@@ -127,7 +129,8 @@ topologies/<name>.py
 项目输入目录
 ├── <name>.cir
 ├── tb_<name>_ac.scs
-├── tb_<name>_tran.scs
+├── tb_<name>_sr.scs
+├── tb_<name>_st.scs
 └── requirements.json
         |
         | python main.py --netlist ... --testbench ...
@@ -264,7 +267,8 @@ ends folded_cascode
 
 ```text
 tb_folded_cascode_ac.scs
-tb_folded_cascode_tran.scs
+tb_folded_cascode_sr.scs
+tb_folded_cascode_st.scs
 ```
 
 testbench 通常包含：
@@ -289,7 +293,21 @@ Virtuoso 或 OCEAN。
 
 testbench 中的固定测试条件，例如 VDD、VCM、负载电容和扫频范围，是在项目生成时根据拓扑默认值或用户要求写入的。
 
-当前渲染流程只替换 DUT 中的设计参数，不会在每一轮 BO 中重新渲染 testbench 参数。因此，负载、电源和分析设置在一次优化任务中通常保持不变。
+当前渲染流程会把同一轮参数应用到 DUT 和 testbench 的 `parameters`
+声明。只有进入 BO 参数空间的变量会变化，因此负载、电源和分析设置
+在一次优化任务中通常保持不变。
+
+5T OTA 的 `VBIAS` 是 testbench 所有的优化参数：DUT 只接收 `vbias`
+端口，不在 `.cir` 中重复声明 `VBIAS`。每轮 BO 会同时渲染所有
+testbench 的：
+
+```spectre
+parameters VBIAS=...
+VBIASsrc (vbias 0) vsource type=dc dc=VBIAS
+```
+
+因此 `VBIAS` 会随 trial 改变，而 `VDD`、`VCM`、`CL` 和输入阶跃幅度
+仍保持项目生成时的固定测试条件。
 
 ### 3.5 requirements.json 的作用
 
@@ -325,7 +343,8 @@ cd Agent_LLM_BO/circuit_agent
 python main.py \
   --netlist folded_cascode/folded_cascode.cir \
   --testbench folded_cascode/tb_folded_cascode_ac.scs \
-              folded_cascode/tb_folded_cascode_tran.scs \
+              folded_cascode/tb_folded_cascode_sr.scs \
+              folded_cascode/tb_folded_cascode_st.scs \
   --requirements folded_cascode/requirements.json
 ```
 
@@ -675,8 +694,30 @@ PM         = 180 + UGF 处的输出相位
 DC analysis 保存 `VDDsrc:p`。Python 从 `raw/op1.dc` 读取电源功率并取
 绝对值，得到 `power_w`。
 
-Transient testbench 保存 `vout`。Python 从 `raw/tran1.tran` 读取时间和
-输出电压，并根据最大 `abs(dVout/dt)` 得到 slew rate。
+Transient testbench 保存 `vinp` 和 `vout`。Python 从 `raw/tran1.tran`
+读取时间、输入和输出波形，用输入的 50% 交越划分上升/下降响应窗口，
+并只在输出的 10%-90% 电平区间计算：
+
+```text
+SR+ = max(dVout/dt)
+SR- = abs(min(dVout/dt))
+SR  = min(SR+, SR-)
+```
+
+BO 使用较差方向的 `SR` 判断是否达标，同时在结果中保留独立的
+`slew_rate_positive_v_per_s` 和 `slew_rate_negative_v_per_s`。
+
+建立时间 testbench 使用 10 mV 小信号阶跃，analysis 名为 `stTran`。
+Python 用输入的 50% 交越作为响应起点，以每个响应窗口最后 10% 波形
+的中位数作为稳态输出，并采用统一的 0.1% 误差带：
+
+```text
+error_band = 0.001 * input_step
+```
+
+输出最后一次离开误差带之后的第一个采样点定义为建立完成。上升沿和
+下降沿分别计算，`settling_time_s` 保存二者较大值，BO 按
+`settling_time_s <= target` 判断是否达标。
 
 当前结果读取顺序为：
 

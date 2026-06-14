@@ -100,7 +100,8 @@ class BaseTopology(ABC):
             <project_dir>/
             ├── <topo_name>.cir          # DUT subcircuit
             ├── tb_<topo_name>_ac.scs    # AC testbench (always)
-            ├── tb_<topo_name>_tran.scs  # Transient testbench (if supported)
+            ├── tb_<topo_name>_sr.scs    # Slew-rate testbench
+            ├── tb_<topo_name>_st.scs    # 0.1% settling-time testbench
             └── requirements.json        # Design targets
 
         Args:
@@ -125,7 +126,7 @@ class BaseTopology(ABC):
 
         # --- testbench files ---
         tb_files: list[Path] = []
-        tb_suffixes = ["ac", "tran", "dc", "noise"]
+        tb_suffixes = ["ac", "sr", "st", "dc", "noise"]
         for i, tb_content in enumerate(cf.testbenches):
             suffix = tb_suffixes[i] if i < len(tb_suffixes) else f"tb{i}"
             tb_path = out / f"tb_{self.meta.name}_{suffix}.scs"

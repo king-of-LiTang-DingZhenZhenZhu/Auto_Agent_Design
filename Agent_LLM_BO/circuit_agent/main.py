@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -19,7 +20,14 @@ from rich.table import Table
 
 from config import Settings, settings
 from llm_client import LLMClient
-from models import CircuitFiles, DesignTarget, NetlistTemplate, ParamSpace, SimResult
+from models import (
+    CircuitFiles,
+    DesignTarget,
+    NetlistTemplate,
+    ParamDef,
+    ParamSpace,
+    SimResult,
+)
 from optimizer import HybridOptimizer
 from simulator import Simulator
 from utils import ensure_directories, setup_logging
@@ -98,6 +106,26 @@ def run_from_file(
         console.print(f"[red]Netlist file not found: {netlist_path}[/red]")
         sys.exit(1)
 
+    # Load DUT and testbenches before constructing the parameter space so
+    # testbench-owned optimization parameters such as VBIAS are visible.
+    netlist_content = netlist_path.read_text(encoding="utf-8")
+    if args.testbench:
+        testbench_contents = []
+        for tb_str in args.testbench:
+            tb_path = Path(tb_str)
+            if not tb_path.exists():
+                console.print(f"[red]Testbench file not found: {tb_path}[/red]")
+                sys.exit(1)
+            testbench_contents.append(tb_path.read_text(encoding="utf-8"))
+            console.print(f"[green]✓[/green] Loaded testbench: {tb_path}")
+        circuit_files = CircuitFiles(
+            circuit_netlist=netlist_content,
+            testbenches=testbench_contents,
+            circuit_name=CircuitFiles.extract_subckt_name(netlist_content),
+        )
+    else:
+        circuit_files = _build_circuit_files(netlist_content)
+
     # --- Load parameter search space ---
     if args.params:
         params_path = Path(args.params)
@@ -124,6 +152,22 @@ def run_from_file(
             console.print("[dim]Provide a --params JSON file or add parameters declarations to the netlist.[/dim]")
             sys.exit(1)
 
+    testbench_text = "\n".join(circuit_files.testbenches if circuit_files else [])
+    if (
+        re.search(r"\bVBIAS\s*=", testbench_text, re.IGNORECASE)
+        and "VBIAS" not in param_space.get_param_names()
+    ):
+        param_space.params.append(
+            ParamDef(
+                name="VBIAS",
+                low=0.25,
+                high=0.50,
+                log_scale=False,
+                unit="V",
+            )
+        )
+        console.print("     VBIAS: [250m ~ 500m] V (testbench bias)")
+
     # --- Build design targets ---
     original_requirement_text = ""
     if args.requirements:
@@ -142,6 +186,8 @@ def run_from_file(
             phase_margin_deg=t.get("phase_margin_deg"),
             power_w=t.get("power_w"),
             load_cap_f=t.get("load_cap_f"),
+            slew_rate_v_per_s=t.get("slew_rate_v_per_s"),
+            settling_time_s=t.get("settling_time_s"),
             topology_hint=req_data.get("topology_hint", ""),
         )
     elif args.targets_json:
@@ -157,18 +203,25 @@ def run_from_file(
             phase_margin_deg=t.get("phase_margin_deg"),
             power_w=t.get("power_w"),
             load_cap_f=t.get("load_cap_f"),
+            slew_rate_v_per_s=t.get("slew_rate_v_per_s"),
+            settling_time_s=t.get("settling_time_s"),
             topology_hint=t.get("topology_hint", ""),
         )
-    elif any([args.gain, args.bw, args.pm, args.power]):
+    elif any([args.gain, args.bw, args.pm, args.power, args.sr, args.settling_time]):
         targets = DesignTarget(
             gain_db=args.gain,
             bandwidth_hz=args.bw,
             phase_margin_deg=args.pm,
             power_w=args.power,
             load_cap_f=args.load_cap,
+            slew_rate_v_per_s=args.sr,
+            settling_time_s=args.settling_time,
         )
     else:
-        console.print("[red]No targets specified. Use --targets-json or --gain/--bw/--pm/--power.[/red]")
+        console.print(
+            "[red]No targets specified. Use --targets-json or "
+            "--gain/--gbw/--pm/--power/--sr/--settling-time.[/red]"
+        )
         sys.exit(1)
 
     console.print(f"[green]✓[/green] Loaded netlist: {netlist_path}")
@@ -213,29 +266,6 @@ def run_from_file(
     # Save requirements to workspace for traceability
     _save_requirements(targets, original_text=original_requirement_text, config=config, project_name=project_name)
 
-    # --- Build template from user's netlist ---
-    netlist_content = netlist_path.read_text(encoding="utf-8")
-
-    if args.testbench:
-        # Explicit split: --netlist = DUT .cir, --testbench = one or more .scs files
-        testbench_contents = []
-        for tb_str in args.testbench:
-            tb_path = Path(tb_str)
-            if not tb_path.exists():
-                console.print(f"[red]Testbench file not found: {tb_path}[/red]")
-                sys.exit(1)
-            testbench_contents.append(tb_path.read_text(encoding="utf-8"))
-            console.print(f"[green]✓[/green] Loaded testbench: {tb_path}")
-        circuit_name = CircuitFiles.extract_subckt_name(netlist_content)
-        circuit_files = CircuitFiles(
-            circuit_netlist=netlist_content,
-            testbenches=testbench_contents,
-            circuit_name=circuit_name,
-        )
-    else:
-        # Monolithic mode: try to split netlist into circuit + testbench
-        circuit_files = _build_circuit_files(netlist_content)
-
     # Template must be DUT-only so circuit.cir doesn't include the testbench
     # (which includes circuit.cir, creating a self-inclusion loop)
     if circuit_files:
@@ -257,12 +287,12 @@ def run_from_file(
 
     if gmid_sizer is not None:
         # gm/Id mode: initial params are gm_id/L/current, convert to W/L
-        netlist_for_init = circuit_files.circuit_netlist if circuit_files else netlist_content
+        netlist_for_init = _combined_parameter_source(netlist_content, circuit_files)
         gmid_init = gmid_sizer.get_initial_gmid_params(netlist_for_init)
         initial_params = gmid_sizer.size(gmid_init)
     else:
         initial_params = param_space.get_initial_params(
-            circuit_files.circuit_netlist if circuit_files else netlist_content
+            _combined_parameter_source(netlist_content, circuit_files)
         )
 
     run_dir = config.get_run_dir(0)
@@ -414,6 +444,16 @@ def _display_targets(targets: DesignTarget):
         table.add_row("Power", f"<= {_eng_fmt(targets.power_w)}W")
     if targets.load_cap_f is not None:
         table.add_row("Load Cap", f"{_eng_fmt(targets.load_cap_f)}F")
+    if targets.slew_rate_v_per_s is not None:
+        table.add_row(
+            "Slew Rate",
+            f">= {_eng_fmt(targets.slew_rate_v_per_s)}V/s",
+        )
+    if targets.settling_time_s is not None:
+        table.add_row(
+            "Settling Time (0.1%)",
+            f"<= {_eng_fmt(targets.settling_time_s)}s",
+        )
 
     console.print(table)
 
@@ -447,6 +487,50 @@ def _display_results_table(result: SimResult, targets: DesignTarget, title: str)
         actual = f"{_eng_fmt(result.power_w)}W" if result.power_w is not None else "N/A"
         mark = "[green]✓[/green]" if status.get("power_w") else "[red]✗[/red]"
         table.add_row("Power", f"<= {_eng_fmt(targets.power_w)}W", actual, mark)
+
+    if targets.slew_rate_v_per_s is not None:
+        actual = (
+            f"{_eng_fmt(result.slew_rate_v_per_s)}V/s"
+            if result.slew_rate_v_per_s is not None
+            else "N/A"
+        )
+        if (
+            result.slew_rate_positive_v_per_s is not None
+            and result.slew_rate_negative_v_per_s is not None
+        ):
+            actual += (
+                f" (SR+ {_eng_fmt(result.slew_rate_positive_v_per_s)}, "
+                f"SR- {_eng_fmt(result.slew_rate_negative_v_per_s)})"
+            )
+        mark = (
+            "[green]✓[/green]"
+            if status.get("slew_rate_v_per_s")
+            else "[red]✗[/red]"
+        )
+        table.add_row(
+            "Slew Rate",
+            f">= {_eng_fmt(targets.slew_rate_v_per_s)}V/s",
+            actual,
+            mark,
+        )
+
+    if targets.settling_time_s is not None:
+        actual = (
+            f"{_eng_fmt(result.settling_time_s)}s"
+            if result.settling_time_s is not None
+            else "N/A"
+        )
+        mark = (
+            "[green]✓[/green]"
+            if status.get("settling_time_s")
+            else "[red]✗[/red]"
+        )
+        table.add_row(
+            "Settling Time (0.1%)",
+            f"<= {_eng_fmt(targets.settling_time_s)}s",
+            actual,
+            mark,
+        )
 
     console.print(table)
 
@@ -505,7 +589,8 @@ def _save_final_output(
         for i, tb in enumerate(circuit_files.testbenches):
             suffix = "" if i == 0 else f"_{i}"
             tb_path = sim_dir / f"tb_circuit{suffix}.scs"
-            tb_path.write_text(tb, encoding="utf-8")
+            rendered_tb = NetlistTemplate.from_netlist(tb).render(params)
+            tb_path.write_text(rendered_tb, encoding="utf-8")
 
     # 3. Copy simulation data from best run (look for the latest history)
     workspace = config.get_workspace_path()
@@ -586,6 +671,14 @@ def _save_final_output(
         f"  GBW:          {_eng_fmt(result.bandwidth_hz)}Hz" if result.bandwidth_hz else "",
         f"  Phase Margin: {result.phase_margin_deg:.1f} deg" if result.phase_margin_deg else "",
         f"  Power:        {_eng_fmt(result.power_w)}W" if result.power_w else "",
+        f"  Slew Rate:    {_eng_fmt(result.slew_rate_v_per_s)}V/s"
+        if result.slew_rate_v_per_s else "",
+        f"  SR+:          {_eng_fmt(result.slew_rate_positive_v_per_s)}V/s"
+        if result.slew_rate_positive_v_per_s else "",
+        f"  SR-:          {_eng_fmt(result.slew_rate_negative_v_per_s)}V/s"
+        if result.slew_rate_negative_v_per_s else "",
+        f"  Settling 0.1%:{_eng_fmt(result.settling_time_s)}s"
+        if result.settling_time_s else "",
         "",
         "Optimized Parameters:",
     ]
@@ -662,6 +755,16 @@ def _build_circuit_files(netlist_content: str) -> CircuitFiles | None:
         return None
 
 
+def _combined_parameter_source(
+    netlist_content: str,
+    circuit_files: CircuitFiles | None,
+) -> str:
+    """Combine DUT and testbench declarations for initial parameter lookup."""
+    if not circuit_files:
+        return netlist_content
+    return "\n".join([circuit_files.circuit_netlist, *circuit_files.testbenches])
+
+
 def _eng_fmt(value: float | None) -> str:
     """Quick engineering format."""
     if value is None:
@@ -716,6 +819,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pm", type=float, default=None, help="Min phase margin in degrees")
     parser.add_argument("--power", type=float, default=None, help="Max power in W")
     parser.add_argument("--load-cap", type=float, default=None, help="Load capacitance in F")
+    parser.add_argument(
+        "--sr", type=float, default=None,
+        help="Minimum worst-case slew rate min(SR+, SR-) in V/s",
+    )
+    parser.add_argument(
+        "--settling-time", type=float, default=None,
+        help="Maximum 0.1%% settling time in seconds",
+    )
 
     # --- General options ---
     parser.add_argument(

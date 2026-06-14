@@ -197,10 +197,16 @@ class DesignTarget:
             status["phase_margin_deg"] = result.phase_margin_deg >= self.phase_margin_deg
         if self.power_w is not None and result.power_w is not None:
             status["power_w"] = result.power_w <= self.power_w
-        if self.slew_rate_v_per_s is not None and result.slew_rate_v_per_s is not None:
-            status["slew_rate_v_per_s"] = result.slew_rate_v_per_s >= self.slew_rate_v_per_s
-        if self.settling_time_s is not None and result.settling_time_s is not None:
-            status["settling_time_s"] = result.settling_time_s <= self.settling_time_s
+        if self.slew_rate_v_per_s is not None:
+            status["slew_rate_v_per_s"] = (
+                result.slew_rate_v_per_s is not None
+                and result.slew_rate_v_per_s >= self.slew_rate_v_per_s
+            )
+        if self.settling_time_s is not None:
+            status["settling_time_s"] = (
+                result.settling_time_s is not None
+                and result.settling_time_s <= self.settling_time_s
+            )
         all_pass = all(status.values()) if status else False
         return all_pass, status
 
@@ -502,7 +508,9 @@ class SimResult:
     phase_margin_deg: float | None = None
     power_w: float | None = None
     unity_gain_freq_hz: float | None = None
-    slew_rate_v_per_s: float | None = None     # Transient: slew rate in V/s
+    slew_rate_v_per_s: float | None = None     # Transient: min(SR+, SR-)
+    slew_rate_positive_v_per_s: float | None = None
+    slew_rate_negative_v_per_s: float | None = None
     settling_time_s: float | None = None        # Transient: settling time in seconds
     converged: bool = True
     error_message: str = ""
@@ -522,6 +530,14 @@ class SimResult:
             power_w=primary.power_w,
             unity_gain_freq_hz=primary.unity_gain_freq_hz,
             slew_rate_v_per_s=primary.slew_rate_v_per_s or extra.slew_rate_v_per_s,
+            slew_rate_positive_v_per_s=(
+                primary.slew_rate_positive_v_per_s
+                or extra.slew_rate_positive_v_per_s
+            ),
+            slew_rate_negative_v_per_s=(
+                primary.slew_rate_negative_v_per_s
+                or extra.slew_rate_negative_v_per_s
+            ),
             settling_time_s=primary.settling_time_s or extra.settling_time_s,
             converged=primary.converged,
             error_message=primary.error_message,
@@ -547,6 +563,8 @@ class SimResult:
                 "phase_margin_deg": self.phase_margin_deg,
                 "power_w": self.power_w,
                 "slew_rate_v_per_s": self.slew_rate_v_per_s,
+                "slew_rate_positive_v_per_s": self.slew_rate_positive_v_per_s,
+                "slew_rate_negative_v_per_s": self.slew_rate_negative_v_per_s,
                 "settling_time_s": self.settling_time_s,
             },
         }
@@ -581,6 +599,10 @@ class SimResult:
             lines.append(f"UGF = {_eng(self.unity_gain_freq_hz)}Hz")
         if self.slew_rate_v_per_s is not None:
             lines.append(f"SR = {_eng(self.slew_rate_v_per_s)}V/s")
+        if self.slew_rate_positive_v_per_s is not None:
+            lines.append(f"SR+ = {_eng(self.slew_rate_positive_v_per_s)}V/s")
+        if self.slew_rate_negative_v_per_s is not None:
+            lines.append(f"SR- = {_eng(self.slew_rate_negative_v_per_s)}V/s")
         if self.settling_time_s is not None:
             lines.append(f"t_settle = {_eng(self.settling_time_s)}s")
         if not self.converged:
