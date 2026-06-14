@@ -77,9 +77,9 @@ def get_topology_for_targets(targets: DesignTarget) -> str | None:
                 score += 1  # slightly out of range — marginal
 
         if targets.bandwidth_hz is not None:
-            if meta.min_bw_hz <= targets.bandwidth_hz <= meta.max_bw_hz:
+            if meta.min_gbw_hz <= targets.bandwidth_hz <= meta.max_gbw_hz:
                 score += 2
-            elif targets.bandwidth_hz <= meta.max_bw_hz * 1.1:
+            elif targets.bandwidth_hz <= meta.max_gbw_hz * 1.1:
                 score += 1
 
         if targets.phase_margin_deg is not None:

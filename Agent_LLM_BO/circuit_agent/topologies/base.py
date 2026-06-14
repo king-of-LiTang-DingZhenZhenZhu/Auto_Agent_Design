@@ -28,12 +28,22 @@ class TopologyMeta:
     # Approximate capability ranges (SI units)
     min_gain_db: float = 0.0
     max_gain_db: float = 120.0
-    min_bw_hz: float = 0.0
-    max_bw_hz: float = 1e12
+    min_gbw_hz: float = 0.0
+    max_gbw_hz: float = 1e12
     typical_power_w: float = 1e-3
 
     complexity: int = 1  # 1 (simple) to 5 (complex)
     escalation: str | None = None  # next topology if this one can't reach targets
+
+    @property
+    def min_bw_hz(self) -> float:
+        """Backward-compatible alias; current AC metric is GBW/UGF."""
+        return self.min_gbw_hz
+
+    @property
+    def max_bw_hz(self) -> float:
+        """Backward-compatible alias; current AC metric is GBW/UGF."""
+        return self.max_gbw_hz
 
 
 class BaseTopology(ABC):

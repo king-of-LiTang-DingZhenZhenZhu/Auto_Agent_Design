@@ -22,12 +22,12 @@ class FiveTOTA(BaseTopology):
         display_name="5-Transistor OTA",
         description=(
             "Single-stage OTA with PMOS differential pair and NMOS "
-            "current-mirror load.  Moderate gain (30-50 dB), high bandwidth."
+            "current-mirror load.  Moderate gain (30-50 dB), high GBW."
         ),
         min_gain_db=25,
         max_gain_db=55,
-        min_bw_hz=1e6,
-        max_bw_hz=2e9,
+        min_gbw_hz=1e6,
+        max_gbw_hz=2e9,
         typical_power_w=500e-6,
         complexity=1,
         escalation="two_stage_ota",
@@ -208,7 +208,7 @@ include "/PDKS/TSMC28nm/models/spectre/toplevel.scs" section=top_tt
 parameters Wtail={Wtail} Ltail={Ltail}
 parameters Wdp={Wdp} Ldp={Ldp}
 parameters Wcm={Wcm} Lcm={Lcm}
-
+parameters VBIAS={VBIAS}
 subckt ota_5t (vip vin vout vbias vdd vss)
 // Tail current source (PMOS)
 Mtail (tail vbias vdd vdd) pch_mac w=Wtail l=Ltail nf=1
@@ -227,7 +227,7 @@ simulator lang=spectre insensitive=yes
 
 include "circuit.cir"
 
-parameters VDD={VDD} VCM={VCM} VBIAS={VBIAS} CL={CL}
+parameters VDD={VDD} VCM={VCM}  CL={CL}
 
 // Power supply and bias
 VDDsrc (vdd 0) vsource type=dc dc=VDD

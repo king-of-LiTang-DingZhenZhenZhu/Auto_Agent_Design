@@ -43,12 +43,12 @@ class TwoStageOTA(BaseTopology):
         description=(
             "Two-stage OTA with NMOS differential pair, PMOS current-mirror "
             "first stage, PMOS common-source second stage, and Miller "
-            "compensation (Cc + Rz).  High gain (55-85 dB), moderate bandwidth."
+            "compensation (Cc + Rz).  High gain (55-85 dB), moderate GBW."
         ),
         min_gain_db=50,
         max_gain_db=90,
-        min_bw_hz=1e5,
-        max_bw_hz=5e8,
+        min_gbw_hz=1e5,
+        max_gbw_hz=5e8,
         typical_power_w=1e-3,
         complexity=2,
         escalation="folded_cascode",  # future

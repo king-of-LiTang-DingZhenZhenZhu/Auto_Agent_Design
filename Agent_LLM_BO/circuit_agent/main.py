@@ -138,7 +138,7 @@ def run_from_file(
         t = req_data.get("targets", {})
         targets = DesignTarget(
             gain_db=t.get("gain_db"),
-            bandwidth_hz=t.get("bandwidth_hz"),
+            bandwidth_hz=t.get("gbw_hz", t.get("bandwidth_hz")),
             phase_margin_deg=t.get("phase_margin_deg"),
             power_w=t.get("power_w"),
             load_cap_f=t.get("load_cap_f"),
@@ -153,7 +153,7 @@ def run_from_file(
             t = json.load(f)
         targets = DesignTarget(
             gain_db=t.get("gain_db"),
-            bandwidth_hz=t.get("bandwidth_hz"),
+            bandwidth_hz=t.get("gbw_hz", t.get("bandwidth_hz")),
             phase_margin_deg=t.get("phase_margin_deg"),
             power_w=t.get("power_w"),
             load_cap_f=t.get("load_cap_f"),
@@ -319,7 +319,7 @@ def run_from_file(
         if result.gain_db is not None:
             metrics.append(f"Gain={result.gain_db:.1f}dB")
         if result.bandwidth_hz is not None:
-            metrics.append(f"BW={_eng_fmt(result.bandwidth_hz)}Hz")
+            metrics.append(f"GBW={_eng_fmt(result.bandwidth_hz)}Hz")
         if result.phase_margin_deg is not None:
             metrics.append(f"PM={result.phase_margin_deg:.1f}°")
         if result.power_w is not None:
@@ -407,7 +407,7 @@ def _display_targets(targets: DesignTarget):
     if targets.gain_db is not None:
         table.add_row("Gain", f">= {targets.gain_db} dB")
     if targets.bandwidth_hz is not None:
-        table.add_row("Bandwidth", f">= {_eng_fmt(targets.bandwidth_hz)}Hz")
+        table.add_row("GBW", f">= {_eng_fmt(targets.bandwidth_hz)}Hz")
     if targets.phase_margin_deg is not None:
         table.add_row("Phase Margin", f">= {targets.phase_margin_deg}°")
     if targets.power_w is not None:
@@ -436,7 +436,7 @@ def _display_results_table(result: SimResult, targets: DesignTarget, title: str)
     if targets.bandwidth_hz is not None:
         actual = f"{_eng_fmt(result.bandwidth_hz)}Hz" if result.bandwidth_hz is not None else "N/A"
         mark = "[green]✓[/green]" if status.get("bandwidth_hz") else "[red]✗[/red]"
-        table.add_row("Bandwidth", f">= {_eng_fmt(targets.bandwidth_hz)}Hz", actual, mark)
+        table.add_row("GBW", f">= {_eng_fmt(targets.bandwidth_hz)}Hz", actual, mark)
 
     if targets.phase_margin_deg is not None:
         actual = f"{result.phase_margin_deg:.1f}°" if result.phase_margin_deg is not None else "N/A"
@@ -583,7 +583,7 @@ def _save_final_output(
     report_lines += [
         "Final Performance:",
         f"  Gain:         {result.gain_db:.1f} dB" if result.gain_db else "",
-        f"  Bandwidth:    {_eng_fmt(result.bandwidth_hz)}Hz" if result.bandwidth_hz else "",
+        f"  GBW:          {_eng_fmt(result.bandwidth_hz)}Hz" if result.bandwidth_hz else "",
         f"  Phase Margin: {result.phase_margin_deg:.1f} deg" if result.phase_margin_deg else "",
         f"  Power:        {_eng_fmt(result.power_w)}W" if result.power_w else "",
         "",
@@ -709,7 +709,10 @@ def parse_args() -> argparse.Namespace:
 
     # --- Quick target shortcuts (alternatives to --targets-json) ---
     parser.add_argument("--gain", type=float, default=None, help="Min gain in dB")
-    parser.add_argument("--bw", type=float, default=None, help="Min bandwidth in Hz")
+    parser.add_argument(
+        "--bw", "--gbw", dest="bw", type=float, default=None,
+        help="Minimum gain-bandwidth product / unity-gain frequency in Hz",
+    )
     parser.add_argument("--pm", type=float, default=None, help="Min phase margin in degrees")
     parser.add_argument("--power", type=float, default=None, help="Max power in W")
     parser.add_argument("--load-cap", type=float, default=None, help="Load capacitance in F")

@@ -62,7 +62,7 @@ class FoldedCascodeOTA(BaseTopology):
     PMOS input pair -> folded NMOS cascodes -> PMOS cascode mirror ->
     PMOS common-source second stage.  Compared with the 5T first stage used by
     TwoStageOTA, the folded-cascode first stage has higher output resistance
-    and is intended for high-gain, high-bandwidth targets.
+    and is intended for high-gain, high-GBW targets.
     """
 
     meta = TopologyMeta(
@@ -71,12 +71,12 @@ class FoldedCascodeOTA(BaseTopology):
         description=(
             "Two-stage OTA with a PMOS-input folded-cascode first stage, "
             "PMOS common-source second stage, and Miller compensation. "
-            "High gain (60-85 dB), higher bandwidth than a basic two-stage OTA."
+            "High gain (60-85 dB), higher GBW than a basic two-stage OTA."
         ),
         min_gain_db=60,
         max_gain_db=85,
-        min_bw_hz=1e6,
-        max_bw_hz=1e9,
+        min_gbw_hz=1e6,
+        max_gbw_hz=1e9,
         typical_power_w=2e-3,
         complexity=3,
         escalation="nmcf_three_stage",

@@ -170,7 +170,9 @@ class DesignTarget:
     """User-specified performance targets for the circuit."""
 
     gain_db: float | None = None  # Minimum gain in dB
-    bandwidth_hz: float | None = None  # Minimum bandwidth in Hz
+    # Backward-compatible storage name. The current AC extractor measures the
+    # first 0 dB crossing, so this value represents GBW/UGF, not -3 dB BW.
+    bandwidth_hz: float | None = None
     phase_margin_deg: float | None = None  # Minimum phase margin in degrees
     power_w: float | None = None  # Maximum power in Watts
     load_cap_f: float | None = None  # Load capacitance in Farads
@@ -178,6 +180,11 @@ class DesignTarget:
     settling_time_s: float | None = None  # Maximum settling time in seconds
     topology_hint: str = ""  # e.g., "5T OTA", "two-stage Miller"
     custom_specs: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def gbw_hz(self) -> float | None:
+        """Canonical meaning of the legacy bandwidth_hz field."""
+        return self.bandwidth_hz
 
     def is_satisfied(self, result: SimResult) -> tuple[bool, dict[str, bool]]:
         """Check if all targets are met. Returns (all_pass, per_metric_pass)."""
@@ -262,7 +269,7 @@ class DesignTarget:
         if self.gain_db is not None:
             lines.append(f"- Gain >= {self.gain_db} dB")
         if self.bandwidth_hz is not None:
-            lines.append(f"- Bandwidth >= {_eng(self.bandwidth_hz)}Hz")
+            lines.append(f"- GBW >= {_eng(self.bandwidth_hz)}Hz")
         if self.phase_margin_deg is not None:
             lines.append(f"- Phase Margin >= {self.phase_margin_deg} degrees")
         if self.power_w is not None:
@@ -490,6 +497,7 @@ class SimResult:
     """Parsed simulation output."""
 
     gain_db: float | None = None
+    # Legacy field name retained for results.json compatibility. It stores GBW.
     bandwidth_hz: float | None = None
     phase_margin_deg: float | None = None
     power_w: float | None = None
@@ -533,6 +541,7 @@ class SimResult:
             "converged": self.converged,
             "metrics": {
                 "gain_db": self.gain_db,
+                "gbw_hz": self.bandwidth_hz,
                 "bandwidth_hz": self.bandwidth_hz,
                 "unity_gain_freq_hz": self.unity_gain_freq_hz,
                 "phase_margin_deg": self.phase_margin_deg,
@@ -563,7 +572,7 @@ class SimResult:
         if self.gain_db is not None:
             lines.append(f"Gain = {self.gain_db:.1f} dB")
         if self.bandwidth_hz is not None:
-            lines.append(f"BW = {_eng(self.bandwidth_hz)}Hz")
+            lines.append(f"GBW = {_eng(self.bandwidth_hz)}Hz")
         if self.phase_margin_deg is not None:
             lines.append(f"PM = {self.phase_margin_deg:.1f} deg")
         if self.power_w is not None:

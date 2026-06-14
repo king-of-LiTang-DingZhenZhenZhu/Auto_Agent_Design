@@ -49,6 +49,8 @@ def parse_psf_results(raw_dir: Path, testbench_content: str) -> SimResult | None
                     _signal_axis(ac_psf, ("vout", "V(vout)", "/vout"))
                 )
                 result.gain_db = gain_db
+                # bandwidth_hz is retained as a legacy field name. This value
+                # is the first 0 dB crossing (UGF, used as GBW), not -3 dB BW.
                 result.bandwidth_hz = ugf_hz
                 result.unity_gain_freq_hz = ugf_hz
                 result.phase_margin_deg = phase_margin_deg

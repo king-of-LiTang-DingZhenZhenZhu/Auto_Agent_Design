@@ -9,6 +9,12 @@ from topologies import get_topology, list_topologies
 
 
 class SpectreTopologyTest(unittest.TestCase):
+    def test_topology_metadata_uses_gbw_capability_names(self):
+        for meta in list_topologies():
+            self.assertGreaterEqual(meta.max_gbw_hz, meta.min_gbw_hz)
+            self.assertEqual(meta.min_bw_hz, meta.min_gbw_hz)
+            self.assertEqual(meta.max_bw_hz, meta.max_gbw_hz)
+
     def test_all_topologies_generate_native_spectre_projects(self):
         forbidden = [".lib ", ".options ", ".param ", ".subckt ", ".meas "]
 

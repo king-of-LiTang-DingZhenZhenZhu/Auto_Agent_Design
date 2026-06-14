@@ -134,7 +134,8 @@ Rules:
 - Convert all values to base SI units (Hz not MHz, W not mW, F not pF)
 - gain_db stays in dB
 - phase_margin_deg stays in degrees
-- If user says "BW > 100MHz", bandwidth_hz = 100e6
+- Treat "BW", "GBW", and "UGF" as the op-amp gain-bandwidth target
+- If user says "GBW > 100MHz", bandwidth_hz = 100e6
 - If user says "power < 2mW", power_w = 2e-3
 - If user says "CL = 1pF", load_cap_f = 1e-12
 - project_name: short, filesystem-safe, descriptive. Use underscores. Max 40 chars.
@@ -273,7 +274,8 @@ Output the final parameters as a JSON object in a ```json code block:
         topo_list = "\n".join(
             f"- **{t['name']}**: {t['display_name']} — {t['description']} "
             f"(gain {t['min_gain_db']}-{t['max_gain_db']} dB, "
-            f"BW {t['min_bw_hz']}-{t['max_bw_hz']} Hz, "
+            f"GBW {t.get('min_gbw_hz', t.get('min_bw_hz'))}-"
+            f"{t.get('max_gbw_hz', t.get('max_bw_hz'))} Hz, "
             f"typical power {t['typical_power_w']} W)"
             for t in available_topologies
         )

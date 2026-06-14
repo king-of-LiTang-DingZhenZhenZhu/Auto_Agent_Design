@@ -246,7 +246,7 @@ class HybridOptimizer:
             reward -= 200.0  # Missing measurement in dead circuit
             all_met = False
 
-        # Bandwidth
+        # GBW / unity-gain frequency (legacy field name: bandwidth_hz)
         if targets.bandwidth_hz is not None and result.bandwidth_hz is not None:
             if result.bandwidth_hz >= targets.bandwidth_hz:
                 reward += 10.0 * self.weights["bandwidth_hz"]
