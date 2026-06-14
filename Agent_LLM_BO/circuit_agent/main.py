@@ -50,7 +50,7 @@ def main():
         )
         console.print(
             "[dim]python3 main.py --netlist <project>/<name>.cir "
-            "--testbench <project>/tb_<name>_ac.sp "
+            "--testbench <project>/tb_<name>_ac.scs "
             "--requirements <project>/requirements.json[/dim]"
         )
         sys.exit(2)
@@ -109,7 +109,7 @@ def run_from_file(
         param_space = ParamSpace.from_dict(param_data)
         console.print(f"[green]✓[/green] Loaded {len(param_space.params)} parameters from params file")
     else:
-        # Auto-extract from netlist .param declarations
+        # Auto-extract from netlist .param/parameters declarations
         try:
             netlist_content = netlist_path.read_text(encoding="utf-8")
             param_space = ParamSpace.from_netlist(
@@ -121,7 +121,7 @@ def run_from_file(
                 console.print(f"     {p.name}: [{_eng_fmt(p.low)} ~ {_eng_fmt(p.high)}]{extra}")
         except ValueError as e:
             console.print(f"[red]Cannot auto-extract parameter space: {e}[/red]")
-            console.print("[dim]Provide a --params JSON file or add .param declarations to the netlist.[/dim]")
+            console.print("[dim]Provide a --params JSON file or add parameters declarations to the netlist.[/dim]")
             sys.exit(1)
 
     # --- Build design targets ---
@@ -217,7 +217,7 @@ def run_from_file(
     netlist_content = netlist_path.read_text(encoding="utf-8")
 
     if args.testbench:
-        # Explicit split: --netlist = DUT .cir, --testbench = one or more .sp files
+        # Explicit split: --netlist = DUT .cir, --testbench = one or more .scs files
         testbench_contents = []
         for tb_str in args.testbench:
             tb_path = Path(tb_str)
@@ -237,7 +237,7 @@ def run_from_file(
         circuit_files = _build_circuit_files(netlist_content)
 
     # Template must be DUT-only so circuit.cir doesn't include the testbench
-    # (which .include's circuit.cir, creating a self-inclusion loop)
+    # (which includes circuit.cir, creating a self-inclusion loop)
     if circuit_files:
         template = NetlistTemplate.from_netlist(circuit_files.circuit_netlist)
     else:
@@ -245,12 +245,12 @@ def run_from_file(
 
     # Save template to workspace
     workspace = config.get_workspace_path()
-    template_path = workspace / "circuit_template.sp"
+    template_path = workspace / "circuit_template.cir"
     template_path.write_text(template.template_content, encoding="utf-8")
     if circuit_files:
         for i, tb in enumerate(circuit_files.testbenches):
             suffix = "" if i == 0 else f"_{i}"
-            (workspace / f"tb_template{suffix}.sp").write_text(tb, encoding="utf-8")
+            (workspace / f"tb_template{suffix}.scs").write_text(tb, encoding="utf-8")
 
     # --- Run initial simulation ---
     console.print("\n[bold blue][Phase 1][/bold blue] Running initial Spectre simulation...")
@@ -273,7 +273,7 @@ def run_from_file(
             w_l_grid_step=config.w_l_grid_step,
         )
     else:
-        tb_paths = [run_dir / "circuit_init.spi"]
+        tb_paths = [run_dir / "circuit_init.scs"]
         sim.render_netlist(template, initial_params, tb_paths[0], param_space=param_space,
                            w_l_grid_step=config.w_l_grid_step)
 
@@ -284,12 +284,14 @@ def run_from_file(
         console.print(f"[yellow]Initial simulation failed: {error_msg[:100]}[/yellow]")
         console.print("[dim]Proceeding to optimization — BO may find better parameters.[/dim]")
     else:
-        initial_result = sim.parse_simulation_log(log_content)
+        initial_result = sim.parse_simulation_results(
+            log_content, run_dir, tb_paths[0]
+        )
         # Run extra testbenches and merge results
         for tb_path in tb_paths[1:]:
             ok, log, _ = sim.run_spectre(tb_path, run_dir)
             if ok:
-                extra = sim.parse_simulation_log(log)
+                extra = sim.parse_simulation_results(log, run_dir, tb_path)
                 initial_result = SimResult.merge(initial_result, extra)
         console.print("[green]✓[/green] Simulation converged")
         _display_results_table(initial_result, targets, "Initial Results")
@@ -474,7 +476,7 @@ def _save_final_output(
     Structure:
         outputs/<project_name>/
         ├── netlist/circuit.cir
-        ├── simulation/tb_circuit_ac.sp
+        ├── simulation/tb_circuit_ac.scs
         ├── data/
         ├── results.json
         ├── summary_report.txt
@@ -502,7 +504,7 @@ def _save_final_output(
     if circuit_files and circuit_files.testbenches:
         for i, tb in enumerate(circuit_files.testbenches):
             suffix = "" if i == 0 else f"_{i}"
-            tb_path = sim_dir / f"tb_circuit{suffix}.sp"
+            tb_path = sim_dir / f"tb_circuit{suffix}.scs"
             tb_path.write_text(tb, encoding="utf-8")
 
     # 3. Copy simulation data from best run (look for the latest history)
@@ -632,7 +634,7 @@ def _save_final_output(
     if circuit_files and circuit_files.testbenches:
         for i, tb in enumerate(circuit_files.testbenches):
             suffix = "" if i == 0 else f"_{i}"
-            console.print(f"  • {sim_dir / f'tb_circuit{suffix}.sp'}")
+            console.print(f"  • {sim_dir / f'tb_circuit{suffix}.scs'}")
     console.print(f"  • {result_path}")
     console.print(f"  • {report_path}")
     if virtuoso_report:
@@ -646,7 +648,7 @@ def _save_final_output(
 def _build_circuit_files(netlist_content: str) -> CircuitFiles | None:
     """Attempt to split a netlist into circuit + testbench.
 
-    Returns None if the netlist can't be split (no .subckt found).
+    Returns None if the netlist can't be split (no subckt found).
     """
     try:
         circuit, testbench = LLMClient._split_monolithic_netlist(netlist_content)
@@ -681,7 +683,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--testbench", type=str, nargs='*', default=None,
-        help="One or more testbench .sp files. When provided, --netlist is treated "
+        help="One or more Spectre testbench .scs files. When provided, --netlist is treated "
              "as DUT-only .cir (no monolithic split). The first testbench is the "
              "primary (typically AC); additional ones (e.g. transient) are run "
              "sequentially and their results are merged."
@@ -694,7 +696,7 @@ def parse_args() -> argparse.Namespace:
         "--params", type=str, default=None,
         help="Path to JSON file defining parameter search space. "
              "If omitted, parameters are auto-extracted from the netlist's "
-             ".param declarations with sensible default bounds."
+             "parameters declarations with sensible default bounds."
     )
     parser.add_argument(
         "--requirements", type=str, default=None,

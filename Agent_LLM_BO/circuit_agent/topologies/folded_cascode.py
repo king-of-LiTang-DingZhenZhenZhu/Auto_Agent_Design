@@ -161,7 +161,7 @@ class FoldedCascodeOTA(BaseTopology):
         params: dict[str, float] | None = None,
         analysis_type: str = "ac",
     ) -> str:
-        """Generate the testbench .sp file."""
+        """Generate the Spectre-native testbench .scs file."""
         vdd = 1.0
         vcm = 0.45
         ibias = 20e-6
@@ -408,133 +408,112 @@ class FoldedCascodeOTA(BaseTopology):
 
 
 _CIRCUIT_TEMPLATE = """\
-* folded_cascode.cir -- Folded-Cascode Miller OTA (Python-generated)
-* First stage: PMOS input pair + NMOS folded cascodes + PMOS cascode mirror
-* Second stage: PMOS common-source + NMOS current-source load
-* Compensation: Cc + Rz (Miller with nulling resistor)
-.lib '/PDKS/TSMC28nm/models/hspice/toplevel.l' TOP_TT
-.options redefinedparams=ignore
-.param Wtailp={Wtailp} Ltailp={Ltailp} Wdiffp={Wdiffp} Ldiffp={Ldiffp}
-.param Wfoldn={Wfoldn} Lfoldn={Lfoldn} Wcasn={Wcasn} Lcasn={Lcasn}
-.param Wmirrp={Wmirrp} Lmirrp={Lmirrp} Wcasp={Wcasp} Lcasp={Lcasp}
-.param Wcs={Wcs} Lcs={Lcs} Wload={Wload} Lload={Lload}
-.param Wbp_big={Wbp_big} Lbp_big={Lbp_big} Wbp_small={Wbp_small} Lbp_small={Lbp_small}
-.param Wbn_big={Wbn_big} Lbn_big={Lbn_big} Wbn_small={Wbn_small} Lbn_small={Lbn_small}
-.param Cc={Cc} Rz={Rz}
+// folded_cascode.cir -- Folded-Cascode Miller OTA (Spectre native syntax)
+simulator lang=spectre insensitive=yes
 
-.subckt folded_cascode vip vin vout ibias vdd vss
-* --- Bias ---
-M7 VB1 VB2 net4 vdd pch_lvt_mac W='Wbp_big' L='Lbp_big' nf=1
-M6 net4 VB1 vdd vdd pch_lvt_mac W='Wbp_big' L='Lbp_big' nf=1
-M4 VB2 VB2 vdd vdd pch_lvt_mac W='Wbp_small' L='Lbp_small' nf=1
-M2 VB4 ibias vdd vdd pch_lvt_mac W='Wbp_big' L='Lbp_big' nf=1
-M1 VB3 ibias vdd vdd pch_lvt_mac W='Wbp_big' L='Lbp_big' nf=1
-M0 ibias ibias vdd vdd pch_lvt_mac W='Wbp_big' L='Lbp_big' nf=1
-M13 net6 VB4 vss vss nch_lvt_mac W='Wbn_big' L='Lbn_big' nf=1
-M12 VB1 VB3 net6 vss nch_lvt_mac W='Wbn_big' L='Lbn_big' nf=1
-M11 net2 VB4 vss vss nch_lvt_mac W='Wbn_big' L='Lbn_big' nf=1
-M10 VB2 VB3 net2 vss nch_lvt_mac W='Wbn_big' L='Lbn_big' nf=1
-M9 net3 VB4 vss vss nch_lvt_mac W='Wbn_big' L='Lbn_big' nf=1
-M8 VB4 VB3 net3 vss nch_lvt_mac W='Wbn_big' L='Lbn_big' nf=1
-M5 VB3 VB3 vss vss nch_lvt_mac W='Wbn_small' L='Lbn_small' nf=1
+include "/PDKS/TSMC28nm/models/spectre/toplevel.scs" section=top_tt
 
-* --- PMOS input differential pair ---
-Mtailp ntail VB1 vdd vdd pch_lvt_mac W='Wtailp' L='Ltailp' nf=1
-Mdiff1 nfold_l vip ntail vdd pch_lvt_mac W='Wdiffp' L='Ldiffp' nf=1
-Mdiff2 nfold_r vin ntail vdd pch_lvt_mac W='Wdiffp' L='Ldiffp' nf=1
+parameters Wtailp={Wtailp} Ltailp={Ltailp} Wdiffp={Wdiffp} Ldiffp={Ldiffp}
+parameters Wfoldn={Wfoldn} Lfoldn={Lfoldn} Wcasn={Wcasn} Lcasn={Lcasn}
+parameters Wmirrp={Wmirrp} Lmirrp={Lmirrp} Wcasp={Wcasp} Lcasp={Lcasp}
+parameters Wcs={Wcs} Lcs={Lcs} Wload={Wload} Lload={Lload}
+parameters Wbp_big={Wbp_big} Lbp_big={Lbp_big} Wbp_small={Wbp_small} Lbp_small={Lbp_small}
+parameters Wbn_big={Wbn_big} Lbn_big={Lbn_big} Wbn_small={Wbn_small} Lbn_small={Lbn_small}
+parameters Cc={Cc} Rz={Rz}
 
-* --- NMOS folded branches and common-gate cascodes ---
-Mfold1 nfold_l VB4 vss vss nch_lvt_mac W='Wfoldn' L='Lfoldn' nf=1
-Mfold2 nfold_r VB4 vss vss nch_lvt_mac W='Wfoldn' L='Lfoldn' nf=1
-Mcasn1 pmirr VB3 nfold_l vss nch_lvt_mac W='Wcasn' L='Lcasn' nf=1
-Mcasn2 nstage1 VB3 nfold_r vss nch_lvt_mac W='Wcasn' L='Lcasn' nf=1
+subckt folded_cascode (vip vin vout ibias vdd vss)
+// Internal bias generator
+M7 (VB1 VB2 net4 vdd) pch_lvt_mac w=Wbp_big l=Lbp_big nf=1
+M6 (net4 VB1 vdd vdd) pch_lvt_mac w=Wbp_big l=Lbp_big nf=1
+M4 (VB2 VB2 vdd vdd) pch_lvt_mac w=Wbp_small l=Lbp_small nf=1
+M2 (VB4 ibias vdd vdd) pch_lvt_mac w=Wbp_big l=Lbp_big nf=1
+M1 (VB3 ibias vdd vdd) pch_lvt_mac w=Wbp_big l=Lbp_big nf=1
+M0 (ibias ibias vdd vdd) pch_lvt_mac w=Wbp_big l=Lbp_big nf=1
+M13 (net6 VB4 vss vss) nch_lvt_mac w=Wbn_big l=Lbn_big nf=1
+M12 (VB1 VB3 net6 vss) nch_lvt_mac w=Wbn_big l=Lbn_big nf=1
+M11 (net2 VB4 vss vss) nch_lvt_mac w=Wbn_big l=Lbn_big nf=1
+M10 (VB2 VB3 net2 vss) nch_lvt_mac w=Wbn_big l=Lbn_big nf=1
+M9 (net3 VB4 vss vss) nch_lvt_mac w=Wbn_big l=Lbn_big nf=1
+M8 (VB4 VB3 net3 vss) nch_lvt_mac w=Wbn_big l=Lbn_big nf=1
+M5 (VB3 VB3 vss vss) nch_lvt_mac w=Wbn_small l=Lbn_small nf=1
 
-* --- PMOS Low Voltage cascode current mirror load ---
-Mmirr1 npm_l pmirr vdd vdd pch_lvt_mac W='Wmirrp' L='Lmirrp' nf=1
-Mmirr2 npm_r pmirr vdd vdd pch_lvt_mac W='Wmirrp' L='Lmirrp' nf=1
-Mcasp1 pmirr VB2 npm_l vdd pch_lvt_mac W='Wcasp' L='Lcasp' nf=1
-Mcasp2 nstage1 VB2 npm_r vdd pch_lvt_mac W='Wcasp' L='Lcasp' nf=1
+// PMOS input differential pair
+Mtailp (ntail VB1 vdd vdd) pch_lvt_mac w=Wtailp l=Ltailp nf=1
+Mdiff1 (nfold_l vip ntail vdd) pch_lvt_mac w=Wdiffp l=Ldiffp nf=1
+Mdiff2 (nfold_r vin ntail vdd) pch_lvt_mac w=Wdiffp l=Ldiffp nf=1
 
-* --- Second Stage: PMOS common-source amplifier + NMOS load ---
-Mcs vout nstage1 vdd vdd pch_lvt_mac W='Wcs' L='Lcs' nf=1
-Mload vout VB4 vss vss nch_lvt_mac W='Wload' L='Lload' nf=1
+// NMOS folded branches and common-gate cascodes
+Mfold1 (nfold_l VB4 vss vss) nch_lvt_mac w=Wfoldn l=Lfoldn nf=1
+Mfold2 (nfold_r VB4 vss vss) nch_lvt_mac w=Wfoldn l=Lfoldn nf=1
+Mcasn1 (pmirr VB3 nfold_l vss) nch_lvt_mac w=Wcasn l=Lcasn nf=1
+Mcasn2 (nstage1 VB3 nfold_r vss) nch_lvt_mac w=Wcasn l=Lcasn nf=1
 
-* --- Miller compensation: Rz in series with Cc ---
-Rz nstage1 n_rz R='Rz'
-Cc n_rz vout C='Cc'
-.ends folded_cascode
+// PMOS low-voltage cascode current-mirror load
+Mmirr1 (npm_l pmirr vdd vdd) pch_lvt_mac w=Wmirrp l=Lmirrp nf=1
+Mmirr2 (npm_r pmirr vdd vdd) pch_lvt_mac w=Wmirrp l=Lmirrp nf=1
+Mcasp1 (pmirr VB2 npm_l vdd) pch_lvt_mac w=Wcasp l=Lcasp nf=1
+Mcasp2 (nstage1 VB2 npm_r vdd) pch_lvt_mac w=Wcasp l=Lcasp nf=1
+
+// Second stage and Miller compensation
+Mcs (vout nstage1 vdd vdd) pch_lvt_mac w=Wcs l=Lcs nf=1
+Mload (vout VB4 vss vss) nch_lvt_mac w=Wload l=Lload nf=1
+Rz (nstage1 n_rz) resistor r=Rz
+Cc (n_rz vout) capacitor c=Cc
+ends folded_cascode
 """
 
 _TB_AC_TEMPLATE = """\
-* tb_folded_cascode_ac.sp -- Folded-Cascode OTA AC Analysis
-.include "circuit.cir"
+// tb_folded_cascode_ac.scs -- Folded-Cascode OTA differential AC analysis
+simulator lang=spectre insensitive=yes
 
-* --- Power supply ---
-VDD vdd 0 DC {VDD}
-VSS vss 0 DC 0
-Iibias ibias vss DC {IBIAS}
+include "circuit.cir"
 
-* --- Input stimulus ---
-Vcm vcm 0 DC {VCM}
-Vinp vinp vcm DC 0 AC 1
-Vinn vinn 0  DC 0
+parameters VDD={VDD} VCM={VCM} IBIAS={IBIAS} CL={CL}
 
-* --- Closed-loop feedback for DC stability ---
-Rfb vout vinn 1G
-Cfb vinn 0 1
+VDDsrc (vdd 0) vsource type=dc dc=VDD
+VSSsrc (vss 0) vsource type=dc dc=0
+IBIASsrc (ibias vss) isource type=dc dc=IBIAS
+VCMsrc (vcm 0) vsource type=dc dc=VCM
+VIPsrc (vinp vcm) vsource type=dc dc=0 mag=1
+Rfb (vout vinn) resistor r=1G
+Cfb (vinn 0) capacitor c=1
 
-* --- DUT ---
-Xdut vinp vinn vout ibias vdd vss folded_cascode
-CL vout 0 {CL}
+Xdut (vinp vinn vout ibias vdd vss) folded_cascode
+CLload (vout 0) capacitor c=CL
 
-* --- Analysis ---
-.op
-.ac dec 20 1 20g
-.temp 27
+tempOption options temp=27
+outOpts options rawfmt=psfascii
+op1 dc oppoint=rawfile
+opInfo info what=oppoint where=rawfile
+ac1 ac start=1 stop=20G dec=20
 
-* --- Measurements ---
-.meas ac gain_dc find vdb(vout) at=1k
-.meas ac phase_dc find vp(vout) at=1k
-.meas ac gbw_hz when vdb(vout)=0 cross=1
-.meas ac phase_at_ugf find vp(vout) when vdb(vout)=0 cross=1
-.meas dc power_total PARAM='-I(Vdd)*{VDD}'
-
-.end
+save vout
+save VDDsrc:p
 """
 
 _TB_TRAN_TEMPLATE = """\
-* tb_folded_cascode_tran.sp -- Folded-Cascode OTA Transient Analysis
-.include "circuit.cir"
+// tb_folded_cascode_tran.scs -- Unity-gain transient analysis
+simulator lang=spectre insensitive=yes
 
-* --- Power supply ---
-VDD vdd 0 DC {VDD}
-VSS vss 0 DC 0
-Iibias ibias vss DC {IBIAS}
+include "circuit.cir"
 
-* --- Unity-gain buffer: vout feeds back to vin ---
-Vcm vcm 0 DC {VCM}
-Vinp vinp vcm DC 0 PULSE({VLOW} {VHIGH} 2n 100p 100p 50n 100n)
+parameters VDD={VDD} VCM={VCM} IBIAS={IBIAS} CL={CL}
+parameters VLOW={VLOW} VHIGH={VHIGH}
 
-* --- Feedback (buffer) ---
-Vfb vin vout DC 0
+VDDsrc (vdd 0) vsource type=dc dc=VDD
+VSSsrc (vss 0) vsource type=dc dc=0
+IBIASsrc (ibias vss) isource type=dc dc=IBIAS
+VIPsrc (vinp 0) vsource type=pulse val0=VLOW val1=VHIGH delay=2n rise=100p fall=100p width=50n period=100n
+VFBsrc (vin vout) vsource type=dc dc=0
 
-* --- DUT ---
-Xdut vinp vin vout ibias vdd vss folded_cascode
-CL vout 0 {CL}
+Xdut (vinp vin vout ibias vdd vss) folded_cascode
+CLload (vout 0) capacitor c=CL
 
-* --- Analysis ---
-.tran 10p 100n
-.temp 27
+tempOption options temp=27
+outOpts options rawfmt=psfascii
+tran1 tran stop=100n maxstep=10p
 
-* --- Measurements ---
-.meas tran slew_rate_rise MAX deriv(v(vout)) from=2n to=10n
-.meas tran slew_rate_fall MIN deriv(v(vout)) from=2n to=10n
-.meas tran settling_rise TRIG v(vinp) VAL={VHIGH} RISE=1
-+   TARG v(vout) VAL={VHIGH}*0.999 RISE=1
-.meas tran settling_fall TRIG v(vinp) VAL={VLOW} FALL=1
-+   TARG v(vout) VAL={VLOW}*0.999 FALL=1
-
-.end
+save vinp vout
 """
 
 

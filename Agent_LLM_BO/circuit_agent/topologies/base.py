@@ -89,8 +89,8 @@ class BaseTopology(ABC):
         Creates:
             <project_dir>/
             ├── <topo_name>.cir          # DUT subcircuit
-            ├── tb_<topo_name>_ac.sp     # AC testbench (always)
-            ├── tb_<topo_name>_tran.sp   # Transient testbench (if supported)
+            ├── tb_<topo_name>_ac.scs    # AC testbench (always)
+            ├── tb_<topo_name>_tran.scs  # Transient testbench (if supported)
             └── requirements.json        # Design targets
 
         Args:
@@ -118,7 +118,7 @@ class BaseTopology(ABC):
         tb_suffixes = ["ac", "tran", "dc", "noise"]
         for i, tb_content in enumerate(cf.testbenches):
             suffix = tb_suffixes[i] if i < len(tb_suffixes) else f"tb{i}"
-            tb_path = out / f"tb_{self.meta.name}_{suffix}.sp"
+            tb_path = out / f"tb_{self.meta.name}_{suffix}.scs"
             tb_path.write_text(tb_content, encoding="utf-8")
             tb_files.append(tb_path)
 
@@ -170,7 +170,7 @@ class BaseTopology(ABC):
             params: Override default parameter values.  If None, uses defaults.
 
         Returns:
-            Complete .cir file content (headers + .param + .subckt + .ends).
+            Complete Spectre-native .cir content (parameters + subckt + ends).
         """
 
     @abstractmethod
@@ -179,7 +179,7 @@ class BaseTopology(ABC):
         params: dict[str, float] | None = None,
         analysis_type: str = "ac",
     ) -> str:
-        """Generate the testbench .sp file.
+        """Generate the Spectre-native testbench .scs file.
 
         Args:
             params: Override default values (e.g., bias voltages).

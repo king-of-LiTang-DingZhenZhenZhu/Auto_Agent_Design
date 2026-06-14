@@ -11,6 +11,7 @@ from pathlib import Path
 
 from config import Settings
 from models import CircuitFiles, DesignTarget, NetlistTemplate, ParamSpace, SimResult
+from psf_results import parse_psf_results
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,7 @@ class Simulator:
         param_space: ParamSpace | None = None,
         w_l_grid_step: float | None = None,
     ) -> None:
-        """Render parametrized template into a concrete SPICE netlist file.
+        """Render a parametrized template into a concrete Spectre netlist.
 
         If param_space is provided, wide transistors are automatically split
         into multiple fingers respecting max_per_finger limits.
@@ -56,7 +57,7 @@ class Simulator:
         """Render circuit and testbench files into run_dir.
 
         Writes circuit.cir (rendered DUT) once, then writes each testbench as
-        tb.sp, tb_1.sp, tb_2.sp, ... (all .include "circuit.cir").
+        tb.scs, tb_1.scs, tb_2.scs, ... (all include "circuit.cir").
         Returns the list of testbench paths as entry points for Spectre.
         """
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -76,7 +77,7 @@ class Simulator:
         tb_paths = []
         for i, tb_content in enumerate(testbench_contents):
             suffix = "" if i == 0 else f"_{i}"
-            tb_path = run_dir / f"tb{suffix}.sp"
+            tb_path = run_dir / f"tb{suffix}.scs"
             tb_path.write_text(tb_content, encoding="utf-8")
             logger.debug(f"Wrote testbench to {tb_path}")
             tb_paths.append(tb_path)
@@ -89,7 +90,7 @@ class Simulator:
         """Run Spectre simulation.
 
         Args:
-            netlist_path: Path to the .spi netlist file
+            netlist_path: Path to the Spectre .scs/.cir netlist file
             run_dir: Directory for simulation outputs
             timeout: Override timeout in seconds
 
@@ -178,19 +179,40 @@ class Simulator:
         if not success:
             return SimResult(converged=False, error_message=error_msg)
 
-        merged = self.parse_simulation_log(log_content)
+        merged = self.parse_simulation_results(
+            log_content, run_dir, tb_paths[0]
+        )
 
         # --- Extra simulations ---
         for tb_path in tb_paths[1:]:
             logger.info(f"Running extra simulation: {tb_path.name}")
             ok, log, err = self.run_spectre(tb_path, run_dir, timeout)
             if ok:
-                extra = self.parse_simulation_log(log)
+                extra = self.parse_simulation_results(log, run_dir, tb_path)
                 merged = SimResult.merge(merged, extra)
             else:
                 logger.warning(f"Extra simulation {tb_path.name} failed: {err[:100]}")
 
         return merged
+
+    def parse_simulation_results(
+        self,
+        log_content: str,
+        run_dir: Path,
+        testbench_path: Path,
+    ) -> SimResult:
+        """Prefer PSF ASCII waveform extraction, with text parsing as fallback."""
+        try:
+            testbench_content = testbench_path.read_text(
+                encoding="utf-8", errors="replace"
+            )
+            psf_result = parse_psf_results(run_dir / "raw", testbench_content)
+            if psf_result is not None:
+                return psf_result
+        except Exception as exc:
+            logger.warning("PSF result extraction failed: %s", exc)
+
+        return self.parse_simulation_log(log_content)
 
     def parse_simulation_log(self, log_content: str) -> SimResult:
         """Parse Spectre simulation log to extract performance metrics.
@@ -389,17 +411,20 @@ class Simulator:
         return True, log_content, ""
 
     def _extract_params_from_netlist(self, content: str) -> dict[str, float]:
-        """Extract .param values from a netlist."""
+        """Extract HSPICE .param or Spectre parameters values."""
         params = {}
         for match in re.finditer(
-            r"\.param\s+(\w+)\s*=\s*(\S+)", content, re.IGNORECASE
+            r"^\s*(?:\.param|parameters)\s+(.+)$",
+            content,
+            re.IGNORECASE | re.MULTILINE,
         ):
-            name = match.group(1)
-            value_str = match.group(2)
-            try:
-                params[name] = _parse_spice_value(value_str)
-            except ValueError:
-                continue
+            for kv in re.finditer(r"(\w+)\s*=\s*(\S+)", match.group(1)):
+                name = kv.group(1)
+                value_str = kv.group(2)
+                try:
+                    params[name] = _parse_spice_value(value_str)
+                except ValueError:
+                    continue
         return params
 
     def _compute_mock_results(self, params: dict[str, float]) -> dict[str, float]:

@@ -344,14 +344,16 @@ class HybridOptimizer:
                 converged=False, error_message=f"{error_type}: {(error_msg or '')[:200]}"
             )
 
-        merged = self.sim.parse_simulation_log(log_content)
+        merged = self.sim.parse_simulation_results(
+            log_content, run_dir, primary_path
+        )
 
         # Extra testbenches (e.g., transient)
         for tb_path in tb_paths[1:]:
             logger.info("Running extra simulation: %s", tb_path.name)
             ok, log, _ = self.sim.run_spectre(tb_path, run_dir)
             if ok:
-                extra = self.sim.parse_simulation_log(log)
+                extra = self.sim.parse_simulation_results(log, run_dir, tb_path)
                 merged = SimResult.merge(merged, extra)
 
         return merged

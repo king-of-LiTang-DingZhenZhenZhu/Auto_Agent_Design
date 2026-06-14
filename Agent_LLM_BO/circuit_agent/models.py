@@ -319,9 +319,7 @@ class ParamSpace:
         """
         # Parse .param name=value pairs from the netlist
         netlist_params: dict[str, float] = {}
-        for match in re.finditer(
-            r"\.param\s+(.+)", netlist_content, re.IGNORECASE | re.MULTILINE
-        ):
+        for match in _iter_parameter_lines(netlist_content):
             line = match.group(1)
             for kv in re.finditer(r"(\w+)\s*=\s*(\S+)", line):
                 name = kv.group(1)
@@ -397,9 +395,7 @@ class ParamSpace:
         """
         # Parse .param declarations: name=value pairs
         param_entries: list[tuple[str, float]] = []
-        for match in re.finditer(
-            r"\.param\s+(.+)", content, re.IGNORECASE | re.MULTILINE
-        ):
+        for match in _iter_parameter_lines(content):
             line = match.group(1)
             for kv in re.finditer(r"(\w+)\s*=\s*(\S+)", line):
                 name = kv.group(1)
@@ -413,8 +409,8 @@ class ParamSpace:
 
         if not param_entries:
             raise ValueError(
-                "No .param declarations found in netlist. "
-                "Add .param statements for optimizable variables."
+                "No .param/parameters declarations found in netlist. "
+                "Add parameter declarations for optimizable variables."
             )
 
         # Assign bounds based on naming convention
@@ -614,13 +610,15 @@ class NetlistTemplate:
 
         content = self.template_content
 
-        # Phase 1: substitute .param values for non-nf parameters
-        # Only match on .param lines to avoid corrupting transistor declarations.
-        # Example: .param Wtail=2u Ltail=200n Wdp=2u
+        # Phase 1: substitute .param/parameters values for non-nf parameters.
+        # Only match parameter declaration lines to avoid corrupting instances.
         lines = content.split("\n")
         for i, line in enumerate(lines):
             stripped = line.strip()
-            if not stripped.startswith((".param", ".PARAM")):
+            if not (
+                stripped.lower().startswith(".param")
+                or stripped.lower().startswith("parameters")
+            ):
                 continue
             for name, value in resolved.items():
                 if name.startswith("nf_"):
@@ -644,11 +642,12 @@ class NetlistTemplate:
             pattern = rf"(\b{re.escape(name)}\s*=\s*)\S+"
             content = re.sub(pattern, rf"\g<1>{nf_int}", content, flags=re.IGNORECASE)
 
-            # Replace nf on transistor lines that reference this width parameter
-            # Handles W='Wtail' / w='Wtail' / W=Wtail / w=Wtail  (case-insensitive)
-            line_pattern = rf"([wW]='?{re.escape(wname)}'?.*?nf=)\S+"
+            # Replace nf on HSPICE or Spectre transistor lines referencing W.
+            line_pattern = rf"([wW]\s*=\s*'?{re.escape(wname)}'?.*?\bnf\s*=\s*)\S+"
             line_replacement = rf"\g<1>{nf_int}"
-            content = re.sub(line_pattern, line_replacement, content)
+            content = re.sub(
+                line_pattern, line_replacement, content, flags=re.IGNORECASE
+            )
 
         # Phase 3: resolve parameter references on transistor lines
         # Spectre (HSPICE mode) may not expand 'L2' to its .param value on
@@ -680,8 +679,10 @@ class NetlistTemplate:
 
     @classmethod
     def from_netlist(cls, content: str) -> NetlistTemplate:
-        """Parse a netlist to identify .param parameter names."""
-        param_lines = re.findall(r"\.param\s+(.+)", content, re.IGNORECASE)
+        """Parse a netlist to identify HSPICE or Spectre parameter names."""
+        param_lines = [
+            match.group(1) for match in _iter_parameter_lines(content)
+        ]
         param_names = []
         for line in param_lines:
             names = re.findall(r"(\w+)\s*=", line)
@@ -693,9 +694,9 @@ class NetlistTemplate:
 class CircuitFiles:
     """Holds the split circuit design: DUT netlist + testbench(es)."""
 
-    circuit_netlist: str     # DUT subcircuit content (.subckt with .param)
-    testbenches: list[str]   # Testbench contents (.include, stimulus, analysis, .meas)
-    circuit_name: str        # Subcircuit name extracted from .subckt line
+    circuit_netlist: str     # DUT subcircuit content (Spectre or HSPICE syntax)
+    testbenches: list[str]   # Testbench contents (include, stimulus, analyses, save)
+    circuit_name: str        # Subcircuit name extracted from subckt line
 
     @property
     def testbench(self) -> str | None:
@@ -704,8 +705,8 @@ class CircuitFiles:
 
     @staticmethod
     def extract_subckt_name(circuit_content: str) -> str:
-        """Extract the subcircuit name from a .subckt declaration."""
-        m = re.search(r'\.subckt\s+(\w+)', circuit_content, re.IGNORECASE)
+        """Extract the subcircuit name from a Spectre/HSPICE declaration."""
+        m = re.search(r'^\s*\.?subckt\s+(\w+)', circuit_content, re.IGNORECASE | re.MULTILINE)
         return m.group(1) if m else "dut"
 
 
@@ -829,3 +830,12 @@ def _parse_spice_suffix(s: str) -> float:
             num_part = s[:-len(suffix)]
             return float(num_part) * multiplier
     return float(s)
+
+
+def _iter_parameter_lines(content: str):
+    """Yield .param and Spectre parameters declaration matches."""
+    return re.finditer(
+        r"^\s*(?:\.param|parameters)\s+(.+)$",
+        content,
+        re.IGNORECASE | re.MULTILINE,
+    )

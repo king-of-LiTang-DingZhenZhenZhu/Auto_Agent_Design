@@ -9,8 +9,11 @@ from pathlib import Path
 from .models import Instance, SchematicIR
 
 
-_SUBCKT_RE = re.compile(r"^\.subckt\s+(\S+)\s*(.*)$", re.IGNORECASE)
-_ENDS_RE = re.compile(r"^\.ends\b", re.IGNORECASE)
+_SUBCKT_RE = re.compile(r"^\.?subckt\s+(\S+)\s*(.*)$", re.IGNORECASE)
+_ENDS_RE = re.compile(r"^\.?ends\b", re.IGNORECASE)
+_SPECTRE_INSTANCE_RE = re.compile(
+    r"^(\S+)\s+\(([^)]+)\)\s+(\S+)(?:\s+(.*))?$"
+)
 
 
 def parse_netlist(path_or_content: str | Path) -> SchematicIR:
@@ -18,7 +21,7 @@ def parse_netlist(path_or_content: str | Path) -> SchematicIR:
 
     The parser intentionally targets the regular output from this repository's
     topology library. It supports MOS, resistor, and capacitor instances inside
-    the first .subckt block.
+    the first subckt block.
     """
     content = _read_content(path_or_content)
     lines = _join_continuations(content.splitlines())
@@ -36,7 +39,7 @@ def parse_netlist(path_or_content: str | Path) -> SchematicIR:
             match = _SUBCKT_RE.match(line)
             if match:
                 subckt_name = match.group(1)
-                ports = match.group(2).split()
+                ports = match.group(2).strip().strip("()").split()
                 in_subckt = True
             continue
         if _ENDS_RE.match(line):
@@ -45,7 +48,7 @@ def parse_netlist(path_or_content: str | Path) -> SchematicIR:
             body.append(line)
 
     if not subckt_name:
-        raise ValueError("No .subckt block found in netlist")
+        raise ValueError("No subckt block found in netlist")
 
     instances: list[Instance] = []
     nets: set[str] = set(ports)
@@ -98,6 +101,10 @@ def _strip_inline_comment(line: str) -> str:
 
 
 def _parse_instance(line: str) -> Instance | None:
+    spectre_match = _SPECTRE_INSTANCE_RE.match(line)
+    if spectre_match:
+        return _parse_spectre_instance(spectre_match)
+
     prefix = line[0].upper()
     if prefix == "M":
         return _parse_mos(line)
@@ -105,6 +112,28 @@ def _parse_instance(line: str) -> Instance | None:
         return _parse_two_terminal(line, kind="res", param_name="R")
     if prefix == "C":
         return _parse_two_terminal(line, kind="cap", param_name="C")
+    return None
+
+
+def _parse_spectre_instance(match: re.Match[str]) -> Instance | None:
+    name = match.group(1)
+    nodes = match.group(2).split()
+    primitive = match.group(3)
+    params = _parse_params(_split_tokens(match.group(4) or ""))
+    primitive_lower = primitive.lower()
+
+    if primitive_lower == "resistor":
+        return Instance(name=name, kind="res", model="res", nodes=nodes, params=_normalize_params(params))
+    if primitive_lower == "capacitor":
+        return Instance(name=name, kind="cap", model="cap", nodes=nodes, params=_normalize_params(params))
+    if len(nodes) == 4 and name.upper().startswith("M"):
+        return Instance(
+            name=name,
+            kind="mos",
+            model=primitive,
+            nodes=nodes,
+            params=_normalize_params(params),
+        )
     return None
 
 
@@ -148,6 +177,24 @@ def _parse_params(tokens: list[str]) -> dict[str, str]:
         name, value = token.split("=", 1)
         params[name.strip()] = _clean_value(value)
     return params
+
+
+def _normalize_params(params: dict[str, str]) -> dict[str, str]:
+    normalized: dict[str, str] = {}
+    for name, value in params.items():
+        if name.lower() == "w":
+            normalized["W"] = value
+        elif name.lower() == "l":
+            normalized["L"] = value
+        elif name.lower() == "r":
+            normalized["R"] = value
+        elif name.lower() == "c":
+            normalized["C"] = value
+        elif name.lower() == "nf":
+            normalized["nf"] = value
+        else:
+            normalized[name] = value
+    return normalized
 
 
 def _clean_value(value: str) -> str:

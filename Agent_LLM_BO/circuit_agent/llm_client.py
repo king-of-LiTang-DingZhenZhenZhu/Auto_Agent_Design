@@ -397,19 +397,19 @@ Pick the single best topology. Output only a JSON object:
 
     @staticmethod
     def _split_monolithic_netlist(content: str) -> tuple[str, str]:
-        """Split a monolithic SPICE netlist into circuit (.subckt) and testbench parts."""
+        """Split a monolithic HSPICE or Spectre netlist into DUT and testbench."""
         subckt_match = re.search(
-            r'(\.subckt\s+\w+.*?\.ends\s*\w*)', content, re.DOTALL | re.IGNORECASE
+            r'(^\s*\.?subckt\s+\w+.*?^\s*\.?ends\s*\w*)',
+            content,
+            re.DOTALL | re.IGNORECASE | re.MULTILINE,
         )
         if subckt_match:
             subckt_end = subckt_match.end()
             circuit = content[:subckt_end].strip()
             testbench = content[subckt_end:].strip()
-            if '.end' not in testbench:
-                testbench += '\n.end\n'
             return circuit, testbench
         else:
-            logger.warning("No .subckt found in monolithic netlist, auto-wrapping")
+            logger.warning("No subckt found in monolithic netlist, auto-wrapping")
             return LLMClient._wrap_monolithic_netlist(content)
 
     @staticmethod

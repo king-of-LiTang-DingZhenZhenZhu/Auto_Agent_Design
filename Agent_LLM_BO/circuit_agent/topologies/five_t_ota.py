@@ -73,7 +73,7 @@ class FiveTOTA(BaseTopology):
         params: dict[str, float] | None = None,
         analysis_type: str = "ac",
     ) -> str:
-        """Generate the AC testbench .sp file (closed-loop method)."""
+        """Generate the Spectre-native AC testbench."""
         # Bias / supply defaults
         vdd = 0.9
         cload = 500e-15
@@ -196,58 +196,63 @@ class FiveTOTA(BaseTopology):
 
 
 # ------------------------------------------------------------------
-# SPICE templates (module-level constants)
+# Spectre-native templates (module-level constants)
 # ------------------------------------------------------------------
 
 _CIRCUIT_TEMPLATE = """\
-* 5t_ota.cir -- Five-Transistor OTA (Python-generated, PMOS-input)
-.lib '/PDKS/TSMC28nm/models/hspice/toplevel.l' TOP_TT
-.options redefinedparams=ignore
-.param Wtail={Wtail} Ltail={Ltail} Wdp={Wdp} Ldp={Ldp} Wcm={Wcm} Lcm={Lcm} VBIAS={VBIAS}
+// 5t_ota.cir -- Five-Transistor OTA (Spectre native syntax)
+simulator lang=spectre insensitive=yes
 
-.subckt ota_5t vip vin vout vbias vdd vss
-* --- Tail current source (PMOS) ---
-Mtail tail vbias vdd vdd pch_mac W='Wtail' L='Ltail' nf=1
-* --- Differential pair (PMOS) ---
-Mdp1 lout vip tail vdd pch_mac W='Wdp' L='Ldp' nf=1
-Mdp2 vout vin tail vdd pch_mac W='Wdp' L='Ldp' nf=1
-* --- Active load / current mirror (NMOS) ---
-Mcm1 lout lout vss vss nch_mac W='Wcm' L='Lcm' nf=1
-Mcm2 vout lout vss vss nch_mac W='Wcm' L='Lcm' nf=1
-.ends ota_5t
+include "/PDKS/TSMC28nm/models/spectre/toplevel.scs" section=top_tt
+
+parameters Wtail={Wtail} Ltail={Ltail}
+parameters Wdp={Wdp} Ldp={Ldp}
+parameters Wcm={Wcm} Lcm={Lcm}
+
+subckt ota_5t (vip vin vout vbias vdd vss)
+// Tail current source (PMOS)
+Mtail (tail vbias vdd vdd) pch_mac w=Wtail l=Ltail nf=1
+// Differential pair (PMOS)
+Mdp1 (lout vip tail vdd) pch_mac w=Wdp l=Ldp nf=1
+Mdp2 (vout vin tail vdd) pch_mac w=Wdp l=Ldp nf=1
+// Active load / current mirror (NMOS)
+Mcm1 (lout lout vss vss) nch_mac w=Wcm l=Lcm nf=1
+Mcm2 (vout lout vss vss) nch_mac w=Wcm l=Lcm nf=1
+ends ota_5t
 """
 
 _TB_TEMPLATE = """\
-* tb_ota_ac.sp -- 5T OTA AC Analysis (Open-Loop Differential, Python-generated)
-.include "circuit.cir"
+// tb_ota_ac.scs -- 5T OTA differential AC analysis
+simulator lang=spectre insensitive=yes
 
-* --- Power supply ---
-VDD vdd 0 DC {VDD}
-VSS vss 0 DC 0
-* VBIAS is a SPICE .param in circuit.cir (tuned by BO in gm/Id mode)
-Vbias vbias 0 DC VBIAS
+include "circuit.cir"
 
-* --- Input stimulus (open-loop, both inputs at VCM DC, AC differential) ---
-VIP vip 0 DC {VCM} AC 1
-VIN vin 0 DC {VCM} AC 0
+parameters VDD={VDD} VCM={VCM} VBIAS={VBIAS} CL={CL}
 
-* --- DUT ---
-Xdut vip vin vout vbias vdd vss ota_5t
-CL vout 0 {CL}
+// Power supply and bias
+VDDsrc (vdd 0) vsource type=dc dc=VDD
+VSSsrc (vss 0) vsource type=dc dc=0
+VBIASsrc (vbias 0) vsource type=dc dc=VBIAS
 
-* --- Analysis ---
-.op
-.ac dec 20 1 10g
-.temp 27
+// Original closed-loop AC stimulus and feedback network
+VCMsrc (vcm 0) vsource type=dc dc=VCM
+VIPsrc (vinp vcm) vsource type=dc dc=0 mag=1
+Rfb (vout vinn) resistor r=1G
+Cfb (vinn 0) capacitor c=1
 
-* --- Measurements ---
-.meas ac gain_dc find vdb(vout) at=1k
-.meas ac phase_dc find vp(vout) at=1k
-.meas ac gbw_hz when vdb(vout)=0 cross=1
-.meas ac phase_at_ugf find vp(vout) when vdb(vout)=0 cross=1
-.meas dc power_total PARAM='-I(Vdd)*{VDD}'
+// DUT and load
+Xdut (vinp vinn vout vbias vdd vss) ota_5t
+CLload (vout 0) capacitor c=CL
 
-.end
+// Analyses
+tempOption options temp=27
+outOpts options rawfmt=psfascii
+op1 dc oppoint=rawfile
+opInfo info what=oppoint where=rawfile
+ac1 ac start=1 stop=10G dec=20
+
+save vout
+save VDDsrc:p
 """
 
 

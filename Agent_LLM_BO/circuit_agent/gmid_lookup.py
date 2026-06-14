@@ -698,11 +698,13 @@ class GmidSizer:
             val = (pp.low + pp.high) / 2 if pp.log_scale else (pp.low + pp.high) / 2
             params[pp.name] = val
 
-        # Try to initialise pass-through params from netlist .param lines
+        # Try to initialise pass-through params from .param/parameters lines
         if netlist_content:
             import re
             for match in re.finditer(
-                r"\.param\s+(.+)", netlist_content, re.IGNORECASE | re.MULTILINE
+                r"^\s*(?:\.param|parameters)\s+(.+)$",
+                netlist_content,
+                re.IGNORECASE | re.MULTILINE,
             ):
                 line = match.group(1)
                 for kv in re.finditer(r"(\w+)\s*=\s*(\S+)", line):

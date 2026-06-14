@@ -76,7 +76,6 @@ class TwoStageOTA(BaseTopology):
         # Compensation
         "Cc": 500e-15,
         "Rz": 1000.0,
-        "VBIAS": 0.5,
     }
 
     # ------------------------------------------------------------------
@@ -101,7 +100,6 @@ class TwoStageOTA(BaseTopology):
             Lload=_fmt(p["Lload"]),
             Cc=_fmt(p["Cc"]),
             Rz=_fmt(p["Rz"]),
-            VBIAS=_fmt(p["VBIAS"]),
         )
 
     # ------------------------------------------------------------------
@@ -112,25 +110,28 @@ class TwoStageOTA(BaseTopology):
         params: dict[str, float] | None = None,
         analysis_type: str = "ac",
     ) -> str:
-        """Generate the testbench .sp file.
+        """Generate the Spectre-native testbench .scs file.
 
         Args:
-            params: Override defaults (VDD, VCM, CL).
+            params: Override defaults (VDD, VCM, VBIAS, CL).
             analysis_type: "ac" → AC closed-loop; "tran" → unity-gain buffer.
         """
         vdd = 1.0       # NMOS input needs ~0.75V ICMR min → VDD=1.0V
         vcm = 0.6
+        vbias = 0.5     # shared bias for M5 (tail) and M7 (load)
         cload = 2e-12   # 2 pF (typical for ADC driver)
 
         if params:
             vdd = params.get("VDD", vdd)
             vcm = params.get("VCM", vcm)
+            vbias = params.get("VBIAS", vbias)
             cload = params.get("CL", cload)
 
         if analysis_type == "tran":
             return _TB_TRAN_TEMPLATE.format(
                 VDD=vdd,
                 VCM=vcm,
+                VBIAS=vbias,
                 CL=_fmt(cload),
                 VHIGH=vcm + 0.2,
                 VLOW=vcm - 0.2,
@@ -138,6 +139,7 @@ class TwoStageOTA(BaseTopology):
         return _TB_AC_TEMPLATE.format(
             VDD=vdd,
             VCM=vcm,
+            VBIAS=vbias,
             CL=_fmt(cload),
         )
 
@@ -163,25 +165,28 @@ class TwoStageOTA(BaseTopology):
     # ------------------------------------------------------------------
 
     def get_gmid_spec(self):
-        """Return gm/Id spec for two-stage OTA — 2I + 5T + 3 pass-through = 15 params.
+        """Return gm/Id spec for two-stage OTA — reduces 10 → 14 params.
 
         Two independent branch currents:
         - I_tail: first-stage NMOS tail current
         - I_cs: second-stage PMOS CS bias current
 
-        VBIAS is a pass-through because this topology is voltage-biased:
-        NMOS tail (M5) and NMOS load (M7) share gate voltage Vb.
-        BO tunes VBIAS alongside gm/Id params.
+        Transistor roles:
+        - tail_nmos (NMOS tail current source, gate=vb)
+        - diff_pair_nmos (NMOS input pair, each I_tail/2)
+        - mirror_pmos (PMOS current mirror load, each I_tail/2)
+        - cs_pmos (second-stage PMOS CS amplifier)
+        - load_nmos (second-stage NMOS current-source load, gate=vb)
         """
         from models import BranchCurrentSpec, GmidTopologySpec, TransistorSpec
 
         return GmidTopologySpec(
             branch_currents=[
                 BranchCurrentSpec(
-                    name="I_tail", low=1e-6, high=200e-6, default=50e-6,
+                    name="I_tail", low=1e-6, high=200e-6, default=15e-6,
                 ),
                 BranchCurrentSpec(
-                    name="I_cs", low=1e-6, high=500e-6, default=80e-6,
+                    name="I_cs", low=1e-6, high=500e-6, default=40e-6,
                 ),
             ],
             transistors=[
@@ -191,7 +196,7 @@ class TwoStageOTA(BaseTopology):
                     w_param="Wtail", l_param="Ltail",
                     model="nch_mac",
                     current_source="I_tail", current_fraction=1.0,
-                    gm_id_low=5, gm_id_high=22, gm_id_default=12,
+                    gm_id_low=5, gm_id_high=20, gm_id_default=8,
                     L_low=100e-9, L_high=900e-9, L_default=200e-9,
                     Vds_estimate=0.35,
                 ),
@@ -201,8 +206,8 @@ class TwoStageOTA(BaseTopology):
                     w_param="Wdiff", l_param="Ldiff",
                     model="nch_mac",
                     current_source="I_tail", current_fraction=0.5,
-                    gm_id_low=10, gm_id_high=24, gm_id_default=16,
-                    L_low=60e-9, L_high=500e-9, L_default=100e-9,
+                    gm_id_low=10, gm_id_high=24, gm_id_default=14,
+                    L_low=60e-9, L_high=500e-9, L_default=60e-9,
                     Vds_estimate=0.25, multiplicity=2,
                 ),
                 # -- First stage: PMOS current mirror load (each I_tail/2) --
@@ -211,8 +216,8 @@ class TwoStageOTA(BaseTopology):
                     w_param="Wmirr", l_param="Lmirr",
                     model="pch_mac",
                     current_source="I_tail", current_fraction=0.5,
-                    gm_id_low=8, gm_id_high=24, gm_id_default=14,
-                    L_low=60e-9, L_high=500e-9, L_default=120e-9,
+                    gm_id_low=8, gm_id_high=24, gm_id_default=12,
+                    L_low=60e-9, L_high=500e-9, L_default=100e-9,
                     Vds_estimate=0.3, multiplicity=2,
                 ),
                 # -- Second stage: PMOS common-source amplifier --
@@ -221,7 +226,7 @@ class TwoStageOTA(BaseTopology):
                     w_param="Wcs", l_param="Lcs",
                     model="pch_mac",
                     current_source="I_cs", current_fraction=1.0,
-                    gm_id_low=8, gm_id_high=22, gm_id_default=14,
+                    gm_id_low=8, gm_id_high=22, gm_id_default=12,
                     L_low=60e-9, L_high=300e-9, L_default=100e-9,
                     Vds_estimate=0.6,
                 ),
@@ -231,7 +236,7 @@ class TwoStageOTA(BaseTopology):
                     w_param="Wload", l_param="Lload",
                     model="nch_mac",
                     current_source="I_cs", current_fraction=1.0,
-                    gm_id_low=5, gm_id_high=22, gm_id_default=12,
+                    gm_id_low=5, gm_id_high=20, gm_id_default=8,
                     L_low=100e-9, L_high=900e-9, L_default=200e-9,
                     Vds_estimate=0.4,
                 ),
@@ -244,10 +249,6 @@ class TwoStageOTA(BaseTopology):
                 ParamDef(
                     name="Rz", low=1.0, high=100e3,
                     log_scale=True, unit="Ohm",
-                ),
-                ParamDef(
-                    name="VBIAS", low=0.2, high=0.8,
-                    log_scale=False, unit="V",
                 ),
             ],
         )
@@ -323,108 +324,91 @@ class TwoStageOTA(BaseTopology):
 
 
 # ------------------------------------------------------------------
-# SPICE templates
+# Spectre-native templates
 # ------------------------------------------------------------------
 
 _CIRCUIT_TEMPLATE = """\
-* two_stage_ota.cir — Two-Stage Miller OTA (Python-generated, NMOS-input)
-* First stage: NMOS diff pair + PMOS current mirror (5T OTA)
-* Second stage: PMOS common-source + NMOS current-source load
-* Compensation: Cc + Rz (Miller with nulling resistor)
-.lib '/PDKS/TSMC28nm/models/hspice/toplevel.l' TOP_TT
-.options redefinedparams=ignore
-.param Wtail={Wtail} Ltail={Ltail} Wdiff={Wdiff} Ldiff={Ldiff}
-.param Wmirr={Wmirr} Lmirr={Lmirr} Wcs={Wcs} Lcs={Lcs}
-.param Wload={Wload} Lload={Lload} Cc={Cc} Rz={Rz} VBIAS={VBIAS}
+// two_stage_ota.cir -- Two-Stage Miller OTA (Spectre native syntax)
+simulator lang=spectre insensitive=yes
 
-.subckt two_stage_ota vip vin vout vb vdd vss
-* --- First Stage: NMOS differential pair ---
-Mdiff1 n_mirr vip n_tail vss nch_mac W='Wdiff' L='Ldiff' nf=1
-Mdiff2 n_s1   vin n_tail vss nch_mac W='Wdiff' L='Ldiff' nf=1
-* --- First Stage: PMOS current mirror load ---
-Mmirr1 n_mirr n_mirr vdd vdd pch_mac W='Wmirr' L='Lmirr' nf=1
-Mmirr2 n_s1   n_mirr vdd vdd pch_mac W='Wmirr' L='Lmirr' nf=1
-* --- First Stage: NMOS tail current source ---
-Mtail n_tail vb vss vss nch_mac W='Wtail' L='Ltail' nf=1
-* --- Second Stage: PMOS common-source amplifier ---
-Mcs vout n_s1 vdd vdd pch_mac W='Wcs' L='Lcs' nf=1
-* --- Second Stage: NMOS current-source load ---
-Mload vout vb vss vss nch_mac W='Wload' L='Lload' nf=1
-* --- Miller compensation: Rz in series with Cc ---
-Rz n_s1 n_rz R='Rz'
-Cc n_rz vout C='Cc'
-.ends two_stage_ota
+include "/PDKS/TSMC28nm/models/spectre/toplevel.scs" section=top_tt
+
+parameters Wtail={Wtail} Ltail={Ltail} Wdiff={Wdiff} Ldiff={Ldiff}
+parameters Wmirr={Wmirr} Lmirr={Lmirr} Wcs={Wcs} Lcs={Lcs}
+parameters Wload={Wload} Lload={Lload} Cc={Cc} Rz={Rz}
+
+subckt two_stage_ota (vip vin vout vb vdd vss)
+// First stage: NMOS differential pair
+Mdiff1 (n_mirr vip n_tail vss) nch_mac w=Wdiff l=Ldiff nf=1
+Mdiff2 (n_s1 vin n_tail vss) nch_mac w=Wdiff l=Ldiff nf=1
+// First stage: PMOS current mirror load
+Mmirr1 (n_mirr n_mirr vdd vdd) pch_mac w=Wmirr l=Lmirr nf=1
+Mmirr2 (n_s1 n_mirr vdd vdd) pch_mac w=Wmirr l=Lmirr nf=1
+// First stage: NMOS tail current source
+Mtail (n_tail vb vss vss) nch_mac w=Wtail l=Ltail nf=1
+// Second stage
+Mcs (vout n_s1 vdd vdd) pch_mac w=Wcs l=Lcs nf=1
+Mload (vout vb vss vss) nch_mac w=Wload l=Lload nf=1
+// Miller compensation
+Rz (n_s1 n_rz) resistor r=Rz
+Cc (n_rz vout) capacitor c=Cc
+ends two_stage_ota
 """
 
-# Open-loop AC testbench (both inputs at VCM DC, differential AC drive)
+# Differential AC testbench
 _TB_AC_TEMPLATE = """\
-* tb_two_stage_ac.sp — Two-Stage OTA AC Analysis (Open-Loop Differential)
-.include "circuit.cir"
+// tb_two_stage_ota_ac.scs -- Two-Stage OTA differential AC analysis
+simulator lang=spectre insensitive=yes
 
-* --- Power supply ---
-VDD vdd 0 DC {VDD}
-VSS vss 0 DC 0
-* VBIAS is a SPICE .param in circuit.cir (tuned by BO in gm/Id mode)
-Vbias vbias 0 DC VBIAS
+include "circuit.cir"
 
-* --- Input stimulus (open-loop, both inputs at VCM DC, AC differential) ---
-VIP vip 0 DC {VCM} AC 1
-VIN vin 0 DC {VCM} AC 0
+parameters VDD={VDD} VCM={VCM} VBIAS={VBIAS} CL={CL}
 
-* --- DUT ---
-Xdut vip vin vout vbias vdd vss two_stage_ota
-CL vout 0 {CL}
+VDDsrc (vdd 0) vsource type=dc dc=VDD
+VSSsrc (vss 0) vsource type=dc dc=0
+VBIASsrc (vbias 0) vsource type=dc dc=VBIAS
+VCMsrc (vcm 0) vsource type=dc dc=VCM
+VIPsrc (vinp vcm) vsource type=dc dc=0 mag=1
+Rfb (vout vinn) resistor r=1G
+Cfb (vinn 0) capacitor c=1
 
-* --- Analysis ---
-.op
-.ac dec 20 1 10g
-.temp 27
+Xdut (vinp vinn vout vbias vdd vss) two_stage_ota
+CLload (vout 0) capacitor c=CL
 
-* --- Measurements ---
-.meas ac gain_dc find vdb(vout) at=1k
-.meas ac phase_dc find vp(vout) at=1k
-.meas ac gbw_hz when vdb(vout)=0 cross=1
-.meas ac phase_at_ugf find vp(vout) when vdb(vout)=0 cross=1
-.meas dc power_total PARAM='-I(Vdd)*{VDD}'
+tempOption options temp=27
+outOpts options rawfmt=psfascii
+op1 dc oppoint=rawfile
+opInfo info what=oppoint where=rawfile
+ac1 ac start=1 stop=10G dec=20
 
-.end
+save vout
+save VDDsrc:p
 """
 
 # Unity-gain buffer transient testbench (slew rate + settling time)
 _TB_TRAN_TEMPLATE = """\
-* tb_two_stage_tran.sp — Two-Stage OTA Transient Analysis (Unity-Gain Buffer)
-.include "circuit.cir"
+// tb_two_stage_ota_tran.scs -- Unity-gain transient analysis
+simulator lang=spectre insensitive=yes
 
-* --- Power supply ---
-VDD vdd 0 DC {VDD}
-VSS vss 0 DC 0
-* VBIAS is a SPICE .param in circuit.cir (tuned by BO in gm/Id mode)
-Vbias vbias 0 DC VBIAS
+include "circuit.cir"
 
-* --- Unity-gain buffer: vout feeds back to vin ---
-Vcm vcm 0 DC {VCM}
-Vinp vinp vcm DC 0 PULSE({VLOW} {VHIGH} 2n 100p 100p 50n 100n)
+parameters VDD={VDD} VCM={VCM} VBIAS={VBIAS} CL={CL}
+parameters VLOW={VLOW} VHIGH={VHIGH}
 
-* --- Feedback (buffer) ---
-Vfb vin vout DC 0
+VDDsrc (vdd 0) vsource type=dc dc=VDD
+VSSsrc (vss 0) vsource type=dc dc=0
+VBIASsrc (vbias 0) vsource type=dc dc=VBIAS
+VIPsrc (vinp 0) vsource type=pulse val0=VLOW val1=VHIGH delay=2n rise=100p fall=100p width=50n period=100n
+VFBsrc (vin vout) vsource type=dc dc=0
 
-* --- DUT ---
-Xdut vinp vin vout vbias vdd vss two_stage_ota
-CL vout 0 {CL}
+Xdut (vinp vin vout vbias vdd vss) two_stage_ota
+CLload (vout 0) capacitor c=CL
 
-* --- Analysis ---
-.tran 10p 100n
-.temp 27
+tempOption options temp=27
+outOpts options rawfmt=psfascii
+tran1 tran stop=100n maxstep=10p
 
-* --- Measurements ---
-.meas tran slew_rate_rise MAX deriv(v(vout)) from=2n to=10n
-.meas tran slew_rate_fall MIN deriv(v(vout)) from=2n to=10n
-.meas tran settling_rise TRIG v(vinp) VAL={VHIGH} RISE=1
-+   TARG v(vout) VAL={VHIGH}*0.999 RISE=1
-.meas tran settling_fall TRIG v(vinp) VAL={VLOW} FALL=1
-+   TARG v(vout) VAL={VLOW}*0.999 FALL=1
-
-.end
+save vinp vout
 """
 
 
