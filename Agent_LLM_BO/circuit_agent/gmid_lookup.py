@@ -690,9 +690,8 @@ class GmidSizer:
                 transistor.Vbs,
             )
 
-            # PMOS tables may store signed VGS or positive VSG magnitude.
-            # Using the magnitude supports both conventions.
-            gate_voltage = bias.supply_voltage - abs(operating_point.vgs)
+            # Tables may store signed VGS or a positive magnitude.
+            gate_voltage = bias.resolve_gate_voltage(operating_point.vgs)
             upper_bound = (
                 bias.high if bias.high is not None else bias.supply_voltage
             )

@@ -207,6 +207,7 @@ class FiveTOTA(BaseTopology):
                     role="tail_pmos",
                     param_name="VBIAS",
                     supply_voltage=0.9,
+                    device_type="pmos",
                     low=0.05,
                     high=0.85,
                 ),

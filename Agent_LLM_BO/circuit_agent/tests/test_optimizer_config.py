@@ -59,6 +59,19 @@ class OptimizerConfigTest(unittest.TestCase):
         self.assertAlmostEqual(currents["I_tail"].low, 2.0 * x)
         self.assertAlmostEqual(currents["I_cs"].low, 4.0 * x)
 
+    def test_two_stage_gmid_space_derives_nmos_vbias(self):
+        spec = get_topology("two_stage_ota").get_gmid_spec()
+        self.assertNotIn(
+            "VBIAS",
+            [param.name for param in spec.pass_through_params],
+        )
+        self.assertEqual(len(spec.derived_gate_biases), 1)
+        bias = spec.derived_gate_biases[0]
+        self.assertEqual(bias.role, "tail_nmos")
+        self.assertEqual(bias.param_name, "VBIAS")
+        self.assertEqual(bias.device_type, "nmos")
+        self.assertEqual(bias.supply_voltage, 0.0)
+
     def test_folded_current_bounds_follow_ten_x_budget(self):
         targets = DesignTarget(
             bandwidth_hz=100e6,

@@ -2,7 +2,7 @@
 
 Reference: /Desktop/Knowleage_Base/01-电路拓扑/两级密勒补偿运放.md
 
-Topology (方案A — 五管OTA第一级 + 共源第二级):
+Topology (方案A — 五管OTA NMOS 输入第一级 + 共源第二级):
 
   First Stage (NMOS-input 5T OTA):
       M1/M2 — NMOS differential pair
@@ -47,9 +47,9 @@ class TwoStageOTA(BaseTopology):
             "first stage, PMOS common-source second stage, and Miller "
             "compensation (Cc + Rz).  High gain (55-85 dB), moderate GBW."
         ),
-        min_gain_db=50,
-        max_gain_db=90,
-        min_gbw_hz=1e5,
+        min_gain_db=45,
+        max_gain_db= 80,
+        min_gbw_hz=10e6,
         max_gbw_hz=5e8,
         typical_power_w=1e-3,
         complexity=2,
@@ -173,7 +173,7 @@ class TwoStageOTA(BaseTopology):
     # ------------------------------------------------------------------
 
     def get_gmid_spec(self, targets=None):
-        """Return gm/Id spec for two-stage OTA — reduces 10 → 14 params.
+        """Return the gm/Id spec for the two-stage OTA.
 
         Two independent branch currents:
         - I_tail: first-stage NMOS tail current
@@ -185,8 +185,16 @@ class TwoStageOTA(BaseTopology):
         - mirror_pmos (PMOS current mirror load, each I_tail/2)
         - cs_pmos (second-stage PMOS CS amplifier)
         - load_nmos (second-stage NMOS current-source load, gate=vb)
+
+        VBIAS is derived from the tail NMOS lookup VGS. M5 and M7 share this
+        gate voltage, so Spectre determines M7's final operating point.
         """
-        from models import BranchCurrentSpec, GmidTopologySpec, TransistorSpec
+        from models import (
+            BranchCurrentSpec,
+            DerivedGateBiasSpec,
+            GmidTopologySpec,
+            TransistorSpec,
+        )
 
         tail_current_low = 1e-6
         second_stage_current_low = 1e-6
@@ -290,8 +298,18 @@ class TwoStageOTA(BaseTopology):
                     log_scale=True, unit="F",
                 ),
                 ParamDef(
-                    name="Rz", low=1.0, high=100e3,
+                    name="Rz", low=1.0, high=10e3,
                     log_scale=True, unit="Ohm",
+                ),
+            ],
+            derived_gate_biases=[
+                DerivedGateBiasSpec(
+                    role="tail_nmos",
+                    param_name="VBIAS",
+                    supply_voltage=0.0,
+                    device_type="nmos",
+                    low=0.05,
+                    high=0.95,
                 ),
             ],
         )
@@ -359,7 +377,7 @@ class TwoStageOTA(BaseTopology):
                     log_scale=True, unit="F",
                 ),
                 ParamDef(
-                    name="Rz", low=1.0, high=100e3,
+                    name="Rz", low=1.0, high=10e3,
                     log_scale=True, unit="Ohm",
                 ),
             ]

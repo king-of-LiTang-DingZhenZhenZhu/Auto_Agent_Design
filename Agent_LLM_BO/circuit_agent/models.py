@@ -91,8 +91,21 @@ class DerivedGateBiasSpec:
     role: str
     param_name: str
     supply_voltage: float
+    device_type: str = "pmos"
     low: float = 0.0
     high: float | None = None
+
+    def resolve_gate_voltage(self, vgs: float) -> float:
+        """Convert a source-referenced VGS/VSG magnitude to gate voltage."""
+        vgs_magnitude = abs(vgs)
+        if self.device_type.lower() == "nmos":
+            return self.supply_voltage + vgs_magnitude
+        if self.device_type.lower() == "pmos":
+            return self.supply_voltage - vgs_magnitude
+        raise ValueError(
+            f"Unsupported device_type '{self.device_type}' for "
+            f"derived bias {self.param_name}"
+        )
 
 
 @dataclass
