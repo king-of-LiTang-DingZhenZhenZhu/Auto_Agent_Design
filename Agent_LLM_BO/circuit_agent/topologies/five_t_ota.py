@@ -83,12 +83,12 @@ class FiveTOTA(BaseTopology):
         vbias = (params or {}).get("VBIAS", self.DEFAULT_PARAMS["VBIAS"])
 
         # PMOS input needs VCM near VSS for adequate Vsg headroom
-        vcm = 0.15  # VDD=0.9V, PMOS input, VCM≈0.15V leaves Vsg≈0.75V
+        vcm = vdd-0.75  # VDD=0.9V, PMOS input, VCM≈0.15V leaves Vsg≈0.6V
 
         if analysis_type in ("tran", "sr"):
             return _TB_SR_TEMPLATE.format(
                 VDD=vdd, VCM=vcm, VBIAS=vbias, CL=_fmt(cload),
-                VLOW=vcm - 0.1, VHIGH=vcm + 0.1,
+                VLOW=0, VHIGH=vcm + 0.15,
             )
         if analysis_type == "st":
             return _TB_ST_TEMPLATE.format(

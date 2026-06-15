@@ -665,6 +665,16 @@ study.tell(trial, reward)
 写入 IterationRecord
 ```
 
+当前默认关闭 stagnation 自动升级拓扑：
+
+```text
+enable_topology_escalation = False
+```
+
+因此一次 BO 任务始终使用启动时选定的 topology，直到全部指标达标或
+达到最大迭代次数。`stagnation_window` 检测和 topology escalation
+路径仍保留在代码中，但只有显式开启该配置后才会执行。
+
 ### 9.1 每轮目录
 
 例如：

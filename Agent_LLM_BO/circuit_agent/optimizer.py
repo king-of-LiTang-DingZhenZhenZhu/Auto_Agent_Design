@@ -185,8 +185,12 @@ class HybridOptimizer:
                 logger.info(f"All targets met at iteration {iteration + 1}!")
                 break
 
-            # Step 7: Check stagnation and attempt topology escalation
-            if self._detect_stagnation(state):
+            # Step 7: Optional topology escalation. Disabled by default so one
+            # optimization run remains on the topology selected at startup.
+            if (
+                self.config.enable_topology_escalation
+                and self._detect_stagnation(state)
+            ):
                 if topology_changes < self.config.max_topology_changes:
                     logger.info("Optimization stagnant, attempting topology escalation")
                     new_topology = self._request_topology_change(topology_name)
