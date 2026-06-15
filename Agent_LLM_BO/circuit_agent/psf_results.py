@@ -369,7 +369,10 @@ def _find_analysis_file(
 
 def _signal_axis(psf: Any, candidates: tuple[str, ...]) -> tuple[Any, Any]:
     signal = _get_signal(psf, candidates)
-    return signal.abscissa, signal.ordinate
+    # psf_utils stores the sweep axis (frequency, time) on the PSF object,
+    # not on individual signals (signal.abscissa is always None).
+    sweep = psf.get_sweep()
+    return sweep.abscissa, signal.ordinate
 
 
 def _scalar_signal(psf: Any, candidates: tuple[str, ...]) -> float:
@@ -382,11 +385,15 @@ def _scalar_signal(psf: Any, candidates: tuple[str, ...]) -> float:
 
 def _get_signal(psf: Any, candidates: tuple[str, ...]) -> Any:
     available = list(psf.all_signals())
-    normalized = {_normalize_signal_name(str(name)): name for name in available}
+    # available contains Signal objects; use .name attribute for comparison
+    # and store signal name (str) as the lookup key for psf.get_signal()
+    normalized = {
+        _normalize_signal_name(sig.name): sig.name for sig in available
+    }
     for candidate in candidates:
-        actual_name = normalized.get(_normalize_signal_name(candidate))
-        if actual_name is not None:
-            return psf.get_signal(actual_name)
+        matched_name = normalized.get(_normalize_signal_name(candidate))
+        if matched_name is not None:
+            return psf.get_signal(matched_name)
     raise KeyError(
         f"None of {candidates} found in PSF signals: "
         f"{', '.join(str(name) for name in available[:20])}"
