@@ -25,6 +25,8 @@ Port order: vip vin vout vb vdd vss
 
 from __future__ import annotations
 
+import math
+
 from topologies.base import BaseTopology, TopologyMeta
 from models import CircuitFiles, ParamDef, ParamSpace
 
@@ -170,7 +172,7 @@ class TwoStageOTA(BaseTopology):
     # gm/Id support
     # ------------------------------------------------------------------
 
-    def get_gmid_spec(self):
+    def get_gmid_spec(self, targets=None):
         """Return gm/Id spec for two-stage OTA — reduces 10 → 14 params.
 
         Two independent branch currents:
@@ -186,13 +188,48 @@ class TwoStageOTA(BaseTopology):
         """
         from models import BranchCurrentSpec, GmidTopologySpec, TransistorSpec
 
+        tail_current_low = 1e-6
+        second_stage_current_low = 1e-6
+        if (
+            targets is not None
+            and targets.bandwidth_hz is not None
+            and targets.load_cap_f is not None
+            and targets.bandwidth_hz > 0
+            and targets.load_cap_f > 0
+        ):
+            compensation_estimate = 0.5 * targets.load_cap_f
+            gm_required = (
+                2.0 * math.pi * targets.bandwidth_hz * compensation_estimate
+            )
+            single_input_current = gm_required / 24.0
+            tail_current_low = max(tail_current_low, 2.0 * single_input_current)
+            second_stage_current_low = max(
+                second_stage_current_low, 4.0 * single_input_current
+            )
+            if tail_current_low > 200e-6:
+                raise ValueError(
+                    "Two-stage OTA GBW/CL estimate requires I_tail >= "
+                    f"{tail_current_low:.3e} A, above the 200 uA upper bound"
+                )
+            if second_stage_current_low > 500e-6:
+                raise ValueError(
+                    "Two-stage OTA GBW/CL estimate requires I_cs >= "
+                    f"{second_stage_current_low:.3e} A, above the 500 uA upper bound"
+                )
+
         return GmidTopologySpec(
             branch_currents=[
                 BranchCurrentSpec(
-                    name="I_tail", low=1e-6, high=200e-6, default=15e-6,
+                    name="I_tail",
+                    low=tail_current_low,
+                    high=200e-6,
+                    default=max(15e-6, tail_current_low),
                 ),
                 BranchCurrentSpec(
-                    name="I_cs", low=1e-6, high=500e-6, default=40e-6,
+                    name="I_cs",
+                    low=second_stage_current_low,
+                    high=500e-6,
+                    default=max(40e-6, second_stage_current_low),
                 ),
             ],
             transistors=[
@@ -204,7 +241,7 @@ class TwoStageOTA(BaseTopology):
                     current_source="I_tail", current_fraction=1.0,
                     gm_id_low=5, gm_id_high=20, gm_id_default=8,
                     L_low=100e-9, L_high=900e-9, L_default=200e-9,
-                    Vds_estimate=0.35,
+                    Vds_estimate=0.2,
                 ),
                 # -- First stage: NMOS diff pair (each I_tail/2) --
                 TransistorSpec(

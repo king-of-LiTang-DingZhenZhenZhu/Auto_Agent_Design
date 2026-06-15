@@ -249,7 +249,7 @@ def run_from_file(
         try:
             from topologies import get_topology
             topo = get_topology(topology_name_val)
-            gmid_spec = topo.get_gmid_spec()
+            gmid_spec = topo.get_gmid_spec(targets)
             if gmid_spec is not None:
                 from gmid_lookup import get_lookup, GmidSizer
                 lu = get_lookup()
@@ -375,6 +375,7 @@ def run_from_file(
     console.print("")
     best = state.best_record
     if best:
+        best_physical_params = best.physical_params or best.params
         all_met, _ = targets.is_satisfied(best.result)
         if all_met:
             console.print(
@@ -392,8 +393,8 @@ def run_from_file(
             )
 
         _display_results_table(best.result, targets, "Final Results")
-        _display_params(best.params)
-        _save_final_output(template, best.params, best.result, config,
+        _display_params(best_physical_params)
+        _save_final_output(template, best_physical_params, best.result, config,
                           circuit_files=circuit_files, param_space=param_space,
                           targets=targets, project_name=project_name,
                           original_requirement=original_requirement_text)

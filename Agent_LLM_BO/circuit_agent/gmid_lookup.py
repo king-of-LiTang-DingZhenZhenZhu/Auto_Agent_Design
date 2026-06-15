@@ -665,6 +665,45 @@ class GmidSizer:
             if pp.name in gmid_params:
                 result[pp.name] = gmid_params[pp.name]
 
+        # Step 4: Derive voltage biases from lookup operating points.
+        for bias in self._spec.derived_gate_biases:
+            transistor = next(
+                (ts for ts in self._spec.transistors if ts.role == bias.role),
+                None,
+            )
+            if transistor is None:
+                raise ValueError(
+                    f"Derived bias role '{bias.role}' is not present in topology spec"
+                )
+
+            gm_id_val = gmid_params.get(
+                f"gm_id_{transistor.role}", transistor.gm_id_default
+            )
+            L_val = gmid_params.get(
+                f"L_{transistor.role}", transistor.L_default
+            )
+            operating_point = self._lookup.lookup(
+                transistor.model,
+                gm_id_val,
+                L_val,
+                transistor.Vds_estimate,
+                transistor.Vbs,
+            )
+
+            # PMOS tables may store signed VGS or positive VSG magnitude.
+            # Using the magnitude supports both conventions.
+            gate_voltage = bias.supply_voltage - abs(operating_point.vgs)
+            upper_bound = (
+                bias.high if bias.high is not None else bias.supply_voltage
+            )
+            if not bias.low <= gate_voltage <= upper_bound:
+                raise ValueError(
+                    f"Derived {bias.param_name}={gate_voltage:.4g} V from "
+                    f"{bias.role} is outside [{bias.low:.4g}, "
+                    f"{upper_bound:.4g}] V"
+                )
+            result[bias.param_name] = gate_voltage
+
         return result
 
     def get_initial_gmid_params(self, netlist_content: str = "") -> dict[str, float]:

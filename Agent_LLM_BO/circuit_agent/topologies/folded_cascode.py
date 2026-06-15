@@ -31,6 +31,8 @@ Port order: vip vin vout ibias vdd vss
 
 from __future__ import annotations
 
+import math
+
 from topologies.base import BaseTopology, TopologyMeta
 from models import CircuitFiles, ParamDef, ParamSpace
 
@@ -299,23 +301,72 @@ class FoldedCascodeOTA(BaseTopology):
             ]
         )
 
-    def get_gmid_spec(self):
+    def get_gmid_spec(self, targets=None):
         """Return gm/Id spec for folded cascode — reduces 26 → 17 params."""
         from models import BranchCurrentSpec, GmidTopologySpec, TransistorSpec
+
+        tail_current_low = 1e-6
+        folded_branch_current_low = 1e-6
+        second_stage_current_low = 1e-6
+        if (
+            targets is not None
+            and targets.bandwidth_hz is not None
+            and targets.load_cap_f is not None
+            and targets.bandwidth_hz > 0
+            and targets.load_cap_f > 0
+        ):
+            compensation_estimate = 0.5 * targets.load_cap_f
+            gm_required = (
+                2.0 * math.pi * targets.bandwidth_hz * compensation_estimate
+            )
+            single_input_current = gm_required / 22.0
+
+            # Current-budget heuristic:
+            # input pair = 2x, two folded sides = 2x + 2x,
+            # second stage = 4x, hence total minimum = 10x.
+            tail_current_low = max(tail_current_low, 2.0 * single_input_current)
+            folded_branch_current_low = max(
+                folded_branch_current_low, 2.0 * single_input_current
+            )
+            second_stage_current_low = max(
+                second_stage_current_low, 4.0 * single_input_current
+            )
+
+            bounds = (
+                ("I_tail", tail_current_low, 200e-6),
+                ("I_fold", folded_branch_current_low, 200e-6),
+                ("I_cs", second_stage_current_low, 500e-6),
+            )
+            for name, lower, upper in bounds:
+                if lower > upper:
+                    raise ValueError(
+                        "Folded-cascode GBW/CL estimate requires "
+                        f"{name} >= {lower:.3e} A, above the "
+                        f"{upper:.3e} A upper bound"
+                    )
 
         return GmidTopologySpec(
             branch_currents=[
                 # Tail current for PMOS diff pair
                 BranchCurrentSpec(
-                    name="I_tail", low=1e-6, high=200e-6, default=20e-6,
+                    name="I_tail",
+                    low=tail_current_low,
+                    high=200e-6,
+                    default=max(20e-6, tail_current_low),
                 ),
                 # NMOS folded-branch DC current (per side)
                 BranchCurrentSpec(
-                    name="I_fold", low=1e-6, high=200e-6, default=15e-6,
+                    name="I_fold",
+                    low=folded_branch_current_low,
+                    high=200e-6,
+                    default=max(15e-6, folded_branch_current_low),
                 ),
                 # Second-stage PMOS CS bias current
                 BranchCurrentSpec(
-                    name="I_cs", low=1e-6, high=500e-6, default=40e-6,
+                    name="I_cs",
+                    low=second_stage_current_low,
+                    high=500e-6,
+                    default=max(40e-6, second_stage_current_low),
                 ),
             ],
             transistors=[
@@ -327,7 +378,7 @@ class FoldedCascodeOTA(BaseTopology):
                     current_source="I_tail", current_fraction=1.0,
                     gm_id_low=5, gm_id_high=20, gm_id_default=8,
                     L_low=100e-9, L_high=900e-9, L_default=200e-9,
-                    Vds_estimate=0.4,
+                    Vds_estimate=0.2,
                 ),
                 # -- PMOS diff pair (each side carries I_tail / 2) --
                 TransistorSpec(

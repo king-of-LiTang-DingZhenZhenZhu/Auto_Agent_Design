@@ -10,6 +10,8 @@ Topology:
 
 from __future__ import annotations
 
+import math
+
 from topologies.base import BaseTopology, TopologyMeta
 from models import CircuitFiles, ParamDef, ParamSpace
 
@@ -121,24 +123,51 @@ class FiveTOTA(BaseTopology):
     # gm/Id support
     # ------------------------------------------------------------------
 
-    def get_gmid_spec(self):
-        """Return gm/Id spec for 5T OTA — 1 I + 3 T + 1 pass-through = 8 params.
+    def get_gmid_spec(self, targets=None):
+        """Return gm/Id spec for 5T OTA with a GBW-derived current lower bound.
 
         The topology has one branch current (I_tail) driving:
         - PMOS tail current source
         - PMOS diff pair (each side carries I_tail/2)
         - NMOS current mirror load (each side carries I_tail/2)
 
-        VBIAS is a pass-through parameter because the 5T OTA is voltage-biased:
-        Mtail's gate is driven by an external Vbias voltage source.  BO tunes
-        VBIAS alongside gm/Id params to find the right gate drive.
+        VBIAS is derived from the tail PMOS lookup VGS and is not searched by BO.
         """
-        from models import BranchCurrentSpec, GmidTopologySpec, TransistorSpec
+        from models import (
+            BranchCurrentSpec,
+            DerivedGateBiasSpec,
+            GmidTopologySpec,
+            TransistorSpec,
+        )
+
+        tail_current_low = 1e-6
+        tail_current_high = 200e-6
+        if (
+            targets is not None
+            and targets.bandwidth_hz is not None
+            and targets.load_cap_f is not None
+            and targets.bandwidth_hz > 0
+            and targets.load_cap_f > 0
+        ):
+            gm_required = 2.0 * math.pi * targets.bandwidth_hz * targets.load_cap_f
+            max_input_gmid = 24.0
+            input_current_fraction = 0.5
+            derived_min = gm_required / (max_input_gmid * input_current_fraction)
+            tail_current_low = max(tail_current_low, derived_min)
+            if tail_current_low > tail_current_high:
+                raise ValueError(
+                    "5T OTA GBW/CL target requires I_tail >= "
+                    f"{tail_current_low:.3e} A, above the configured "
+                    f"{tail_current_high:.3e} A upper bound"
+                )
 
         return GmidTopologySpec(
             branch_currents=[
                 BranchCurrentSpec(
-                    name="I_tail", low=1e-6, high=200e-6, default=40e-6,
+                    name="I_tail",
+                    low=tail_current_low,
+                    high=tail_current_high,
+                    default=max(40e-6, tail_current_low),
                 ),
             ],
             transistors=[
@@ -150,7 +179,7 @@ class FiveTOTA(BaseTopology):
                     current_source="I_tail", current_fraction=1.0,
                     gm_id_low=5, gm_id_high=22, gm_id_default=14,
                     L_low=120e-9, L_high=900e-9, L_default=200e-9,
-                    Vds_estimate=0.3, max_per_finger=2.7e-6,
+                    Vds_estimate=0.2, max_per_finger=2.7e-6,
                 ),
                 # -- PMOS diff pair (each side carries I_tail / 2) --
                 TransistorSpec(
@@ -173,10 +202,13 @@ class FiveTOTA(BaseTopology):
                     Vds_estimate=0.35, multiplicity=2, max_per_finger=2.7e-6,
                 ),
             ],
-            pass_through_params=[
-                ParamDef(
-                    name="VBIAS", low=0.25, high=0.50,
-                    log_scale=False, unit="V",
+            derived_gate_biases=[
+                DerivedGateBiasSpec(
+                    role="tail_pmos",
+                    param_name="VBIAS",
+                    supply_voltage=0.9,
+                    low=0.05,
+                    high=0.85,
                 ),
             ],
         )

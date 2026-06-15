@@ -27,7 +27,7 @@ class TopologyMeta:
 
     # Approximate capability ranges (SI units)
     min_gain_db: float = 0.0
-    max_gain_db: float = 120.0
+    max_gain_db: float = 140.0
     min_gbw_hz: float = 0.0
     max_gbw_hz: float = 1e12
     typical_power_w: float = 1e-3
@@ -155,7 +155,7 @@ class BaseTopology(ABC):
     # gm/Id support (optional — override to enable gm/Id sizing mode)
     # ------------------------------------------------------------------
 
-    def get_gmid_spec(self):
+    def get_gmid_spec(self, targets: DesignTarget | None = None):
         """Return a :class:`GmidTopologySpec` to enable gm/Id-based sizing.
 
         The default returns ``None`` — no gm/Id mode (backward compatible).

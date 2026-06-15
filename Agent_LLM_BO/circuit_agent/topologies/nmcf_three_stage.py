@@ -174,7 +174,7 @@ class NMCFThreeStageOTA(BaseTopology):
     # gm/Id support
     # ------------------------------------------------------------------
 
-    def get_gmid_spec(self):
+    def get_gmid_spec(self, targets=None):
         """Return gm/Id spec for NMCF three-stage OTA — reduces 17 → 25 params.
 
         Three independent branch currents:
@@ -209,7 +209,7 @@ class NMCFThreeStageOTA(BaseTopology):
                     current_source="I_tail1", current_fraction=1.0,
                     gm_id_low=5, gm_id_high=20, gm_id_default=8,
                     L_low=100e-9, L_high=900e-9, L_default=200e-9,
-                    Vds_estimate=0.3,
+                    Vds_estimate=0.2,
                 ),
                 # -- Stage 1: PMOS diff pair (each I_tail1/2) --
                 TransistorSpec(

@@ -439,6 +439,53 @@ L_load
 ...
 ```
 
+对于 5T OTA，`VBIAS` 不再是 gm/Id 模式中的独立 BO 参数。每轮 sizing
+使用尾 PMOS 的 `gm_id_tail_pmos`、`L_tail_pmos`、`Vds=0.2 V` 和
+`Vbs=0 V` 查询 lookup table 的 VGS，并计算：
+
+```text
+VBIAS = VDD - abs(VGS_lookup)
+```
+
+这样目标尾电流、尾管尺寸和偏置电压来自同一个 lookup 工作点。
+
+当用户同时提供 GBW 和负载电容 CL 时，5T OTA 还会用单极点近似限制
+尾电流搜索下界。GBW 使用 Hz，因此：
+
+```text
+gm_required = 2 * pi * GBW * CL
+I_tail_min  = gm_required / ((gm/Id)_max * 0.5)
+```
+
+其中 `0.5` 表示差分对每支管约承载一半尾电流。该约束只抬高
+`I_tail` 下界，不改变上界；如果推导下界超过配置上界，gm/Id sizing
+会明确报告该 GBW/CL 组合超出当前 5T 参数空间。
+
+两级 Miller OTA 使用 `Cc_est = 0.5 * CL` 做初步估算：
+
+```text
+gm1_required = 2 * pi * GBW * Cc_est
+x            = gm1_required / (gm/Id_input)_max
+I_tail_min   = 2x
+I_cs_min     = 4x
+```
+
+其中 `x` 是第一级差分对单管电流；第二级最小电流按第一级差分对总
+电流的两倍估算。
+
+Folded-cascode 二级 OTA 使用相同的 `Cc_est` 和 `gm1_required`，并按：
+
+```text
+x          = gm1_required / (gm/Id_input)_max
+I_tail_min = 2x
+I_fold_min = 2x  // 每侧 folded branch
+I_cs_min   = 4x
+I_total_min = I_tail + 2*I_fold + I_cs = 10x
+```
+
+这些关系是用于缩小 BO 搜索空间的电流预算启发式，不是精确的小信号
+传递函数；最终 GBW、功耗和支路工作点仍以 Spectre 结果为准。
+
 在每轮仿真前执行：
 
 ```text
@@ -1059,12 +1106,8 @@ best.physical_params
     -> 实际用于 Spectre 的 W/L
 ```
 
-最终网表渲染应使用 `best.physical_params`。
-
-当前 `main.py` 的最终保存调用仍把 `best.params` 传入 `_save_final_output()`。这可能使：
-
-- 最佳 iteration 实际运行网表使用正确的物理 W/L；
-- 但 `outputs/<project>/netlist/circuit.cir` 没有使用同一组物理 W/L。
+最终网表渲染使用 `best.physical_params`，其中包含实际 W/L、nf 和
+lookup 自动派生的偏置参数；普通模式则回退使用 `best.params`。
 
 在修正前，gm/Id 模式必须对比：
 

@@ -32,12 +32,13 @@
    在 <circuit_name>/ 文件夹下生成:
    ├── <circuit_name>.cir          # DUT 子电路（Spectre native syntax，扩展名保持 .cir）
    ├── tb_<circuit_name>_ac.scs    # Spectre AC testbench
-   ├── tb_<circuit_name>_tran.scs  # （可选）Spectre Transient testbench
+   ├── tb_<circuit_name>_sr.scs    # Slew Rate transient testbench
+   ├── tb_<circuit_name>_st.scs    # 0.1% Settling Time transient testbench
    ├── params.json                 # （可选）参数搜索空间，省略时自动从网表提取
    └── requirements.json           # 设计指标
       │
       ▼
-④ 调用 python main.py --netlist <circuit_name>/<circuit_name>.cir --testbench <circuit_name>/tb_<circuit_name>_ac.scs <circuit_name>/tb_<circuit_name>_tran.scs --requirements <circuit_name>/requirements.json
+④ 调用 python main.py --netlist <circuit_name>/<circuit_name>.cir --testbench <circuit_name>/tb_<circuit_name>_ac.scs <circuit_name>/tb_<circuit_name>_sr.scs <circuit_name>/tb_<circuit_name>_st.scs --requirements <circuit_name>/requirements.json
    （--params 可省略，系统自动从网表 parameters 声明中提取搜索空间并分配合理边界）
       │
       ▼
@@ -51,10 +52,10 @@
 ## 第一步：解析用户需求
 
 用户可能说：
-- "设计一个5T OTA，增益>40dB，带宽>500MHz，PM>60°，功耗<1mW，负载500fF"
-- "两级运放，gain>60dB，BW>100MHz，power<2mW"
+- "设计一个5T OTA，增益>40dB，GBW>500MHz，PM>60°，功耗<1mW，负载500fF"
+- "两级运放，gain>60dB，GBW>100MHz，SR>100V/us，0.1%建立时间<20ns"
 
-提取为结构化指标：`gain_db`, `bandwidth_hz`, `phase_margin_deg`, `power_w`, `load_cap_f`, `topology_hint`
+提取为结构化指标：`gain_db`, `bandwidth_hz`, `phase_margin_deg`, `power_w`, `load_cap_f`, `slew_rate_v_per_s`, `settling_time_s`, `topology_hint`。其中 `bandwidth_hz` 是兼容旧接口的字段名，当前实际表示 GBW/UGF。
 
 ---
 
@@ -111,7 +112,7 @@ targets = DesignTarget(gain_db=40, bandwidth_hz=500e6, phase_margin_deg=60, powe
 out = topo.write_project(
     '5t_ota',                    # 项目目录名
     targets=targets,
-    original_requirement='设计一个5T OTA，增益>40dB，带宽>500MHz'
+    original_requirement='设计一个5T OTA，增益>40dB，GBW>500MHz'
 )
 print(f'Project created: {out}')
 "
@@ -120,44 +121,14 @@ print(f'Project created: {out}')
 #   5t_ota/
 #   ├── 5t_ota.cir              # DUT 子电路网表
 #   ├── tb_5t_ota_ac.scs        # Spectre AC testbench
-#   ├── tb_5t_ota_tran.scs      # （如果拓扑支持）Spectre Transient testbench
+#   ├── tb_5t_ota_sr.scs        # Slew Rate testbench
+#   ├── tb_5t_ota_st.scs        # 0.1% Settling Time testbench
 #   └── requirements.json       # 设计指标（自动生成，含拓扑名、默认参数）
 ```
 
 > `write_project()` 一步完成：创建目录 → 写 .cir → 写所有 testbench → 写 requirements.json。Agent 无需手动处理文件。
 
-### 3.2 网表文件规范
 
-> `topologies/` 下所有现有及新增拓扑脚本，必须生成 **Spectre native syntax** 网表。语法和风格以 [Agent_LLM_BO/Scs_Scirpts/Examples/5T_OTA.scs](Agent_LLM_BO/Scs_Scirpts/Examples/5T_OTA.scs) 为基准。
->
-> 项目结构保持不变：DUT 文件仍命名为 `<circuit_name>.cir`，但文件内容是 Spectre 语法；仿真 testbench 命名为 `tb_<circuit_name>_<analysis>.scs`。
-
-禁止生成以下 HSPICE 风格内容：
-
-```spice
-.lib '/PDKS/TSMC28nm/models/hspice/toplevel.l' TOP_TT
-.options redefinedparams=ignore
-.param Wtail=3u Ltail=200n
-```
-
-必须改用 Spectre 风格：
-
-```spectre
-simulator lang=spectre insensitive=yes
-include "/PDKS/TSMC28nm/models/spectre/toplevel.scs" section=top_tt
-parameters Wtail=3u Ltail=200n
-```
-
-关键特性：
-- DUT 使用 Spectre 原生 `subckt ...` / `ends ...` 子电路语法，testbench 使用 `include "<circuit_name>.cir"`
-- 使用 `//` 注释、`parameters` 参数声明和 Spectre 原生器件/分析语法
-- MOS 实例使用 `M1 (d g s b) model w=... l=... nf=...`
-- 电压源、电容、电阻、`dc`、`ac`、`tran`、`save` 等均使用 Spectre native syntax
-- 每个晶体管初始写为 `nf=1`，W 为总有效宽度（系统可自动拆 finger）
-- NMOS bulk → vss/0，PMOS bulk → vdd
-- W/L 最小单位 10nm
-
-如需了解底层细节，见 [Spectre.scs 脚本编写规范](Agent_LLM_BO/Scs_Scirpts/Spectre.scs脚本编写规范.md)。
 
 ### 3.3 requirements.json 格式
 
@@ -169,7 +140,9 @@ parameters Wtail=3u Ltail=200n
     "bandwidth_hz": 500000000,
     "phase_margin_deg": 60,
     "power_w": 0.001,
-    "load_cap_f": 500e-15
+    "load_cap_f": 500e-15,
+    "slew_rate_v_per_s": 100000000,
+    "settling_time_s": 20e-9
   },
   "topology_hint": "5T OTA"
 }
@@ -188,6 +161,8 @@ conda activate Auto_Agent_Design
 python main.py \
   --netlist <circuit_name>/<circuit_name>.cir \
   --testbench <circuit_name>/tb_<circuit_name>_ac.scs \
+              <circuit_name>/tb_<circuit_name>_sr.scs \
+              <circuit_name>/tb_<circuit_name>_st.scs \
   --requirements <circuit_name>/requirements.json
 ```
 
@@ -199,13 +174,19 @@ python main.py \
 | `--dry-run` | 跳过 Spectre，用启发式模拟 | 无 Spectre 环境测试 |
 | `--verbose` | 输出 DEBUG 日志 | 排查问题时 |
 | `--project <name>` | 指定项目名称 | 覆盖自动生成的名字 |
+| `--gbw 500e6` | 设置 GBW/UGF 目标 | 推荐使用；`--bw` 保留为兼容别名 |
+| `--sr 100e6` | 设置 Slew Rate 下限 | 单位 V/s |
+| `--settling-time 20e-9` | 设置 0.1% 建立时间上限 | 单位 s |
 
 **简化调用（不用 requirements.json）：**
 ```bash
 python main.py \
   --netlist <circuit_name>/<circuit_name>.cir \
   --testbench <circuit_name>/tb_<circuit_name>_ac.scs \
-  --gain 40 --bw 500e6 --pm 60 --power 0.001 --load-cap 500e-15
+              <circuit_name>/tb_<circuit_name>_sr.scs \
+              <circuit_name>/tb_<circuit_name>_st.scs \
+  --gain 40 --gbw 500e6 --pm 60 --power 0.001 --load-cap 500e-15 \
+  --sr 100e6 --settling-time 20e-9
 ```
 
 ---
@@ -222,8 +203,13 @@ python main.py \
   "metrics": {
     "gain_db": 42.3,
     "bandwidth_hz": 520000000,
+    "gbw_hz": 520000000,
     "phase_margin_deg": 63.5,
-    "power_w": 0.00085
+    "power_w": 0.00085,
+    "slew_rate_positive_v_per_s": 130000000,
+    "slew_rate_negative_v_per_s": 120000000,
+    "slew_rate_v_per_s": 120000000,
+    "settling_time_s": 15e-9
   },
   "params": {"Wtail": 12e-6, "Ltail": 80e-9, ...},
   "target_status": {"gain_db": true, "bandwidth_hz": true, ...},
@@ -244,14 +230,41 @@ outputs/<project_name>/
 ├── netlist/
 │   └── circuit.cir              # 最优参数渲染后的电路
 ├── simulation/
-│   └── tb_circuit.scs           # Spectre native syntax 仿真 testbench
+│   ├── tb_circuit.scs           # 第 1 个 testbench，通常为 AC/DC
+│   ├── tb_circuit_1.scs         # 第 2 个 testbench，通常为 Slew Rate
+│   └── tb_circuit_2.scs         # 第 3 个 testbench，通常为 Settling Time
 ├── data/
 │   ├── sim.log                  # 最优迭代的仿真日志
-│   └── raw/                     # Spectre PSF 数据
+│   └── raw/                     # Spectre PSF ASCII 数据
 ├── results.json                 # 结构化结果
 ├── summary_report.txt           # 人类可读报告
 └── optimization_log.json        # 完整优化历史
 ```
+
+### 仿真指标提取
+
+`main.py` 通过 `simulator.py` 调用 Spectre，各 testbench 的结果写入 `raw/`。`psf_results.py` 使用 `psf_utils` 读取 PSF ASCII：
+
+- AC：读取输出幅相，DC 增益取低频值；首次 0 dB 交越频率作为 GBW/UGF，并计算该处相位裕度
+- 功耗：读取 DC 结果中的 `VDDsrc:p`
+- SR：分别定位输入上升沿和下降沿，在输出各自 10% 到 90% 的区间计算 `dVout/dt`；`SR+=max(dVout/dt)`，`SR-=abs(min(dVout/dt))`，最终 `SR=min(SR+, SR-)`
+- 建立时间：使用小信号阶跃，在上升、下降响应中分别寻找进入并持续保持在最终值 `±0.1%` 误差带内的时间，最终取较差者
+
+### gm/Id 初始化与参数下界
+
+gm/Id 模式由 lookup table 把目标 gm/Id、支路电流、预估 VDS 映射为器件 W/L；所有尾电流管的 `VDS` 预估统一为 `0.2V`。5T OTA 的 `VBIAS` 不再属于 BO 参数空间，而由尾管 lookup 的 `VGS/VSG` 自动推导。
+
+当用户给定 GBW 和 CL 时，会先估算实现该 GBW 所需的跨导，再用允许的最大 gm/Id 得到理论最小支路电流，并收紧 BO 电流参数下界：
+
+- 5T OTA：`gm=2π·GBW·CL`，单输入管电流 `x=gm/(gm/Id)_max`，尾电流下界 `2x`
+- Two-stage OTA：先取 `Cc=0.5CL`，`gm1=2π·GBW·Cc`；尾电流下界 `2x`，第二级电流下界 `4x`
+- Folded cascode 二级运放：同样用 `Cc=0.5CL`；尾支路 `2x`、两侧折叠支路各 `2x`、第二级 `4x`，整机最小电流估算为 `10x`
+
+这些公式只用于建立物理合理的搜索下界，最终尺寸和性能仍由 Spectre + BO 决定。
+
+### 拓扑升级策略
+
+停滞检测代码仍然保留，但自动升级拓扑默认关闭（`enable_topology_escalation=False`）。当前优化固定在用户选定的 topology 内；需要换拓扑时，由 Agent 根据结果和拓扑选择指南重新生成项目。
 
 ---
 
@@ -292,7 +305,7 @@ from models import DesignTarget
 
 topo = get_topology('5t_ota')
 targets = DesignTarget(gain_db=40, bandwidth_hz=5e8, phase_margin_deg=60, power_w=0.001)
-topo.write_project('5t_ota', targets=targets, original_requirement='5T OTA gain>40dB BW>500MHz')
+topo.write_project('5t_ota', targets=targets, original_requirement='5T OTA gain>40dB GBW>500MHz')
 print('Project created: 5t_ota/')
 "
 
@@ -300,6 +313,8 @@ print('Project created: 5t_ota/')
 python main.py \
   --netlist 5t_ota/5t_ota.cir \
   --testbench 5t_ota/tb_5t_ota_ac.scs \
+              5t_ota/tb_5t_ota_sr.scs \
+              5t_ota/tb_5t_ota_st.scs \
   --requirements 5t_ota/requirements.json \
   --dry-run
 
@@ -335,4 +350,5 @@ Agent (Codex)                    Python 脚本
 - **Spectre 编写规范**：[Agent_LLM_BO/Scs_Scirpts/Spectre.scs脚本编写规范.md](Agent_LLM_BO/Scs_Scirpts/Spectre.scs脚本编写规范.md)
 - **Spectre 示例**：[Agent_LLM_BO/Scs_Scirpts/Examples/5T_OTA.scs](Agent_LLM_BO/Scs_Scirpts/Examples/5T_OTA.scs)
 - **代码入口**：[Agent_LLM_BO/circuit_agent/main.py](Agent_LLM_BO/circuit_agent/main.py)
+- **文件流说明**：[Agent_LLM_BO/circuit_agent/FILE_FLOW.md](Agent_LLM_BO/circuit_agent/FILE_FLOW.md)
 - **配置文件**：[Agent_LLM_BO/circuit_agent/config.py](Agent_LLM_BO/circuit_agent/config.py)

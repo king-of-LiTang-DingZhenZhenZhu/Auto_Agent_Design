@@ -85,6 +85,17 @@ class BranchCurrentSpec:
 
 
 @dataclass
+class DerivedGateBiasSpec:
+    """Gate bias derived from a transistor operating point in the lookup table."""
+
+    role: str
+    param_name: str
+    supply_voltage: float
+    low: float = 0.0
+    high: float | None = None
+
+
+@dataclass
 class GmidTopologySpec:
     """Complete gm/Id specification for one circuit topology.
 
@@ -118,6 +129,7 @@ class GmidTopologySpec:
     transistors: list[TransistorSpec] = field(default_factory=list)
     branch_currents: list[BranchCurrentSpec] = field(default_factory=list)
     pass_through_params: list[ParamDef] = field(default_factory=list)
+    derived_gate_biases: list[DerivedGateBiasSpec] = field(default_factory=list)
 
     def build_param_space(self) -> "ParamSpace":
         """Convert the gm/Id spec into a :class:`ParamSpace` for BO.
