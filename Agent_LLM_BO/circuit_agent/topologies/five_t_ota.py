@@ -250,6 +250,10 @@ class FiveTOTA(BaseTopology):
                     name="Lcm", low=30e-9, high=900e-9,
                     log_scale=True, unit="m",
                 ),
+                ParamDef(
+                    name="VBIAS", low=0.15, high=0.55,
+                    log_scale=False, unit="V",
+                ),
             ]
         )
 

@@ -160,12 +160,12 @@ conda activate Auto_Agent_Design
 
 python main.py \
   --netlist <circuit_name>/<circuit_name>.cir \
-  --testbench <circuit_name>/tb_<circuit_name>_ac.scs \               # 必须（AC: gain/GBW/PM/功耗）
-              <circuit_name>/tb_<circuit_name>_sr.scs \               # 仅当用户要求 SR 时传入
-              <circuit_name>/tb_<circuit_name>_st.scs \               # 仅当用户要求 0.1% 建立时间时传入
+  --testbench <circuit_name>/tb_<circuit_name>_ac.scs \               
+              <circuit_name>/tb_<circuit_name>_sr.scs \               
+              <circuit_name>/tb_<circuit_name>_st.scs \               
   --requirements <circuit_name>/requirements.json
 ```
-
+其中 AC testbench 必须传入；SR/ST testbench 仅当用户要求摆率或 0.1% 建立时间时传入。
 **常用可选参数：**
 
 | 参数 | 说明 | 示例 |
@@ -182,9 +182,9 @@ python main.py \
 ```bash
 python main.py \
   --netlist <circuit_name>/<circuit_name>.cir \
-  --testbench <circuit_name>/tb_<circuit_name>_ac.scs \               # 必须
-              <circuit_name>/tb_<circuit_name>_sr.scs \               # 仅当要求 SR 时
-              <circuit_name>/tb_<circuit_name>_st.scs \               # 仅当要求建立时间时
+  --testbench <circuit_name>/tb_<circuit_name>_ac.scs \               
+              <circuit_name>/tb_<circuit_name>_sr.scs \               
+              <circuit_name>/tb_<circuit_name>_st.scs \               
   --gain 40 --gbw 500e6 --pm 60 --power 0.001 --load-cap 500e-15 \
   --sr 100e6 --settling-time 20e-9
 ```
@@ -272,7 +272,7 @@ gm/Id 模式由 lookup table 把目标 gm/Id、支路电流、预估 VDS 映射�
 
 ### 仿真失败怎么办
 
-Python 脚本不再调用 LLM 修复网表（网表由拓扑库生成，语法正确）。仿真失败通常是收敛问题或参数极端值导致：
+仿真失败通常是收敛问题或参数极端值导致：
 
 1. 读取失败日志 `workspace/run_000/sim.log`
 2. 分析错误类型（收敛问题 → 调整偏置参数；模型未找到 → 检查 PDK 路径）
@@ -312,8 +312,9 @@ print('Project created: 5t_ota/')
 # 3. 运行优化（dry-run 快速验证）
 python main.py \
   --netlist 5t_ota/5t_ota.cir \
-  --testbench 5t_ota/tb_5t_ota_ac.scs \              # 用户需求含 SR → 再加 tb_5t_ota_sr.scs
-              5t_ota/tb_5t_ota_st.scs \              # 用户需求含 ST → 再加 tb_5t_ota_st.scs
+  --testbench 5t_ota/tb_5t_ota_ac.scs \
+              5t_ota/tb_5t_ota_sr.scs \
+              5t_ota/tb_5t_ota_st.scs \
   --requirements 5t_ota/requirements.json \
   --dry-run
 

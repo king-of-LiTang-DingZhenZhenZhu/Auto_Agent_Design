@@ -51,6 +51,7 @@ class GmidCurrentMirrorTest(unittest.TestCase):
         self.assertAlmostEqual(wload_total, 4.0 * wtail_total)
         self.assertAlmostEqual(physical["Lload"], physical["Ltail"])
         self.assertAlmostEqual(wcs_total, 4.0 * wtail_total)
+        self.assertAlmostEqual(physical["VBIAS"], 0.42)
 
 
 if __name__ == "__main__":

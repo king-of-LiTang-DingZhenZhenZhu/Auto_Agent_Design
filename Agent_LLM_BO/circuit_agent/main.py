@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import shutil
 import sys
 from pathlib import Path
@@ -24,7 +23,6 @@ from models import (
     CircuitFiles,
     DesignTarget,
     NetlistTemplate,
-    ParamDef,
     ParamSpace,
     SimResult,
 )
@@ -128,6 +126,7 @@ def run_from_file(
 
     # --- Load parameter search space ---
     if args.params:
+        param_space_from_args = True
         params_path = Path(args.params)
         if not params_path.exists():
             console.print(f"[red]Params file not found: {params_path}[/red]")
@@ -137,6 +136,7 @@ def run_from_file(
         param_space = ParamSpace.from_dict(param_data)
         console.print(f"[green]✓[/green] Loaded {len(param_space.params)} parameters from params file")
     else:
+        param_space_from_args = False
         # Auto-extract from netlist .param/parameters declarations
         try:
             netlist_content = netlist_path.read_text(encoding="utf-8")
@@ -151,22 +151,6 @@ def run_from_file(
             console.print(f"[red]Cannot auto-extract parameter space: {e}[/red]")
             console.print("[dim]Provide a --params JSON file or add parameters declarations to the netlist.[/dim]")
             sys.exit(1)
-
-    testbench_text = "\n".join(circuit_files.testbenches if circuit_files else [])
-    if (
-        re.search(r"\bVBIAS\s*=", testbench_text, re.IGNORECASE)
-        and "VBIAS" not in param_space.get_param_names()
-    ):
-        param_space.params.append(
-            ParamDef(
-                name="VBIAS",
-                low=0.25,
-                high=0.50,
-                log_scale=False,
-                unit="V",
-            )
-        )
-        console.print("     VBIAS: [250m ~ 500m] V (testbench bias)")
 
     # --- Build design targets ---
     original_requirement_text = ""
@@ -260,8 +244,29 @@ def run_from_file(
                     f"[green]✓[/green] gm/Id mode enabled for "
                     f"'{topology_name_val}' ({len(param_space.params)} params)"
                 )
+            elif not param_space_from_args:
+                param_space = topo.get_param_space()
+                console.print(
+                    f"[green]✓[/green] Using topology param space for "
+                    f"'{topology_name_val}' ({len(param_space.params)} params)"
+                )
         except Exception as e:
             console.print(f"[yellow]gm/Id mode unavailable: {e}[/yellow]")
+            if not param_space_from_args:
+                try:
+                    from topologies import get_topology
+                    topo = get_topology(topology_name_val)
+                    param_space = topo.get_param_space()
+                    console.print(
+                        f"[green]✓[/green] Falling back to topology param "
+                        f"space for '{topology_name_val}' "
+                        f"({len(param_space.params)} params)"
+                    )
+                except Exception as topo_error:
+                    console.print(
+                        f"[yellow]Topology param space unavailable: "
+                        f"{topo_error}[/yellow]"
+                    )
 
     # Save requirements to workspace for traceability
     _save_requirements(targets, original_text=original_requirement_text, config=config, project_name=project_name)
@@ -605,6 +610,8 @@ def _save_final_output(
             pass
 
     best_run_dir = config.get_run_dir(best_iter)
+    diagnostics_dir = project_root / "diagnostics"
+    diagnostics_paths: dict[str, str] = {}
     if best_run_dir.exists():
         sim_log = best_run_dir / "sim.log"
         if sim_log.exists():
@@ -614,11 +621,24 @@ def _save_final_output(
             if (data_dir / "raw").exists():
                 shutil.rmtree(data_dir / "raw", ignore_errors=True)
             shutil.copytree(raw_dir, data_dir / "raw", dirs_exist_ok=True)
+        run_diagnostics = best_run_dir / "diagnostics"
+        if run_diagnostics.exists():
+            if diagnostics_dir.exists():
+                shutil.rmtree(diagnostics_dir, ignore_errors=True)
+            shutil.copytree(run_diagnostics, diagnostics_dir, dirs_exist_ok=True)
+            dc_path = diagnostics_dir / "dc_operating_points.csv"
+            ac_path = diagnostics_dir / "ac_response.csv"
+            if dc_path.exists():
+                diagnostics_paths["dc_operating_points"] = str(dc_path)
+            if ac_path.exists():
+                diagnostics_paths["ac_response"] = str(ac_path)
 
     # 4. Save structured JSON result
     result_data = result.to_result_dict(targets=targets, params=params)
     result_data["netlist_file"] = str(circuit_path)
     result_data["project_name"] = project_name
+    if diagnostics_paths:
+        result_data["diagnostics"] = diagnostics_paths
     if original_requirement:
         result_data["original_requirement"] = original_requirement
     result_path = project_root / "results.json"
@@ -736,6 +756,8 @@ def _save_final_output(
         console.print(f"  • {project_root / 'virtuoso' / 'export_report.json'}")
     if history_file.exists():
         console.print(f"  • {project_root / 'optimization_log.json'}")
+    if diagnostics_paths:
+        console.print(f"  • {diagnostics_dir}")
     console.print(f"\n[dim]cd {project_root}[/dim]")
 
 

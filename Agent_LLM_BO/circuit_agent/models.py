@@ -828,6 +828,7 @@ class OptimizationState:
     best_reward: float = float("-inf")
     total_iterations: int = 0
     topology_changes: int = 0
+    stop_reason: str = ""
 
     @property
     def best_record(self) -> IterationRecord | None:

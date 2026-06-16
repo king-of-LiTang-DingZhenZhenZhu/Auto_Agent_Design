@@ -378,6 +378,11 @@ class TwoStageOTA(BaseTopology):
                     name="Rz", low=1.0, high=10e3,
                     log_scale=True, unit="Ohm",
                 ),
+                # Shared NMOS gate bias for Mtail and Mload in non-gm/Id mode.
+                ParamDef(
+                    name="VBIAS", low=0.35, high=0.85,
+                    log_scale=False, unit="V",
+                ),
             ]
         )
 

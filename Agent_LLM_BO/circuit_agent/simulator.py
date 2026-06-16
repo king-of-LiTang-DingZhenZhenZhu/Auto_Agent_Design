@@ -10,6 +10,7 @@ import subprocess
 from pathlib import Path
 
 from config import Settings
+from diagnostics_export import export_diagnostics, inject_diagnostic_saves
 from models import CircuitFiles, DesignTarget, NetlistTemplate, ParamSpace, SimResult
 from psf_results import parse_psf_results
 
@@ -84,6 +85,7 @@ class Simulator:
                 param_space=None,
                 w_l_grid_step=None,
             )
+            rendered_tb = inject_diagnostic_saves(rendered_tb, circuit_content)
             tb_path.write_text(rendered_tb, encoding="utf-8")
             logger.debug(f"Wrote testbench to {tb_path}")
             tb_paths.append(tb_path)
@@ -213,6 +215,14 @@ class Simulator:
                 encoding="utf-8", errors="replace"
             )
             psf_result = parse_psf_results(run_dir / "raw", testbench_content)
+            try:
+                export_diagnostics(
+                    raw_dir=run_dir / "raw",
+                    netlist_path=run_dir / "circuit.cir",
+                    out_dir=run_dir / "diagnostics",
+                )
+            except Exception as exc:
+                logger.warning("Diagnostics export failed: %s", exc)
             if psf_result is not None:
                 return psf_result
         except Exception as exc:

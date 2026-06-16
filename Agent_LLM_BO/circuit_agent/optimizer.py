@@ -185,6 +185,18 @@ class HybridOptimizer:
                 logger.info(f"All targets met at iteration {iteration + 1}!")
                 break
 
+            # Step 6b: Stop early when the same topology is repeatedly far
+            # from a usable operating point. This catches likely topology,
+            # bias, or testbench mistakes instead of wasting BO iterations.
+            if self._detect_repeated_severe_deviation(state, targets):
+                state.stop_reason = (
+                    "Stopped after "
+                    f"{self.config.severe_deviation_patience} consecutive "
+                    "severe simulation deviations"
+                )
+                logger.warning(state.stop_reason)
+                break
+
             # Step 7: Optional topology escalation. Disabled by default so one
             # optimization run remains on the topology selected at startup.
             if (
@@ -381,6 +393,48 @@ class HybridOptimizer:
 
         return False
 
+    def _detect_repeated_severe_deviation(
+        self,
+        state: OptimizationState,
+        targets: DesignTarget,
+    ) -> bool:
+        """Return True when recent results are all severe failures."""
+        patience = self.config.severe_deviation_patience
+        if patience <= 0 or len(state.history) < patience:
+            return False
+        recent = state.history[-patience:]
+        return all(
+            self._is_severe_deviation(record.result, targets)
+            for record in recent
+        )
+
+    def _is_severe_deviation(
+        self,
+        result: SimResult,
+        targets: DesignTarget,
+    ) -> bool:
+        """Detect circuit-level failure, not ordinary unmet specs."""
+        if not result.converged:
+            return True
+
+        if targets.gain_db is not None:
+            if result.gain_db is None:
+                return True
+            if result.gain_db < 0:
+                return True
+            if result.gain_db < targets.gain_db - self.config.severe_gain_gap_db:
+                return True
+
+        if targets.bandwidth_hz is not None:
+            if result.bandwidth_hz is None:
+                return True
+            if result.bandwidth_hz < (
+                targets.bandwidth_hz * self.config.severe_bandwidth_ratio
+            ):
+                return True
+
+        return False
+
     def _request_topology_change(
         self,
         topology_name: str,
@@ -434,6 +488,7 @@ class HybridOptimizer:
             "best_iteration": state.best_iteration,
             "best_reward": state.best_reward,
             "topology_changes": state.topology_changes,
+            "stop_reason": state.stop_reason,
             "targets": {
                 "gain_db": state.targets.gain_db,
                 "bandwidth_hz": state.targets.bandwidth_hz,

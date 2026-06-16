@@ -86,6 +86,20 @@ class OptimizerConfigTest(unittest.TestCase):
         self.assertEqual(bias.device_type, "nmos")
         self.assertEqual(bias.supply_voltage, 0.0)
 
+    def test_vbias_physical_ranges_are_topology_owned(self):
+        five_t_params = {
+            param.name: param for param in get_topology("5t_ota").get_param_space().params
+        }
+        two_stage_params = {
+            param.name: param
+            for param in get_topology("two_stage_ota").get_param_space().params
+        }
+
+        self.assertEqual(five_t_params["VBIAS"].low, 0.15)
+        self.assertEqual(five_t_params["VBIAS"].high, 0.55)
+        self.assertEqual(two_stage_params["VBIAS"].low, 0.35)
+        self.assertEqual(two_stage_params["VBIAS"].high, 0.85)
+
     def test_folded_current_bounds_follow_ten_x_budget(self):
         targets = DesignTarget(
             bandwidth_hz=100e6,

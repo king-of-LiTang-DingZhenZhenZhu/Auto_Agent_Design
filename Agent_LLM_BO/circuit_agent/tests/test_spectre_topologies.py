@@ -109,6 +109,9 @@ class SpectreTopologyTest(unittest.TestCase):
                     "VBIAS=420m",
                     tb_path.read_text(encoding="utf-8"),
                 )
+            ac_testbench = tb_paths[0].read_text(encoding="utf-8")
+            self.assertIn("// Diagnostic node saves", ac_testbench)
+            self.assertIn("Xdut.tail", ac_testbench)
 
 
 if __name__ == "__main__":

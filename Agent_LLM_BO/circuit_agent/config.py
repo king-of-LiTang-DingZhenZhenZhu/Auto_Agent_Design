@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     max_iterations: int = 50
     llm_validation_frequency: int = 5
     stagnation_window: int = 10
+    severe_deviation_patience: int = 5
+    severe_gain_gap_db: float = 40.0
+    severe_bandwidth_ratio: float = 0.01
     enable_topology_escalation: bool = False
     max_topology_changes: int = 3
     max_repair_attempts: int = 3
