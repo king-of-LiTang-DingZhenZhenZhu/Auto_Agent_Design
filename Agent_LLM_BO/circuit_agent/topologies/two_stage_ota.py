@@ -327,7 +327,7 @@ class TwoStageOTA(BaseTopology):
                 # --- First stage: tail current ---
                 ParamDef(
                     name="Wtail", low=0.5e-6, high=50e-6,
-                    log_scale=True, unit="m", max_per_finger=3e-6,
+                    log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
                     name="Ltail", low=30e-9, high=900e-9,
@@ -336,7 +336,7 @@ class TwoStageOTA(BaseTopology):
                 # --- First stage: diff pair ---
                 ParamDef(
                     name="Wdiff", low=0.5e-6, high=50e-6,
-                    log_scale=True, unit="m", max_per_finger=3e-6,
+                    log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
                     name="Ldiff", low=30e-9, high=900e-9,
@@ -345,7 +345,7 @@ class TwoStageOTA(BaseTopology):
                 # --- First stage: current mirror ---
                 ParamDef(
                     name="Wmirr", low=0.5e-6, high=50e-6,
-                    log_scale=True, unit="m", max_per_finger=3e-6,
+                    log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
                     name="Lmirr", low=30e-9, high=900e-9,
@@ -354,7 +354,7 @@ class TwoStageOTA(BaseTopology):
                 # --- Second stage: PMOS CS amp ---
                 ParamDef(
                     name="Wcs", low=0.5e-6, high=100e-6,
-                    log_scale=True, unit="m", max_per_finger=3e-6,
+                    log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
                     name="Lcs", low=30e-9, high=900e-9,
@@ -363,7 +363,7 @@ class TwoStageOTA(BaseTopology):
                 # --- Second stage: NMOS load ---
                 ParamDef(
                     name="Wload", low=0.5e-6, high=100e-6,
-                    log_scale=True, unit="m", max_per_finger=3e-6,
+                    log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
                     name="Lload", low=30e-9, high=900e-9,

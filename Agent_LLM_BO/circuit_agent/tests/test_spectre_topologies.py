@@ -79,8 +79,8 @@ class SpectreTopologyTest(unittest.TestCase):
             w_l_grid_step=10e-9,
         )
 
-        self.assertIn("parameters Wtail=3u Ltail=200n", rendered)
-        self.assertIn("Mtail (tail vbias vdd vdd) pch_mac w=3u l=200n nf=4", rendered)
+        self.assertIn("parameters Wtail=2.4u Ltail=200n", rendered)
+        self.assertIn("Mtail (tail vbias vdd vdd) pch_mac w=2.4u l=200n nf=5", rendered)
         self.assertNotIn("w=Wtail", rendered)
 
     def test_5t_vbias_is_testbench_owned_and_rendered(self):

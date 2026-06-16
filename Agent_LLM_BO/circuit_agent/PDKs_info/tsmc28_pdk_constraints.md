@@ -15,7 +15,7 @@
 | Parameter | Min | Max | Notes |
 |-----------|-----|-----|-------|
 | L (channel length) | 30nm | 1um | Min L=30nm for reliability; **analog circuits: recommend L ≥ 60nm** to reduce short-channel effects and improve output impedance |
-| W (finger width) | 100nm | 3um | Per finger |
+| W (finger width) | 100nm | 2.7um | Per finger |
 | nf (finger count) | 1 | 64 | Power of 2 preferred |
 | M (multiplier) | 1 | 32 | Integer |
 
@@ -34,4 +34,3 @@
 .lib '/path/to/your/pdk/hspice/toplevel.l' TOP_TT
 * if we write xxx.scs scripts
 include "/PDKS/TSMC28nm/models/spectre/toplevel.scs" section=top_tt
-

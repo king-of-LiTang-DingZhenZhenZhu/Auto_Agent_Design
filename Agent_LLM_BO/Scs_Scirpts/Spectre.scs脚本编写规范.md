@@ -57,7 +57,7 @@ include "/PDKS/TSMC28nm/models/spectre/toplevel.scs" section=top_tt
 
 - 使用 `parameters` 关键字，每行定义一组相关参数。
 - 尺寸参数统一使用 SI 单位后缀：`u`（μm）、`n`（nm）、`p`（pF）、`f`（fF）等。
-- tsmc28工艺下单管的尺寸有如下限制：宽度不超过 3um，长度不超过 1um，如果需要更大的宽度，则考虑增大 nf 或 M.
+- tsmc28工艺下单 finger 的尺寸有如下限制：宽度不超过 2.7um，长度不超过 1um，如果需要更大的总宽度，则考虑增大 nf 或 M.
 - 参数名语义化，区分器件类型：
 
 ```spectre

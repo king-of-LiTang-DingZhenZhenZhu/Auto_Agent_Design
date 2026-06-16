@@ -296,7 +296,7 @@ class NMCFThreeStageOTA(BaseTopology):
             params=[
                 ParamDef(
                     name="Wtail1", low=0.5e-6, high=100e-6,
-                    log_scale=True, unit="m", max_per_finger=3e-6,
+                    log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
                     name="Ltail1", low=30e-9, high=900e-9,
@@ -304,7 +304,7 @@ class NMCFThreeStageOTA(BaseTopology):
                 ),
                 ParamDef(
                     name="Wdiff1", low=0.5e-6, high=100e-6,
-                    log_scale=True, unit="m", max_per_finger=3e-6,
+                    log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
                     name="Ldiff1", low=30e-9, high=900e-9,
@@ -312,7 +312,7 @@ class NMCFThreeStageOTA(BaseTopology):
                 ),
                 ParamDef(
                     name="Wload1", low=0.5e-6, high=100e-6,
-                    log_scale=True, unit="m", max_per_finger=3e-6,
+                    log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
                     name="Lload1", low=30e-9, high=900e-9,
@@ -320,7 +320,7 @@ class NMCFThreeStageOTA(BaseTopology):
                 ),
                 ParamDef(
                     name="Wgm2", low=0.5e-6, high=120e-6,
-                    log_scale=True, unit="m", max_per_finger=3e-6,
+                    log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
                     name="Lgm2", low=30e-9, high=900e-9,
@@ -328,7 +328,7 @@ class NMCFThreeStageOTA(BaseTopology):
                 ),
                 ParamDef(
                     name="Wload2", low=0.5e-6, high=120e-6,
-                    log_scale=True, unit="m", max_per_finger=3e-6,
+                    log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
                     name="Lload2", low=30e-9, high=900e-9,
@@ -336,7 +336,7 @@ class NMCFThreeStageOTA(BaseTopology):
                 ),
                 ParamDef(
                     name="Wgm3", low=0.5e-6, high=150e-6,
-                    log_scale=True, unit="m", max_per_finger=3e-6,
+                    log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
                     name="Lgm3", low=30e-9, high=900e-9,
@@ -344,7 +344,7 @@ class NMCFThreeStageOTA(BaseTopology):
                 ),
                 ParamDef(
                     name="Wload3", low=0.5e-6, high=150e-6,
-                    log_scale=True, unit="m", max_per_finger=3e-6,
+                    log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
                     name="Lload3", low=30e-9, high=900e-9,
@@ -352,7 +352,7 @@ class NMCFThreeStageOTA(BaseTopology):
                 ),
                 ParamDef(
                     name="Wbiasn", low=0.5e-6, high=50e-6,
-                    log_scale=True, unit="m", max_per_finger=3e-6,
+                    log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
                     name="Lbiasn", low=30e-9, high=900e-9,
@@ -360,7 +360,7 @@ class NMCFThreeStageOTA(BaseTopology):
                 ),
                 ParamDef(
                     name="Wbiasp", low=0.5e-6, high=50e-6,
-                    log_scale=True, unit="m", max_per_finger=3e-6,
+                    log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
                     name="Lbiasp", low=30e-9, high=900e-9,

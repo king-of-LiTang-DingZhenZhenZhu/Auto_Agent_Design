@@ -63,7 +63,7 @@ class TransistorSpec:
     Vbs: float = 0.0
 
     # Physical constraints
-    max_per_finger: float = 3e-6
+    max_per_finger: float = 2.7e-6
     multiplicity: int = 1
 
 
@@ -355,7 +355,7 @@ class ParamDef:
     high: float
     log_scale: bool = True  # Use log-scale for W, L, C, R
     unit: str = ""  # e.g., "u", "n", "p"
-    max_per_finger: float | None = None  # If set, split into multiple fingers (e.g., W <= 3um)
+    max_per_finger: float | None = None  # If set, split into multiple fingers (e.g., W <= 2.7um)
     value_type: str = "float"  # "float" or "int"
 
 
@@ -459,7 +459,7 @@ class ParamSpace:
         return cls(params=params)
 
     @classmethod
-    def from_netlist(cls, content: str, max_per_finger: float = 3e-6) -> ParamSpace:
+    def from_netlist(cls, content: str, max_per_finger: float = 2.7e-6) -> ParamSpace:
         """Auto-extract parameter search space from netlist .param declarations.
 
         
@@ -494,7 +494,7 @@ class ParamSpace:
                 if _is_folded_bias_param(name):
                     low = 0.2e-6
                     high = 5e-6
-                    finger_limit = 5e-6
+                    finger_limit = 2.7e-6
                 else:
                     low = max(0.1e-6, initial * 0.1)
                     high = max(192e-6, initial * 10)

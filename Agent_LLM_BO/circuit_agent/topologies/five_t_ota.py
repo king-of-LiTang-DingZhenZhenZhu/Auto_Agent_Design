@@ -228,7 +228,7 @@ class FiveTOTA(BaseTopology):
             params=[
                 ParamDef(
                     name="Wtail", low=0.5e-6, high=50e-6,
-                    log_scale=True, unit="m", max_per_finger=3e-6,
+                    log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
                     name="Ltail", low=30e-9, high=900e-9,
@@ -236,7 +236,7 @@ class FiveTOTA(BaseTopology):
                 ),
                 ParamDef(
                     name="Wdp", low=0.5e-6, high=50e-6,
-                    log_scale=True, unit="m", max_per_finger=3e-6,
+                    log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
                     name="Ldp", low=30e-9, high=900e-9,
@@ -244,7 +244,7 @@ class FiveTOTA(BaseTopology):
                 ),
                 ParamDef(
                     name="Wcm", low=0.5e-6, high=50e-6,
-                    log_scale=True, unit="m", max_per_finger=3e-6,
+                    log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
                     name="Lcm", low=30e-9, high=900e-9,

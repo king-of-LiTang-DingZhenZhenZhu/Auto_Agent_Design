@@ -44,7 +44,7 @@ def _bias_w(name: str) -> ParamDef:
         high=5e-6,
         log_scale=True,
         unit="m",
-        max_per_finger=5e-6,
+        max_per_finger=2.7e-6,
     )
 
 
@@ -219,7 +219,7 @@ class FoldedCascodeOTA(BaseTopology):
             params=[
                 ParamDef(
                     name="Wtailp", low=0.5e-6, high=100e-6,
-                    log_scale=True, unit="m", max_per_finger=3e-6,
+                    log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
                     name="Ltailp", low=30e-9, high=900e-9,
@@ -227,7 +227,7 @@ class FoldedCascodeOTA(BaseTopology):
                 ),
                 ParamDef(
                     name="Wdiffp", low=0.5e-6, high=100e-6,
-                    log_scale=True, unit="m", max_per_finger=3e-6,
+                    log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
                     name="Ldiffp", low=30e-9, high=900e-9,
@@ -235,7 +235,7 @@ class FoldedCascodeOTA(BaseTopology):
                 ),
                 ParamDef(
                     name="Wfoldn", low=0.5e-6, high=100e-6,
-                    log_scale=True, unit="m", max_per_finger=3e-6,
+                    log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
                     name="Lfoldn", low=30e-9, high=900e-9,
@@ -243,7 +243,7 @@ class FoldedCascodeOTA(BaseTopology):
                 ),
                 ParamDef(
                     name="Wcasn", low=0.5e-6, high=80e-6,
-                    log_scale=True, unit="m", max_per_finger=3e-6,
+                    log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
                     name="Lcasn", low=30e-9, high=900e-9,
@@ -251,7 +251,7 @@ class FoldedCascodeOTA(BaseTopology):
                 ),
                 ParamDef(
                     name="Wmirrp", low=0.5e-6, high=100e-6,
-                    log_scale=True, unit="m", max_per_finger=3e-6,
+                    log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
                     name="Lmirrp", low=30e-9, high=900e-9,
@@ -259,7 +259,7 @@ class FoldedCascodeOTA(BaseTopology):
                 ),
                 ParamDef(
                     name="Wcasp", low=0.5e-6, high=100e-6,
-                    log_scale=True, unit="m", max_per_finger=3e-6,
+                    log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
                     name="Lcasp", low=30e-9, high=900e-9,
@@ -267,7 +267,7 @@ class FoldedCascodeOTA(BaseTopology):
                 ),
                 ParamDef(
                     name="Wcs", low=0.5e-6, high=150e-6,
-                    log_scale=True, unit="m", max_per_finger=3e-6,
+                    log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
                     name="Lcs", low=30e-9, high=900e-9,
@@ -275,7 +275,7 @@ class FoldedCascodeOTA(BaseTopology):
                 ),
                 ParamDef(
                     name="Wload", low=0.5e-6, high=150e-6,
-                    log_scale=True, unit="m", max_per_finger=3e-6,
+                    log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
                     name="Lload", low=30e-9, high=900e-9,
