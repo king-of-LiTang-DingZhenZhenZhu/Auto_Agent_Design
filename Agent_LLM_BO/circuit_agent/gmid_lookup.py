@@ -29,7 +29,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
-from scipy.interpolate import interp1d
+
+try:
+    from scipy.interpolate import interp1d
+except ModuleNotFoundError:  # Allows GmidSizer tests with a fake lookup.
+    interp1d = None
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
@@ -93,6 +97,11 @@ class GmidLookup:
     """
 
     def __init__(self, json_path: str | Path):
+        if interp1d is None:
+            raise ModuleNotFoundError(
+                "scipy is required to load gm/Id lookup tables. "
+                "Install project requirements before using real lookup data."
+            )
         self._json_path = Path(json_path)
         self._data: dict = {}
         # Per-model storage:
@@ -605,8 +614,42 @@ class GmidSizer:
         for bc in self._spec.branch_currents:
             branch_currents[bc.name] = gmid_params.get(bc.name, bc.default)
 
+        transistors_by_role = {ts.role: ts for ts in self._spec.transistors}
+        mirror_output_roles = {
+            mirror.output_role for mirror in self._spec.current_mirrors
+        }
+
+        # Step 1b: Derive mirror output branch currents before sizing other
+        # devices that depend on those currents, e.g. a second gain stage.
+        mirror_ratios: dict[str, int] = {}
+        for mirror in self._spec.current_mirrors:
+            ratio = int(round(gmid_params.get(
+                mirror.ratio_param, mirror.ratio_default
+            )))
+            ratio = min(max(ratio, mirror.ratio_low), mirror.ratio_high)
+            mirror_ratios[mirror.ratio_param] = ratio
+            if mirror.derived_current_name:
+                ref = transistors_by_role.get(mirror.reference_role)
+                if ref is None:
+                    raise ValueError(
+                        f"Mirror reference role '{mirror.reference_role}' "
+                        "is not present in topology spec"
+                    )
+                ref_current = (
+                    branch_currents.get(ref.current_source, 0.0)
+                    * ref.current_fraction
+                )
+                branch_currents[mirror.derived_current_name] = (
+                    ref_current * ratio
+                )
+
         # Step 2: Size each transistor from gm_id, L, Id
+        total_width_by_role: dict[str, float] = {}
+        length_by_role: dict[str, float] = {}
         for ts in self._spec.transistors:
+            if ts.role in mirror_output_roles:
+                continue
+
             # Determine drain current for this transistor
             Ibranch = branch_currents.get(ts.current_source, 0.0)
             Id_target = Ibranch * ts.current_fraction
@@ -647,25 +690,42 @@ class GmidSizer:
             w = max(w, 200e-9)   # Min W = 200nm (safe margin above 90nm)
             L_val = max(L_val, 120e-9)  # Min L = 120nm (above 108nm bin boundary)
 
-            # Finger splitting: if W exceeds max_per_finger, split into fingers
-            max_per_finger = ts.max_per_finger if ts.max_per_finger else 2.7e-6
-            if w > max_per_finger:
-                import math
-                nf = int(math.ceil(w / max_per_finger))
-                w_per_finger = w / nf
-                result[ts.w_param] = w_per_finger
-            else:
-                result[ts.w_param] = w
-                nf = 1
-            result[f"nf_{ts.w_param}"] = nf
-            result[ts.l_param] = L_val
+            total_width_by_role[ts.role] = w
+            length_by_role[ts.role] = L_val
+            self._write_sized_device(result, ts, w, L_val)
 
         # Step 3: Pass-through params (Cc, Rz, etc.)
         for pp in self._spec.pass_through_params:
             if pp.name in gmid_params:
                 result[pp.name] = gmid_params[pp.name]
 
-        # Step 4: Derive voltage biases from lookup operating points.
+        # Step 4: Size mirror outputs from total-width ratios.
+        for mirror in self._spec.current_mirrors:
+            ref = transistors_by_role.get(mirror.reference_role)
+            out = transistors_by_role.get(mirror.output_role)
+            if ref is None or out is None:
+                raise ValueError(
+                    f"Current mirror {mirror.ratio_param} references missing "
+                    "transistor roles"
+                )
+            if mirror.reference_role not in total_width_by_role:
+                raise ValueError(
+                    f"Mirror reference role '{mirror.reference_role}' was not sized"
+                )
+
+            ratio = mirror_ratios[mirror.ratio_param]
+            output_total_w = total_width_by_role[mirror.reference_role] * ratio
+            if mirror.share_length:
+                output_l = length_by_role[mirror.reference_role]
+            else:
+                output_l = gmid_params.get(f"L_{out.role}", out.L_default)
+                output_l = max(output_l, 120e-9)
+
+            total_width_by_role[out.role] = output_total_w
+            length_by_role[out.role] = output_l
+            self._write_sized_device(result, out, output_total_w, output_l)
+
+        # Step 5: Derive voltage biases from lookup operating points.
         for bias in self._spec.derived_gate_biases:
             transistor = next(
                 (ts for ts in self._spec.transistors if ts.role == bias.role),
@@ -705,6 +765,30 @@ class GmidSizer:
 
         return result
 
+    def _write_sized_device(
+        self,
+        result: dict[str, float],
+        transistor,
+        total_width: float,
+        length: float,
+    ) -> None:
+        """Write W-per-finger, nf, and L for one sized transistor/group."""
+        total_width = max(total_width, 200e-9)
+        length = max(length, 120e-9)
+        max_per_finger = (
+            transistor.max_per_finger if transistor.max_per_finger else 2.7e-6
+        )
+        if total_width > max_per_finger:
+            import math
+            nf = int(math.ceil(total_width / max_per_finger))
+            w_per_finger = total_width / nf
+        else:
+            nf = 1
+            w_per_finger = total_width
+        result[transistor.w_param] = w_per_finger
+        result[f"nf_{transistor.w_param}"] = nf
+        result[transistor.l_param] = length
+
     def get_initial_gmid_params(self, netlist_content: str = "") -> dict[str, float]:
         """Return default gm/Id-space parameters for the initial simulation.
 
@@ -727,9 +811,17 @@ class GmidSizer:
             params[bc.name] = bc.default
 
         # Transistor gm_id and L
+        mirror_output_roles = {
+            mirror.output_role for mirror in self._spec.current_mirrors
+        }
         for ts in self._spec.transistors:
+            if ts.role in mirror_output_roles:
+                continue
             params[f"gm_id_{ts.role}"] = ts.gm_id_default
             params[f"L_{ts.role}"] = ts.L_default
+
+        for mirror in self._spec.current_mirrors:
+            params[mirror.ratio_param] = mirror.ratio_default
 
         # Pass-through: use defaults, override from netlist if available
         for pp in self._spec.pass_through_params:

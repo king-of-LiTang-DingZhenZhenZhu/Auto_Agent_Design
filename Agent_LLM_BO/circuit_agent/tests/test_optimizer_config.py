@@ -57,7 +57,21 @@ class OptimizerConfigTest(unittest.TestCase):
         currents = {branch.name: branch for branch in spec.branch_currents}
         x = 2.0 * 3.141592653589793 * 100e6 * (0.5e-12) / 24.0
         self.assertAlmostEqual(currents["I_tail"].low, 2.0 * x)
-        self.assertAlmostEqual(currents["I_cs"].low, 4.0 * x)
+        self.assertNotIn("I_cs", currents)
+
+    def test_two_stage_gmid_space_uses_integer_mirror_ratio(self):
+        spec = get_topology("two_stage_ota").get_gmid_spec()
+        param_space = spec.build_param_space()
+        params = {param.name: param for param in param_space.params}
+        self.assertIn("I_tail", params)
+        self.assertIn("ratio_load_tail", params)
+        self.assertNotIn("I_cs", params)
+        self.assertNotIn("gm_id_load_nmos", params)
+        self.assertNotIn("L_load_nmos", params)
+        ratio = params["ratio_load_tail"]
+        self.assertEqual(ratio.value_type, "int")
+        self.assertEqual(ratio.low, 1)
+        self.assertEqual(ratio.high, 8)
 
     def test_two_stage_gmid_space_derives_nmos_vbias(self):
         spec = get_topology("two_stage_ota").get_gmid_spec()

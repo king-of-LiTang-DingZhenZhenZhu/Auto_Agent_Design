@@ -175,9 +175,9 @@ class TwoStageOTA(BaseTopology):
     def get_gmid_spec(self, targets=None):
         """Return the gm/Id spec for the two-stage OTA.
 
-        Two independent branch currents:
+        One independent branch current plus one integer mirror ratio:
         - I_tail: first-stage NMOS tail current
-        - I_cs: second-stage PMOS CS bias current
+        - ratio_load_tail: Mload/Mtail mirror ratio, deriving I_cs
 
         Transistor roles:
         - tail_nmos (NMOS tail current source, gate=vb)
@@ -191,13 +191,13 @@ class TwoStageOTA(BaseTopology):
         """
         from models import (
             BranchCurrentSpec,
+            CurrentMirrorRatioSpec,
             DerivedGateBiasSpec,
             GmidTopologySpec,
             TransistorSpec,
         )
 
         tail_current_low = 1e-6
-        second_stage_current_low = 1e-6
         if (
             targets is not None
             and targets.bandwidth_hz is not None
@@ -211,18 +211,10 @@ class TwoStageOTA(BaseTopology):
             )
             single_input_current = gm_required / 24.0
             tail_current_low = max(tail_current_low, 2.0 * single_input_current)
-            second_stage_current_low = max(
-                second_stage_current_low, 4.0 * single_input_current
-            )
             if tail_current_low > 200e-6:
                 raise ValueError(
                     "Two-stage OTA GBW/CL estimate requires I_tail >= "
                     f"{tail_current_low:.3e} A, above the 200 uA upper bound"
-                )
-            if second_stage_current_low > 500e-6:
-                raise ValueError(
-                    "Two-stage OTA GBW/CL estimate requires I_cs >= "
-                    f"{second_stage_current_low:.3e} A, above the 500 uA upper bound"
                 )
 
         return GmidTopologySpec(
@@ -232,12 +224,6 @@ class TwoStageOTA(BaseTopology):
                     low=tail_current_low,
                     high=200e-6,
                     default=max(15e-6, tail_current_low),
-                ),
-                BranchCurrentSpec(
-                    name="I_cs",
-                    low=second_stage_current_low,
-                    high=500e-6,
-                    default=max(40e-6, second_stage_current_low),
                 ),
             ],
             transistors=[
@@ -290,6 +276,18 @@ class TwoStageOTA(BaseTopology):
                     gm_id_low=5, gm_id_high=20, gm_id_default=8,
                     L_low=100e-9, L_high=900e-9, L_default=200e-9,
                     Vds_estimate=0.4,
+                ),
+            ],
+            current_mirrors=[
+                CurrentMirrorRatioSpec(
+                    reference_role="tail_nmos",
+                    output_role="load_nmos",
+                    ratio_param="ratio_load_tail",
+                    ratio_low=1,
+                    ratio_high=8,
+                    ratio_default=4,
+                    share_length=True,
+                    derived_current_name="I_cs",
                 ),
             ],
             pass_through_params=[

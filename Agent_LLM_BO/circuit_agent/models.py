@@ -109,6 +109,20 @@ class DerivedGateBiasSpec:
 
 
 @dataclass
+class CurrentMirrorRatioSpec:
+    """Width/current ratio relation for gm/Id-sized current mirrors."""
+
+    reference_role: str
+    output_role: str
+    ratio_param: str
+    ratio_low: int = 1
+    ratio_high: int = 8
+    ratio_default: int = 4
+    share_length: bool = True
+    derived_current_name: str | None = None
+
+
+@dataclass
 class GmidTopologySpec:
     """Complete gm/Id specification for one circuit topology.
 
@@ -143,6 +157,7 @@ class GmidTopologySpec:
     branch_currents: list[BranchCurrentSpec] = field(default_factory=list)
     pass_through_params: list[ParamDef] = field(default_factory=list)
     derived_gate_biases: list[DerivedGateBiasSpec] = field(default_factory=list)
+    current_mirrors: list[CurrentMirrorRatioSpec] = field(default_factory=list)
 
     def build_param_space(self) -> "ParamSpace":
         """Convert the gm/Id spec into a :class:`ParamSpace` for BO.
@@ -162,7 +177,10 @@ class GmidTopologySpec:
 
         # Transistor gm_id and L — deduplicate by (role, l_param)
         seen_L: set[str] = set()
+        mirror_output_roles = {mirror.output_role for mirror in self.current_mirrors}
         for ts in self.transistors:
+            if ts.role in mirror_output_roles:
+                continue
             # gm_id param — always unique per role
             params.append(ParamDef(
                 name=f"gm_id_{ts.role}",
@@ -178,6 +196,16 @@ class GmidTopologySpec:
                     low=ts.L_low, high=ts.L_high,
                     log_scale=True, unit="m",
                 ))
+
+        for mirror in self.current_mirrors:
+            params.append(ParamDef(
+                name=mirror.ratio_param,
+                low=mirror.ratio_low,
+                high=mirror.ratio_high,
+                log_scale=False,
+                unit="x",
+                value_type="int",
+            ))
 
         # Pass-through
         params.extend(self.pass_through_params)
@@ -328,6 +356,7 @@ class ParamDef:
     log_scale: bool = True  # Use log-scale for W, L, C, R
     unit: str = ""  # e.g., "u", "n", "p"
     max_per_finger: float | None = None  # If set, split into multiple fingers (e.g., W <= 3um)
+    value_type: str = "float"  # "float" or "int"
 
 
 @dataclass
@@ -340,7 +369,9 @@ class ParamSpace:
         """Use Optuna trial to suggest parameter values."""
         values = {}
         for p in self.params:
-            if p.log_scale:
+            if p.value_type == "int":
+                values[p.name] = trial.suggest_int(p.name, int(p.low), int(p.high))
+            elif p.log_scale:
                 values[p.name] = trial.suggest_float(p.name, p.low, p.high, log=True)
             else:
                 values[p.name] = trial.suggest_float(p.name, p.low, p.high)
@@ -371,11 +402,14 @@ class ParamSpace:
         initial = {}
         for p in self.params:
             if p.name in netlist_params:
-                initial[p.name] = min(max(netlist_params[p.name], p.low), p.high)
+                value = min(max(netlist_params[p.name], p.low), p.high)
+                initial[p.name] = int(round(value)) if p.value_type == "int" else value
             elif p.log_scale:
-                initial[p.name] = math.exp((math.log(p.low) + math.log(p.high)) / 2)
+                value = math.exp((math.log(p.low) + math.log(p.high)) / 2)
+                initial[p.name] = int(round(value)) if p.value_type == "int" else value
             else:
-                initial[p.name] = (p.low + p.high) / 2
+                value = (p.low + p.high) / 2
+                initial[p.name] = int(round(value)) if p.value_type == "int" else value
         return initial
 
     def resolve_params(
@@ -419,6 +453,7 @@ class ParamSpace:
                     log_scale=d.get("log_scale", True),
                     unit=d.get("unit", ""),
                     max_per_finger=d.get("max_per_finger"),
+                    value_type=d.get("value_type", "float"),
                 )
             )
         return cls(params=params)
