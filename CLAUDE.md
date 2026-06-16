@@ -24,8 +24,8 @@
       │
       ▼
 ② 如果用户没有指定拓扑架构，通过拓扑库程序化匹配，选择拓扑
-   ├── topologies/list_topologies() + get_topology_for_targets()   ← 程序化拓扑匹配
-   └── PDKs_info/tsmc28_pdk_constraints.md                         ← TSMC N28 约束
+   ├── ./knowledge_base/Opamp_knowledge_base/topology_selection_guide.md
+   └── ./knowledge_base/PDKs_info/tsmc28_pdk_constraints.md        ← TSMC N28 约束
       │
       ▼
 ③ 调 Python 拓扑库生成网表文件（硬约束，语法保证正确）
@@ -38,8 +38,9 @@
    └── requirements.json           # 设计指标
       │
       ▼
-④ 确认已激活 Auto_Agent_Design 环境，调用 python main.py --netlist <circuit_name>/<circuit_name>.cir --testbench <circuit_name>/tb_<circuit_name>_ac.scs <circuit_name>/tb_<circuit_name>_sr.scs <circuit_name>/tb_<circuit_name>_st.scs --requirements <circuit_name>/requirements.json
+④ 确认已激活 Auto_Agent_Design 环境，调用 python main.py --netlist <circuit_name>/<circuit_name>.cir --testbench <circuit_name>/tb_<circuit_name>_ac.scs [tb_sr.scs] [tb_st.scs] --requirements <circuit_name>/requirements.json
    （--params 可省略，系统自动从网表 parameters 声明中提取搜索空间并分配合理边界）
+   **只传 SR/ST testbench：仅当用户需求中包含摆率或建立时间指标时**
       │
       ▼
 ⑤ 读取 outputs/<project_name>/results.json，向用户汇报结果
@@ -59,22 +60,22 @@
 
 ---
 
-## 第二步：查阅知识库，选择拓扑
+## 第二步：查阅知识库，选择拓扑(如果用户没有指定拓扑，如果用户指定了，跳过这一步)
 
 ### 2.1 阅读知识库
 
 按以下方式获取拓扑信息和工艺约束：
 1. 调用 `python -c "from topologies import list_topologies; [print(f'{m.name}: {m.display_name} (gain {m.min_gain_db}-{m.max_gain_db} dB, GBW {m.min_gbw_hz}-{m.max_gbw_hz} Hz)') for m in list_topologies()]"` — 查看可用拓扑和各指标能力范围
-2. **[PDKs_info/tsmc28_pdk_constraints.md](Agent_LLM_BO/circuit_agent/PDKs_info/tsmc28_pdk_constraints.md)** — TSMC N28 工艺约束（器件模型、W/L 范围、电流密度）
+2. **[PDKs_info/tsmc28_pdk_constraints.md](./knowledge_base/PDKs_info/tsmc28_pdk_constraints.md)** — TSMC N28 工艺约束（器件模型、W/L 范围、电流密度）
 
 ### 2.2 匹配拓扑
 
 根据用户需求指标，从知识库中的决策树选择最合适的拓扑：
 
 ```
-gain ≥ 60 dB → two_stage_ota 或 folded_cascode
-gain < 60 dB → 5t_ota（最简单）
-power < 100uW → 5t_ota + 亚阈值偏置
+gain ≥  40 dB → two_stage_ota 或 folded_cascode
+gain < 40 dB → 5t_ota
+gain ≥  100 dB → nmcf_three_stage      #尚未完善
 ```
 
 > **原则**：在满足指标的前提下，优先选择复杂度最低的拓扑。
@@ -159,9 +160,9 @@ conda activate Auto_Agent_Design
 
 python main.py \
   --netlist <circuit_name>/<circuit_name>.cir \
-  --testbench <circuit_name>/tb_<circuit_name>_ac.scs \
-              <circuit_name>/tb_<circuit_name>_sr.scs \
-              <circuit_name>/tb_<circuit_name>_st.scs \
+  --testbench <circuit_name>/tb_<circuit_name>_ac.scs \               # 必须（AC: gain/GBW/PM/功耗）
+              <circuit_name>/tb_<circuit_name>_sr.scs \               # 仅当用户要求 SR 时传入
+              <circuit_name>/tb_<circuit_name>_st.scs \               # 仅当用户要求 0.1% 建立时间时传入
   --requirements <circuit_name>/requirements.json
 ```
 
@@ -181,9 +182,9 @@ python main.py \
 ```bash
 python main.py \
   --netlist <circuit_name>/<circuit_name>.cir \
-  --testbench <circuit_name>/tb_<circuit_name>_ac.scs \
-              <circuit_name>/tb_<circuit_name>_sr.scs \
-              <circuit_name>/tb_<circuit_name>_st.scs \
+  --testbench <circuit_name>/tb_<circuit_name>_ac.scs \               # 必须
+              <circuit_name>/tb_<circuit_name>_sr.scs \               # 仅当要求 SR 时
+              <circuit_name>/tb_<circuit_name>_st.scs \               # 仅当要求建立时间时
   --gain 40 --gbw 500e6 --pm 60 --power 0.001 --load-cap 500e-15 \
   --sr 100e6 --settling-time 20e-9
 ```
@@ -311,9 +312,8 @@ print('Project created: 5t_ota/')
 # 3. 运行优化（dry-run 快速验证）
 python main.py \
   --netlist 5t_ota/5t_ota.cir \
-  --testbench 5t_ota/tb_5t_ota_ac.scs \
-              5t_ota/tb_5t_ota_sr.scs \
-              5t_ota/tb_5t_ota_st.scs \
+  --testbench 5t_ota/tb_5t_ota_ac.scs \              # 用户需求含 SR → 再加 tb_5t_ota_sr.scs
+              5t_ota/tb_5t_ota_st.scs \              # 用户需求含 ST → 再加 tb_5t_ota_st.scs
   --requirements 5t_ota/requirements.json \
   --dry-run
 

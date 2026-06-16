@@ -24,8 +24,8 @@
       │
       ▼
 ② 如果用户没有指定拓扑架构，通过拓扑库程序化匹配，选择拓扑
-   ├── topologies/list_topologies() + get_topology_for_targets()   ← 程序化拓扑匹配
-   └── PDKs_info/tsmc28_pdk_constraints.md                         ← TSMC N28 约束
+   ├── ./knowledge_base/Opamp_knowledge_base/topology_selection_guide.md
+   └── ./knowledge_base/PDKs_info/tsmc28_pdk_constraints.md        ← TSMC N28 约束
       │
       ▼
 ③ 调 Python 拓扑库生成网表文件（硬约束，语法保证正确）
@@ -38,8 +38,9 @@
    └── requirements.json           # 设计指标
       │
       ▼
-④ 调用 python main.py --netlist <circuit_name>/<circuit_name>.cir --testbench <circuit_name>/tb_<circuit_name>_ac.scs <circuit_name>/tb_<circuit_name>_sr.scs <circuit_name>/tb_<circuit_name>_st.scs --requirements <circuit_name>/requirements.json
+④ 调用 python main.py --netlist <circuit_name>/<circuit_name>.cir --testbench <circuit_name>/tb_<circuit_name>_ac.scs [tb_sr.scs] [tb_st.scs] --requirements <circuit_name>/requirements.json
    （--params 可省略，系统自动从网表 parameters 声明中提取搜索空间并分配合理边界）
+   **只传 SR/ST testbench：仅当用户需求中包含摆率或建立时间指标时**
       │
       ▼
 ⑤ 读取 outputs/<project_name>/results.json，向用户汇报结果
@@ -160,9 +161,9 @@ conda activate Auto_Agent_Design
 
 python main.py \
   --netlist <circuit_name>/<circuit_name>.cir \
-  --testbench <circuit_name>/tb_<circuit_name>_ac.scs \
-              <circuit_name>/tb_<circuit_name>_sr.scs \
-              <circuit_name>/tb_<circuit_name>_st.scs \
+  --testbench <circuit_name>/tb_<circuit_name>_ac.scs \               # 必须（AC: gain/GBW/PM/功耗）
+              <circuit_name>/tb_<circuit_name>_sr.scs \               # 仅当用户要求 SR 时传入
+              <circuit_name>/tb_<circuit_name>_st.scs \               # 仅当用户要求 0.1% 建立时间时传入
   --requirements <circuit_name>/requirements.json
 ```
 
@@ -182,9 +183,9 @@ python main.py \
 ```bash
 python main.py \
   --netlist <circuit_name>/<circuit_name>.cir \
-  --testbench <circuit_name>/tb_<circuit_name>_ac.scs \
-              <circuit_name>/tb_<circuit_name>_sr.scs \
-              <circuit_name>/tb_<circuit_name>_st.scs \
+  --testbench <circuit_name>/tb_<circuit_name>_ac.scs \               # 必须
+              <circuit_name>/tb_<circuit_name>_sr.scs \               # 仅当要求 SR 时
+              <circuit_name>/tb_<circuit_name>_st.scs \               # 仅当要求建立时间时
   --gain 40 --gbw 500e6 --pm 60 --power 0.001 --load-cap 500e-15 \
   --sr 100e6 --settling-time 20e-9
 ```
@@ -312,9 +313,8 @@ print('Project created: 5t_ota/')
 # 3. 运行优化（dry-run 快速验证）
 python main.py \
   --netlist 5t_ota/5t_ota.cir \
-  --testbench 5t_ota/tb_5t_ota_ac.scs \
-              5t_ota/tb_5t_ota_sr.scs \
-              5t_ota/tb_5t_ota_st.scs \
+  --testbench 5t_ota/tb_5t_ota_ac.scs \              # 用户需求含 SR → 再加 tb_5t_ota_sr.scs
+              5t_ota/tb_5t_ota_st.scs \              # 用户需求含 ST → 再加 tb_5t_ota_st.scs
   --requirements 5t_ota/requirements.json \
   --dry-run
 
