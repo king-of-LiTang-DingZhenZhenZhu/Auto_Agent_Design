@@ -23,9 +23,9 @@
 ① 解析需求，提取指标
       │
       ▼
-② 查阅知识库，选择拓扑
-   ├── Opamp_knowledge_base/topology_selection_guide.md   ← 运放拓扑选择决策指南
-   └── PDKs_info         ← 工艺库的约束
+② 如果用户没有指定拓扑架构，通过拓扑库程序化匹配，选择拓扑
+   ├── topologies/list_topologies() + get_topology_for_targets()   ← 程序化拓扑匹配
+   └── PDKs_info/tsmc28_pdk_constraints.md                         ← TSMC N28 约束
       │
       ▼
 ③ 调 Python 拓扑库生成网表文件（硬约束，语法保证正确）
@@ -63,9 +63,9 @@
 
 ### 2.1 阅读知识库
 
-按顺序阅读：
-1. **[Opamp_knowledge_base/topology_selection_guide.md](Agent_LLM_BO/circuit_agent/knowledge_base/topology_selection_guide.md)** — 有哪些可用拓扑、各自指标能力范围、选择决策树
-2. **[PDks_info/tsmc28_pdk_constraints.md](Agent_LLM_BO/circuit_agent/knowledge_base/pdk_constraints.md)** — TSMC N28 工艺约束（器件模型、W/L 范围、电流密度）
+按以下方式获取拓扑信息和工艺约束：
+1. 调用 `python -c "from topologies import list_topologies; [print(f'{m.name}: {m.display_name} (gain {m.min_gain_db}-{m.max_gain_db} dB, GBW {m.min_gbw_hz}-{m.max_gbw_hz} Hz)') for m in list_topologies()]"` — 查看可用拓扑和各指标能力范围
+2. **[PDKs_info/tsmc28_pdk_constraints.md](Agent_LLM_BO/circuit_agent/PDKs_info/tsmc28_pdk_constraints.md)** — TSMC N28 工艺约束（器件模型、W/L 范围、电流密度）
 
 ### 2.2 匹配拓扑
 
@@ -343,9 +343,8 @@ Agent (Claude Code)                    Python 脚本
   - `base.py` — 抽象基类
   - `five_t_ota.py` — 5T OTA 实现
   - `__init__.py` — 拓扑注册表 + 选择器
-- **知识库**：[Agent_LLM_BO/circuit_agent/knowledge_base/](Agent_LLM_BO/circuit_agent/knowledge_base/)
-  - `topology_selection_guide.md` — 拓扑选择决策指南
-  - `pdk_constraints.md` — TSMC N28 PDK 约束
+- **PDK 约束**：[PDKs_info/tsmc28_pdk_constraints.md](Agent_LLM_BO/circuit_agent/PDKs_info/tsmc28_pdk_constraints.md)
+- **拓扑选择**：`topologies/__init__.py:get_topology_for_targets()` 程序化匹配
 - **代码入口**：[Agent_LLM_BO/circuit_agent/main.py](Agent_LLM_BO/circuit_agent/main.py)
 - **文件流说明**：[Agent_LLM_BO/circuit_agent/FILE_FLOW.md](Agent_LLM_BO/circuit_agent/FILE_FLOW.md)
 - **配置文件**：[Agent_LLM_BO/circuit_agent/config.py](Agent_LLM_BO/circuit_agent/config.py)
