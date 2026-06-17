@@ -233,7 +233,7 @@ class TwoStageOTA(BaseTopology):
                     w_param="Wtail", l_param="Ltail",
                     model="nch_mac",
                     current_source="I_tail", current_fraction=1.0,
-                    gm_id_low=5, gm_id_high=20, gm_id_default=8,
+                    gm_id_low=8, gm_id_high=15, gm_id_default=10,
                     L_low=100e-9, L_high=900e-9, L_default=200e-9,
                     Vds_estimate=0.2,
                 ),
@@ -243,7 +243,7 @@ class TwoStageOTA(BaseTopology):
                     w_param="Wdiff", l_param="Ldiff",
                     model="nch_mac",
                     current_source="I_tail", current_fraction=0.5,
-                    gm_id_low=10, gm_id_high=24, gm_id_default=14,
+                    gm_id_low=8, gm_id_high=15, gm_id_default=10,
                     L_low=60e-9, L_high=500e-9, L_default=60e-9,
                     Vds_estimate=0.25, Vbs=-0.3, multiplicity=2,
                 ),
@@ -253,7 +253,7 @@ class TwoStageOTA(BaseTopology):
                     w_param="Wmirr", l_param="Lmirr",
                     model="pch_mac",
                     current_source="I_tail", current_fraction=0.5,
-                    gm_id_low=8, gm_id_high=24, gm_id_default=12,
+                    gm_id_low=8, gm_id_high=15, gm_id_default=10,
                     L_low=60e-9, L_high=500e-9, L_default=100e-9,
                     Vds_estimate=0.3, multiplicity=2,
                 ),
@@ -263,9 +263,9 @@ class TwoStageOTA(BaseTopology):
                     w_param="Wcs", l_param="Lcs",
                     model="pch_mac",
                     current_source="I_cs", current_fraction=1.0,
-                    gm_id_low=8, gm_id_high=22, gm_id_default=12,
+                    gm_id_low=8, gm_id_high=15, gm_id_default=12,
                     L_low=60e-9, L_high=300e-9, L_default=100e-9,
-                    Vds_estimate=0.6,
+                    Vds_estimate=0.45,
                 ),
                 # -- Second stage: NMOS current-source load --
                 TransistorSpec(
@@ -273,7 +273,7 @@ class TwoStageOTA(BaseTopology):
                     w_param="Wload", l_param="Lload",
                     model="nch_mac",
                     current_source="I_cs", current_fraction=1.0,
-                    gm_id_low=5, gm_id_high=20, gm_id_default=8,
+                    gm_id_low=8, gm_id_high=15, gm_id_default=10,
                     L_low=100e-9, L_high=900e-9, L_default=200e-9,
                     Vds_estimate=0.4,
                 ),
@@ -284,19 +284,19 @@ class TwoStageOTA(BaseTopology):
                     output_role="load_nmos",
                     ratio_param="ratio_load_tail",
                     ratio_low=1,
-                    ratio_high=8,
-                    ratio_default=4,
+                    ratio_high=3,
+                    ratio_default=2,
                     share_length=True,
                     derived_current_name="I_cs",
                 ),
             ],
             pass_through_params=[
                 ParamDef(
-                    name="Cc", low=0.01e-12, high=10e-12,
+                    name="Cc", low=0.1e-12, high=10e-12,
                     log_scale=True, unit="F",
                 ),
                 ParamDef(
-                    name="Rz", low=1.0, high=10e3,
+                    name="Rz", low=100, high=5e3,
                     log_scale=True, unit="Ohm",
                 ),
             ],
@@ -306,7 +306,7 @@ class TwoStageOTA(BaseTopology):
                     param_name="VBIAS",
                     supply_voltage=0.0,
                     device_type="nmos",
-                    low=0.05,
+                    low=0.5,
                     high=0.95,
                 ),
             ],
@@ -371,11 +371,11 @@ class TwoStageOTA(BaseTopology):
                 ),
                 # --- Compensation ---
                 ParamDef(
-                    name="Cc", low=0.01e-12, high=10e-12,
+                    name="Cc", low=0.1e-12, high=10e-12,
                     log_scale=True, unit="F",
                 ),
                 ParamDef(
-                    name="Rz", low=1.0, high=10e3,
+                    name="Rz", low=100, high=5e3,
                     log_scale=True, unit="Ohm",
                 ),
                 # Shared NMOS gate bias for Mtail and Mload in non-gm/Id mode.
@@ -403,8 +403,8 @@ parameters Wload={Wload} Lload={Lload} Cc={Cc} Rz={Rz}
 
 subckt two_stage_ota (vip vin vout vb vdd vss)
 // First stage: NMOS differential pair
-Mdiff1 (n_mirr vip n_tail vss) nch_mac w=Wdiff l=Ldiff nf=1
-Mdiff2 (n_s1 vin n_tail vss) nch_mac w=Wdiff l=Ldiff nf=1
+Mdiff1 (n_mirr vin n_tail vss) nch_mac w=Wdiff l=Ldiff nf=1
+Mdiff2 (n_s1 vip n_tail vss) nch_mac w=Wdiff l=Ldiff nf=1
 // First stage: PMOS current mirror load
 Mmirr1 (n_mirr n_mirr vdd vdd) pch_mac w=Wmirr l=Lmirr nf=1
 Mmirr2 (n_s1 n_mirr vdd vdd) pch_mac w=Wmirr l=Lmirr nf=1
