@@ -35,9 +35,10 @@ class Settings(BaseSettings):
     pmos_model: str = "pch_mac"
 
     # gm/Id lookup table path
-    gmid_table_path: str = (
-        "/home/userone/Desktop/analog_circuit_projects/gmid_tsmc28/output/"
-        "gm_id_tables_tsmc28.json"
+    gmid_table_path: str = str(
+        Path(__file__).resolve().parents[2]
+        / "gmid_lookup_table"
+        / "gm_id_tables_tsmc28.json"
     )
 
     # Spectre

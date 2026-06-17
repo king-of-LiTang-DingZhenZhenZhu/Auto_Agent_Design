@@ -245,7 +245,7 @@ class TwoStageOTA(BaseTopology):
                     current_source="I_tail", current_fraction=0.5,
                     gm_id_low=10, gm_id_high=24, gm_id_default=14,
                     L_low=60e-9, L_high=500e-9, L_default=60e-9,
-                    Vds_estimate=0.25, multiplicity=2,
+                    Vds_estimate=0.25, Vbs=-0.3, multiplicity=2,
                 ),
                 # -- First stage: PMOS current mirror load (each I_tail/2) --
                 TransistorSpec(
@@ -380,7 +380,7 @@ class TwoStageOTA(BaseTopology):
                 ),
                 # Shared NMOS gate bias for Mtail and Mload in non-gm/Id mode.
                 ParamDef(
-                    name="VBIAS", low=0.35, high=0.85,
+                    name="VBIAS", low=0.5, high=0.85,
                     log_scale=False, unit="V",
                 ),
             ]

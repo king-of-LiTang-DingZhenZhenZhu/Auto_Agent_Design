@@ -388,7 +388,7 @@ class FoldedCascodeOTA(BaseTopology):
                     current_source="I_tail", current_fraction=0.5,
                     gm_id_low=10, gm_id_high=22, gm_id_default=14,
                     L_low=60e-9, L_high=500e-9, L_default=80e-9,
-                    Vds_estimate=0.25, multiplicity=2,
+                    Vds_estimate=0.25, Vbs=-0.3, multiplicity=2,
                 ),
                 # -- NMOS folded-branch current sources --
                 TransistorSpec(
@@ -408,7 +408,7 @@ class FoldedCascodeOTA(BaseTopology):
                     current_source="I_fold", current_fraction=1.0,
                     gm_id_low=10, gm_id_high=24, gm_id_default=15,
                     L_low=80e-9, L_high=500e-9, L_default=120e-9,
-                    Vds_estimate=0.35, multiplicity=2,
+                    Vds_estimate=0.35, Vbs=-0.3, multiplicity=2,
                 ),
                 # -- PMOS current mirror devices --
                 TransistorSpec(
@@ -428,7 +428,7 @@ class FoldedCascodeOTA(BaseTopology):
                     current_source="I_fold", current_fraction=1.0,
                     gm_id_low=10, gm_id_high=24, gm_id_default=16,
                     L_low=80e-9, L_high=500e-9, L_default=120e-9,
-                    Vds_estimate=0.3, multiplicity=2,
+                    Vds_estimate=0.3, Vbs=-0.3, multiplicity=2,
                 ),
                 # -- Second-stage PMOS common-source amplifier --
                 TransistorSpec(

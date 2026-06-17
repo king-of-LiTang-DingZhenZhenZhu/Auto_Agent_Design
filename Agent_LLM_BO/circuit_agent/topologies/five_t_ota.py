@@ -189,7 +189,7 @@ class FiveTOTA(BaseTopology):
                     current_source="I_tail", current_fraction=0.5,
                     gm_id_low=10, gm_id_high=24, gm_id_default=18,
                     L_low=120e-9, L_high=500e-9, L_default=120e-9,
-                    Vds_estimate=0.25, multiplicity=2, max_per_finger=2.7e-6,
+                    Vds_estimate=0.25, Vbs=-0.3, multiplicity=2, max_per_finger=2.7e-6,
                 ),
                 # -- NMOS current mirror load (each side carries I_tail / 2) --
                 TransistorSpec(

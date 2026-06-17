@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from config import Settings
 from models import DesignTarget
@@ -10,6 +11,15 @@ from topologies import get_topology
 class OptimizerConfigTest(unittest.TestCase):
     def test_topology_escalation_is_disabled_by_default(self):
         self.assertFalse(Settings().enable_topology_escalation)
+
+    def test_default_gmid_lookup_table_path_exists(self):
+        from pathlib import Path
+
+        self.assertTrue(Path(Settings().gmid_table_path).exists())
+
+    def test_gmid_lookup_table_path_can_come_from_env(self):
+        with patch.dict("os.environ", {"GMID_TABLE_PATH": "/tmp/custom_gmid.json"}):
+            self.assertEqual(Settings().gmid_table_path, "/tmp/custom_gmid.json")
 
     def test_5t_gmid_space_derives_vbias_and_constrains_tail_current(self):
         targets = DesignTarget(
@@ -86,6 +96,30 @@ class OptimizerConfigTest(unittest.TestCase):
         self.assertEqual(bias.device_type, "nmos")
         self.assertEqual(bias.supply_voltage, 0.0)
 
+    def test_two_stage_diff_pair_uses_negative_body_bias_for_lookup(self):
+        spec = get_topology("two_stage_ota").get_gmid_spec()
+        transistors = {transistor.role: transistor for transistor in spec.transistors}
+
+        self.assertEqual(transistors["diff_pair_nmos"].Vbs, -0.3)
+        self.assertEqual(transistors["tail_nmos"].Vbs, 0.0)
+        self.assertEqual(transistors["load_nmos"].Vbs, 0.0)
+
+    def test_gmid_specs_use_lookup_supported_body_biases(self):
+        supported_vbs = {-0.3, 0.0}
+        for name in (
+            "5t_ota",
+            "two_stage_ota",
+            "folded_cascode",
+            "nmcf_three_stage",
+        ):
+            spec = get_topology(name).get_gmid_spec()
+            for transistor in spec.transistors:
+                self.assertIn(
+                    transistor.Vbs,
+                    supported_vbs,
+                    f"{name}:{transistor.role} Vbs={transistor.Vbs}",
+                )
+
     def test_vbias_physical_ranges_are_topology_owned(self):
         five_t_params = {
             param.name: param for param in get_topology("5t_ota").get_param_space().params
@@ -97,7 +131,7 @@ class OptimizerConfigTest(unittest.TestCase):
 
         self.assertEqual(five_t_params["VBIAS"].low, 0.15)
         self.assertEqual(five_t_params["VBIAS"].high, 0.55)
-        self.assertEqual(two_stage_params["VBIAS"].low, 0.35)
+        self.assertEqual(two_stage_params["VBIAS"].low, 0.5)
         self.assertEqual(two_stage_params["VBIAS"].high, 0.85)
 
     def test_folded_current_bounds_follow_ten_x_budget(self):
