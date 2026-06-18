@@ -6,6 +6,7 @@ LLM is only used for physical-feasibility checks during BO.
 
 from __future__ import annotations
 
+import csv
 import json
 import logging
 from pathlib import Path
@@ -25,6 +26,7 @@ from models import (
     SimResult,
 )
 from simulator import Simulator
+from summarize_metrics import build_report_from_sim_result
 
 logger = logging.getLogger(__name__)
 
@@ -153,6 +155,13 @@ class HybridOptimizer:
 
             # Step 5: Compute reward
             reward = self.compute_reward(sim_result, targets)
+            self._write_iteration_summary(
+                run_dir=run_dir,
+                iteration=iteration,
+                result=sim_result,
+                reward=reward,
+                tb_paths=tb_paths,
+            )
 
             # Report to Optuna
             study.tell(trial, reward)
@@ -229,6 +238,7 @@ class HybridOptimizer:
 
         # Save history
         self._save_history(state)
+        self._save_metrics_csv(state)
         return state
 
     def compute_reward(self, result: SimResult, targets: DesignTarget) -> float:
@@ -374,6 +384,30 @@ class HybridOptimizer:
 
         return merged
 
+    def _write_iteration_summary(
+        self,
+        run_dir: Path,
+        iteration: int,
+        result: SimResult,
+        reward: float,
+        tb_paths: list[Path],
+    ) -> None:
+        """Write this iteration's parsed metrics into its run directory."""
+        report = build_report_from_sim_result(
+            result,
+            source=run_dir,
+            testbenches=tb_paths,
+        )
+        lines = report.rstrip().splitlines()
+        insert_at = 4
+        lines[insert_at:insert_at] = [
+            f"Iteration: {iteration + 1}",
+            f"Reward: {reward:.6g}",
+        ]
+        (run_dir / "metrics_summary.txt").write_text(
+            "\n".join(lines) + "\n", encoding="utf-8"
+        )
+
     def _detect_stagnation(self, state: OptimizationState) -> bool:
         """Check if optimization has stagnated (no improvement in N iterations)."""
         window = self.config.stagnation_window
@@ -503,9 +537,20 @@ class HybridOptimizer:
                     "result": {
                         "gain_db": r.result.gain_db,
                         "bandwidth_hz": r.result.bandwidth_hz,
+                        "gbw_hz": r.result.bandwidth_hz,
+                        "unity_gain_freq_hz": r.result.unity_gain_freq_hz,
                         "phase_margin_deg": r.result.phase_margin_deg,
                         "power_w": r.result.power_w,
+                        "slew_rate_v_per_s": r.result.slew_rate_v_per_s,
+                        "slew_rate_positive_v_per_s": (
+                            r.result.slew_rate_positive_v_per_s
+                        ),
+                        "slew_rate_negative_v_per_s": (
+                            r.result.slew_rate_negative_v_per_s
+                        ),
+                        "settling_time_s": r.result.settling_time_s,
                         "converged": r.result.converged,
+                        "error_message": r.result.error_message,
                     },
                 }
                 for r in state.history
@@ -516,3 +561,58 @@ class HybridOptimizer:
             json.dumps(history_data, indent=2, default=str), encoding="utf-8"
         )
         logger.info(f"History saved to {output_path}")
+
+    def _save_metrics_csv(self, state: OptimizationState) -> None:
+        """Save one row per BO iteration with the main parsed metrics."""
+        output_path = self.config.get_workspace_path() / "optimization_metrics.csv"
+        fieldnames = [
+            "iteration",
+            "reward",
+            "gain_db(dB)",
+            "gbw_hz(MHz)",
+            "phase_margin_deg(deg)",
+            "power_w(mW)",
+            "slew_rate_v_per_s(V/us)",
+            "settling_time_s(ns)",
+            "error_message",
+        ]
+        with output_path.open("w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            for record in state.history:
+                result = record.result
+                writer.writerow(
+                    {
+                        "iteration": record.iteration + 1,
+                        "reward": self._fmt_csv_value(record.reward, 6),
+                        "gain_db(dB)": self._fmt_csv_value(result.gain_db, 2),
+                        "gbw_hz(MHz)": self._fmt_csv_value(
+                            result.bandwidth_hz, 2, scale=1e-6
+                        ),
+                        "phase_margin_deg(deg)": self._fmt_csv_value(
+                            result.phase_margin_deg, 2
+                        ),
+                        "power_w(mW)": self._fmt_csv_value(
+                            result.power_w, 3, scale=1e3
+                        ),
+                        "slew_rate_v_per_s(V/us)": self._fmt_csv_value(
+                            result.slew_rate_v_per_s, 2, scale=1e-6
+                        ),
+                        "settling_time_s(ns)": self._fmt_csv_value(
+                            result.settling_time_s, 2, scale=1e9
+                        ),
+                        "error_message": result.error_message,
+                    }
+                )
+        logger.info("Metrics CSV saved to %s", output_path)
+
+    @staticmethod
+    def _fmt_csv_value(
+        value: float | None,
+        digits: int,
+        scale: float = 1.0,
+    ) -> str:
+        """Format display values for optimization_metrics.csv."""
+        if value is None:
+            return ""
+        return f"{value * scale:.{digits}f}"

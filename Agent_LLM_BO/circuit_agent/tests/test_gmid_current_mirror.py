@@ -19,7 +19,7 @@ class _FakeLookup:
             gain=20.0,
             gds=1e-6,
             cgg=1e-12,
-            vgs=0.42,
+            vgs=0.55,
             vth=0.3,
             L=L,
             Vds=Vds,
@@ -32,7 +32,7 @@ class GmidCurrentMirrorTest(unittest.TestCase):
         spec = get_topology("two_stage_ota").get_gmid_spec()
         params = {
             "I_tail": 50e-6,
-            "ratio_load_tail": 4,
+            "ratio_load_tail": 2,
             "gm_id_tail_nmos": 8,
             "L_tail_nmos": 200e-9,
             "gm_id_diff_pair_nmos": 14,
@@ -48,10 +48,10 @@ class GmidCurrentMirrorTest(unittest.TestCase):
         wload_total = physical["Wload"] * physical["nf_Wload"]
         wcs_total = physical["Wcs"] * physical["nf_Wcs"]
 
-        self.assertAlmostEqual(wload_total, 4.0 * wtail_total)
+        self.assertAlmostEqual(wload_total, 2.0 * wtail_total)
         self.assertAlmostEqual(physical["Lload"], physical["Ltail"])
-        self.assertAlmostEqual(wcs_total, 4.0 * wtail_total)
-        self.assertAlmostEqual(physical["VBIAS"], 0.42)
+        self.assertAlmostEqual(wcs_total, 2.0 * wtail_total)
+        self.assertAlmostEqual(physical["VBIAS"], 0.55)
 
 
 if __name__ == "__main__":

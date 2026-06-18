@@ -81,7 +81,7 @@ class OptimizerConfigTest(unittest.TestCase):
         ratio = params["ratio_load_tail"]
         self.assertEqual(ratio.value_type, "int")
         self.assertEqual(ratio.low, 1)
-        self.assertEqual(ratio.high, 8)
+        self.assertEqual(ratio.high, 3)
 
     def test_two_stage_gmid_space_derives_nmos_vbias(self):
         spec = get_topology("two_stage_ota").get_gmid_spec()

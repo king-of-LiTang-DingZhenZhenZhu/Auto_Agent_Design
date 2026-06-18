@@ -736,6 +736,9 @@ def _save_final_output(
     # 7. Copy optimization history
     if history_file.exists():
         shutil.copy2(history_file, project_root / "optimization_log.json")
+    metrics_csv = workspace / "optimization_metrics.csv"
+    if metrics_csv.exists():
+        shutil.copy2(metrics_csv, project_root / "optimization_metrics.csv")
 
     # 8. Write .last_project marker
     last_project_file = config.get_outputs_path() / ".last_project"
@@ -756,6 +759,8 @@ def _save_final_output(
         console.print(f"  • {project_root / 'virtuoso' / 'export_report.json'}")
     if history_file.exists():
         console.print(f"  • {project_root / 'optimization_log.json'}")
+    if metrics_csv.exists():
+        console.print(f"  • {project_root / 'optimization_metrics.csv'}")
     if diagnostics_paths:
         console.print(f"  • {diagnostics_dir}")
     console.print(f"\n[dim]cd {project_root}[/dim]")
