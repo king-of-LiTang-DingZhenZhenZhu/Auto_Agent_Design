@@ -16,6 +16,7 @@ Auto_Agent_Design/
     │   ├── config.py                  # 全局配置
     │   ├── models.py                  # 数据模型
     │   ├── optimizer.py               # HybridOptimizer：LLM + BO 协同优化
+    │   ├── review_optimization.py     # BO 后 Review：指标缺口分析 + 候选网表生成
     │   ├── simulator.py               # Spectre 仿真调用
     │   ├── llm_client.py              # DeepSeek LLM 客户端
     │   ├── psf_results.py             # PSF 结果解析（AC/瞬态）
@@ -77,6 +78,9 @@ Auto_Agent_Design/
     │
     ▼
 ⑤ 读取 outputs/<project>/results.json → 汇报结果
+    │
+    ▼
+⑥ BO 后 Review → 选取 Top 迭代，指标缺口规则生成候选网表，仿真验证
 ```
 
 ## 快速开始
@@ -141,6 +145,23 @@ python main.py \
   --sr 100e6 --settling-time 20e-9
 ```
 
+## BO 后 Review
+
+BO 优化完成后，可对 Top 迭代应用指标缺口规则生成候选网表：
+
+```bash
+cd Agent_LLM_BO/circuit_agent
+
+# 直接使用内置保守规则
+python review_optimization.py \
+  --project outputs/<project> \
+  --workspace workspace \
+  --topology two_stage_ota \
+  --simulate
+```
+
+规则参考：[optimization_review_guide.md](knowledge_base/Opamp_knowledge_base/optimization_review_guide.md)
+
 ## 可用拓扑
 
 | 拓扑 | 增益范围 | GBW 范围 | 复杂度 |
@@ -193,6 +214,11 @@ outputs/<project>/
 ├── results.json                 # 结构化结果
 ├── summary_report.txt           # 人类可读报告
 ├── optimization_log.json        # 完整优化历史
+├── optimization_metrics.csv      # 每轮主要指标表
+├── agent_review/ (可选)          # BO 后 Review 结果
+│   ├── candidates/               # 候选网表
+│   ├── candidate_metrics.csv     # 候选仿真汇总
+│   └── review_report.md          # Review 报告
 └── virtuoso/ (可选)             # Virtuoso SKILL 导入脚本
 ```
 

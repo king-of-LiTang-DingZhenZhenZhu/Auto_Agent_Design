@@ -4,314 +4,162 @@
 
 | 角色 | 职责 |
 |------|------|
-| **你 (Claude Code)** | 理解需求 → 查阅知识库选择拓扑 → 调 Python 拓扑库生成网表文件 → 调 main.py 运行优化 → 读取结果 |
+| **你 (Claude Code)** | 理解需求 → 查阅知识库选择拓扑 → 调 Python 拓扑库生成网表文件 → 给出/调用优化命令 → 读取结果 → BO 后本地 Agent Review |
 | **Python 拓扑库** (`topologies/`) | 硬约束生成 Spectre native syntax 的 `.cir` / `.scs` 网表文件，保证语法正确 |
 | **Python 脚本** (`main.py`) | 执行 Spectre 仿真、解析结果、运行 BO 优化循环 |
+| **Python 脚本** (`review_optimization.py`) | BO 完成后选取 Top 迭代，应用指标缺口规则生成候选网表并仿真验证 |
 
-**你不会直接写 SPICE 网表、运行 Spectre、或修改参数** — 网表由拓扑库生成，仿真/优化交给 main.py。
+**你不会直接手写 SPICE 网表或把参数硬改进网表** — 网表由拓扑库生成，仿真/优化交给 `main.py`。BO 后 Review 时，你可以读取结果和知识库，填写结构化 `patch_plan.json`；再由 `review_optimization.py` 校验、clamp 并重新渲染候选网表。
 
 ---
 
 ## 完整工作流程
 
-> **环境要求**：生成网表或运行本项目之前，必须先执行 `conda activate Auto_Agent_Design` 激活项目环境。
+> **环境要求**：生成网表或运行本项目之前，必须先执行 `conda activate Auto_Agent_Design`。
 
-```
-用户描述电路需求
-      │
-      ▼
-① 解析需求，提取指标
-      │
-      ▼
-② 如果用户没有指定拓扑架构，通过拓扑库程序化匹配，选择拓扑
-   ├── ./knowledge_base/Opamp_knowledge_base/topology_selection_guide.md
-   └── ./knowledge_base/PDKs_info/tsmc28_pdk_constraints.md        ← TSMC N28 约束
-      │
-      ▼
-③ 调 Python 拓扑库生成网表文件（硬约束，语法保证正确）
-   在 <circuit_name>/ 文件夹下生成:
-   ├── <circuit_name>.cir          # DUT 子电路（Spectre native syntax，扩展名保持 .cir）
-   ├── tb_<circuit_name>_ac.scs    # Spectre AC testbench
-   ├── tb_<circuit_name>_sr.scs    # Slew Rate transient testbench
-   ├── tb_<circuit_name>_st.scs    # 0.1% Settling Time transient testbench
-   ├── params.json                 # （可选）参数搜索空间，省略时自动从网表提取
-   └── requirements.json           # 设计指标
-      │
-      ▼
-④ 确认已激活 Auto_Agent_Design 环境，调用 python main.py --netlist <circuit_name>/<circuit_name>.cir --testbench <circuit_name>/tb_<circuit_name>_ac.scs [tb_sr.scs] [tb_st.scs] --requirements <circuit_name>/requirements.json
-   （--params 可省略，系统自动从网表 parameters 声明中提取搜索空间并分配合理边界）
-   **只传 SR/ST testbench：仅当用户需求中包含摆率或建立时间指标时**
-      │
-      ▼
-⑤ 读取 outputs/<project_name>/results.json，向用户汇报结果
-```
+1. **解析需求** — 提取 `gain_db`, `bandwidth_hz`(即 GBW/UGF), `phase_margin_deg`, `power_w`, `load_cap_f`, `slew_rate_v_per_s`, `settling_time_s`, `topology_hint`
+2. **选择拓扑** — 用户指定则跳过；否则按决策树匹配（见下方），优先选复杂度最低的
+3. **生成网表** — 调 `topo.write_project()` 一行生成 `.cir` + testbench + `requirements.json`
+4. **运行优化** — `python main.py --netlist ... --testbench ... --requirements ...`
+5. **读取结果** — 查看 `outputs/<project>/results.json`，重点关注 `all_targets_met`、`target_status`、`gap`
+6. **BO 后 Review** — 若结果未完全达标，运行 `review_optimization.py` 分析 Top 迭代，生成候选网表并仿真验证
 
-> **文件命名**：根据电路拓扑命名，例如：5T OTA → `5t_ota.cir` + `tb_5t_ota_ac.scs`；两级运放 → `two_stage_ota.cir` + `tb_two_stage_ota_ac.scs`。所有生成的输入文件放在同名文件夹下。
+> **文件命名**：根据电路拓扑命名，例如 5T OTA → `5t_ota.cir` + `tb_5t_ota_ac.scs`。所有文件放在同名文件夹下。
 
 ---
 
-## 第一步：解析用户需求
-
-用户可能说：
-- "设计一个5T OTA，增益>40dB，GBW>500MHz，PM>60°，功耗<1mW，负载500fF"
-- "两级运放，gain>60dB，GBW>100MHz，SR>100V/us，0.1%建立时间<20ns"
-
-提取为结构化指标：`gain_db`, `bandwidth_hz`, `phase_margin_deg`, `power_w`, `load_cap_f`, `slew_rate_v_per_s`, `settling_time_s`, `topology_hint`。其中 `bandwidth_hz` 是兼容旧接口的字段名，当前实际表示 GBW/UGF。
-
----
-
-## 第二步：查阅知识库，选择拓扑(如果用户没有指定拓扑，如果用户指定了，跳过这一步)
-
-### 2.1 阅读知识库
-
-按以下方式获取拓扑信息和工艺约束：
-1. 调用 `python -c "from topologies import list_topologies; [print(f'{m.name}: {m.display_name} (gain {m.min_gain_db}-{m.max_gain_db} dB, GBW {m.min_gbw_hz}-{m.max_gbw_hz} Hz)') for m in list_topologies()]"` — 查看可用拓扑和各指标能力范围
-2. **[PDKs_info/tsmc28_pdk_constraints.md](./knowledge_base/PDKs_info/tsmc28_pdk_constraints.md)** — TSMC N28 工艺约束（器件模型、W/L 范围、电流密度）
-
-### 2.2 匹配拓扑
-
-根据用户需求指标，从知识库中的决策树选择最合适的拓扑：
+## 第二步：拓扑选择（决策树）
 
 ```
-gain ≥  40 dB → two_stage_ota 或 folded_cascode
+gain ≥ 40 dB → two_stage_ota 或 folded_cascode
 gain < 40 dB → 5t_ota
-gain ≥  100 dB → nmcf_three_stage      #尚未完善
+gain ≥ 100 dB → nmcf_three_stage      # 尚未完善
 ```
 
-> **原则**：在满足指标的前提下，优先选择复杂度最低的拓扑。
-
-### 2.3 查看可用拓扑列表
-
+查看可用拓扑及其指标范围：
 ```bash
 cd Agent_LLM_BO/circuit_agent
 conda activate Auto_Agent_Design
-python -c "
-from topologies import list_topologies
-for m in list_topologies():
-    print(f'{m.name}: {m.display_name} (gain {m.min_gain_db}-{m.max_gain_db} dB)')
-"
+python -c "from topologies import list_topologies; [print(f'{m.name}: {m.display_name} (gain {m.min_gain_db}-{m.max_gain_db} dB, GBW {m.min_gbw_hz}-{m.max_gbw_hz} Hz)') for m in list_topologies()]"
 ```
+
+参考文档：
+- `./knowledge_base/Opamp_knowledge_base/topology_selection_guide.md`
+- `./knowledge_base/PDKs_info/tsmc28_pdk_constraints.md`
 
 ---
 
-## 第三步：调 Python 拓扑库生成网表文件
-
-### 3.1 使用拓扑库生成文件（一行完成）
+## 第三步：生成网表
 
 ```bash
 cd Agent_LLM_BO/circuit_agent
 conda activate Auto_Agent_Design
-
-# 一行生成整个项目目录
 python -c "
 from topologies import get_topology
 from models import DesignTarget
 
-topo = get_topology('5t_ota')  # 根据第二步的决策选择
+topo = get_topology('5t_ota')
 targets = DesignTarget(gain_db=40, bandwidth_hz=500e6, phase_margin_deg=60, power_w=0.001)
-
-out = topo.write_project(
-    '5t_ota',                    # 项目目录名
-    targets=targets,
-    original_requirement='设计一个5T OTA，增益>40dB，GBW>500MHz'
-)
-print(f'Project created: {out}')
+out = topo.write_project('5t_ota', targets=targets, original_requirement='5T OTA gain>40dB GBW>500MHz')
+print(f'Created: {out}')
 "
-
-# 结果：
-#   5t_ota/
-#   ├── 5t_ota.cir              # DUT 子电路网表
-#   ├── tb_5t_ota_ac.scs        # Spectre AC testbench
-#   ├── tb_5t_ota_sr.scs        # Slew Rate testbench
-#   ├── tb_5t_ota_st.scs        # 0.1% Settling Time testbench
-#   └── requirements.json       # 设计指标（自动生成，含拓扑名、默认参数）
 ```
 
-> `write_project()` 一步完成：创建目录 → 写 .cir → 写所有 testbench → 写 requirements.json。Agent 无需手动处理文件。
+`write_project()` 一步生成：`<name>/` 目录 + `<name>.cir` + `tb_<name>_ac.scs` + `tb_<name>_sr.scs` + `tb_<name>_st.scs` + `requirements.json`。
 
-
-### 3.3 requirements.json 格式
-
-```json
-{
-  "original_requirement": "用户原始输入文本",
-  "targets": {
-    "gain_db": 40,
-    "bandwidth_hz": 500000000,
-    "phase_margin_deg": 60,
-    "power_w": 0.001,
-    "load_cap_f": 500e-15,
-    "slew_rate_v_per_s": 100000000,
-    "settling_time_s": 20e-9
-  },
-  "topology_hint": "5T OTA"
-}
-```
-
-> **注意：所有值使用 SI 基本单位** — Hz 不是 MHz，W 不是 mW，F 不是 pF。
+> 所有值使用 SI 基本单位 — Hz 不是 MHz，W 不是 mW，F 不是 pF。
 
 ---
 
-## 第四步：调用 Python 脚本运行优化
+## 第四步：运行优化
 
 ```bash
 cd Agent_LLM_BO/circuit_agent
 conda activate Auto_Agent_Design
-
 python main.py \
-  --netlist <circuit_name>/<circuit_name>.cir \
-  --testbench <circuit_name>/tb_<circuit_name>_ac.scs \               
-              <circuit_name>/tb_<circuit_name>_sr.scs \               
-              <circuit_name>/tb_<circuit_name>_st.scs \               
-  --requirements <circuit_name>/requirements.json
+  --netlist <circuit>/<circuit>.cir \
+  --testbench <circuit>/tb_<circuit>_ac.scs \
+              <circuit>/tb_<circuit>_sr.scs \
+              <circuit>/tb_<circuit>_st.scs \
+  --requirements <circuit>/requirements.json
 ```
-其中 AC testbench 必须传入；SR/ST testbench 仅当用户要求摆率或 0.1% 建立时间时传入。
+
+AC testbench 必须传入；SR/ST testbench 仅当用户需求包含摆率或建立时间时传入。
+
 **常用可选参数：**
 
 | 参数 | 说明 | 示例 |
 |------|------|------|
-| `--max-iter 20` | 最大优化迭代次数（默认50） | 快速验证时减少 |
-| `--dry-run` | 跳过 Spectre，用启发式模拟 | 无 Spectre 环境测试 |
-| `--verbose` | 输出 DEBUG 日志 | 排查问题时 |
-| `--project <name>` | 指定项目名称 | 覆盖自动生成的名字 |
-| `--gbw 500e6` | 设置 GBW/UGF 目标 | 推荐使用；`--bw` 保留为兼容别名 |
-| `--sr 100e6` | 设置 Slew Rate 下限 | 单位 V/s |
-| `--settling-time 20e-9` | 设置 0.1% 建立时间上限 | 单位 s |
+| `--max-iter 20` | 最大迭代次数（默认50） | 快速验证 |
+| `--dry-run` | 跳过 Spectre，启发式模拟 | 无 Spectre 环境 |
+| `--verbose` | DEBUG 日志 | 排查问题 |
+| `--project <name>` | 指定项目名称 | 覆盖自动命名 |
+| `--gain / --gbw / --pm / --power / --load-cap` | 快捷指定指标 | `--gain 40 --gbw 500e6` |
+| `--sr / --settling-time` | 快捷指定 SR/ST | `--sr 100e6 --settling-time 20e-9` |
 
-**简化调用（不用 requirements.json）：**
+简化调用（不用 requirements.json）：
 ```bash
-python main.py \
-  --netlist <circuit_name>/<circuit_name>.cir \
-  --testbench <circuit_name>/tb_<circuit_name>_ac.scs \               
-              <circuit_name>/tb_<circuit_name>_sr.scs \               
-              <circuit_name>/tb_<circuit_name>_st.scs \               
-  --gain 40 --gbw 500e6 --pm 60 --power 0.001 --load-cap 500e-15 \
-  --sr 100e6 --settling-time 20e-9
+python main.py --netlist ... --testbench ... --gain 40 --gbw 500e6 --pm 60 --power 0.001
 ```
 
 ---
 
 ## 第五步：读取结果
 
-脚本结束后，读取以下文件：
+主要输出：`outputs/<project_name>/results.json`
 
-### 主要输出：`outputs/<project_name>/results.json`
+关键字段：`all_targets_met`（是否全部达标）、`target_status`（逐项达标状态）、`gap`（与目标的差距，正=超额，负=不足）、`metrics`（实际仿真值）、`params`（最优参数）。
 
-```json
-{
-  "converged": true,
-  "metrics": {
-    "gain_db": 42.3,
-    "bandwidth_hz": 520000000,
-    "gbw_hz": 520000000,
-    "phase_margin_deg": 63.5,
-    "power_w": 0.00085,
-    "slew_rate_positive_v_per_s": 130000000,
-    "slew_rate_negative_v_per_s": 120000000,
-    "slew_rate_v_per_s": 120000000,
-    "settling_time_s": 15e-9
-  },
-  "params": {"Wtail": 12e-6, "Ltail": 80e-9, ...},
-  "target_status": {"gain_db": true, "bandwidth_hz": true, ...},
-  "gap": {"gain_db": 2.3, ...},
-  "all_targets_met": true
-}
-```
-
-关键字段：
-- `all_targets_met` — 是否全部达标
-- `target_status` — 每个指标是否达标
-- `gap` — 每个指标与目标的差距（正=超额，负=不足）
-
-### 其他输出文件
-
-```
-outputs/<project_name>/
-├── netlist/
-│   └── circuit.cir              # 最优参数渲染后的电路
-├── simulation/
-│   ├── tb_circuit.scs           # 第 1 个 testbench，通常为 AC/DC
-│   ├── tb_circuit_1.scs         # 第 2 个 testbench，通常为 Slew Rate
-│   └── tb_circuit_2.scs         # 第 3 个 testbench，通常为 Settling Time
-├── data/
-│   ├── sim.log                  # 最优迭代的仿真日志
-│   └── raw/                     # Spectre PSF ASCII 数据
-├── results.json                 # 结构化结果
-├── summary_report.txt           # 人类可读报告
-└── optimization_log.json        # 完整优化历史
-```
-
-### 仿真指标提取
-
-`main.py` 通过 `simulator.py` 调用 Spectre，各 testbench 的结果写入 `raw/`。`psf_results.py` 使用 `psf_utils` 读取 PSF ASCII：
-
-- AC：读取输出幅相，DC 增益取低频值；首次 0 dB 交越频率作为 GBW/UGF，并计算该处相位裕度
-- 功耗：读取 DC 结果中的 `VDDsrc:p`
-- SR：分别定位输入上升沿和下降沿，在输出各自 10% 到 90% 的区间计算 `dVout/dt`；`SR+=max(dVout/dt)`，`SR-=abs(min(dVout/dt))`，最终 `SR=min(SR+, SR-)`
-- 建立时间：使用小信号阶跃，在上升、下降响应中分别寻找进入并持续保持在最终值 `±0.1%` 误差带内的时间，最终取较差者
-
-### gm/Id 初始化与参数下界
-
-gm/Id 模式由 lookup table 把目标 gm/Id、支路电流、预估 VDS 映射为器件 W/L；所有尾电流管的 `VDS` 预估统一为 `0.2V`。5T OTA 的 `VBIAS` 不再属于 BO 参数空间，而由尾管 lookup 的 `VGS/VSG` 自动推导。
-
-当用户给定 GBW 和 CL 时，会先估算实现该 GBW 所需的跨导，再用允许的最大 gm/Id 得到理论最小支路电流，并收紧 BO 电流参数下界：
-
-- 5T OTA：`gm=2π·GBW·CL`，单输入管电流 `x=gm/(gm/Id)_max`，尾电流下界 `2x`
-- Two-stage OTA：先取 `Cc=0.5CL`，`gm1=2π·GBW·Cc`；尾电流下界 `2x`，第二级电流下界 `4x`
-- Folded cascode 二级运放：同样用 `Cc=0.5CL`；尾支路 `2x`、两侧折叠支路各 `2x`、第二级 `4x`，整机最小电流估算为 `10x`
-
-这些公式只用于建立物理合理的搜索下界，最终尺寸和性能仍由 Spectre + BO 决定。
-
-### 拓扑升级策略
-
-停滞检测代码仍然保留，但自动升级拓扑默认关闭（`enable_topology_escalation=False`）。当前优化固定在用户选定的 topology 内；需要换拓扑时，由 Agent 根据结果和拓扑选择指南重新生成项目。
+其他输出详见 [README.md](README.md#输出结果)。
 
 ---
 
-## 异常处理
+## 第六步：BO 后本地 Agent Review
 
-### 仿真失败怎么办
-
-仿真失败通常是收敛问题或参数极端值导致：
-
-1. 读取失败日志 `workspace/run_000/sim.log`
-2. 分析错误类型（收敛问题 → 调整偏置参数；模型未找到 → 检查 PDK 路径）
-3. 修改 `.cir` 或 `.scs` 文件（如有必要）后重新运行
-
-### 优化结束仍未达标
-
-1. 检查 `summary_report.txt` 中的 gap 分析
-2. 看哪个指标差距最大
-3. 考虑：
-   - 扩大参数搜索范围（通过手动 params.json）
-   - 建议用户放宽指标
-   - **换拓扑**：查阅拓扑指南中的升级路径（如 5t_ota → two_stage_ota），用新拓扑重新生成网表再优化
-
-### BO 后 Agent Review
-
-当用户要求“复盘较好的几次结果并生成改进 netlist”时，使用显式后处理脚本，不要把它当作 BO 主循环的一部分。
-
-输入文件：
-- `outputs/<project>/optimization_metrics.csv`
-- `outputs/<project>/optimization_log.json`
-- `outputs/<project>/results.json`
-- `workspace/run_xxx/circuit.cir`
-- `workspace/run_xxx/tb*.scs`
-- `knowledge_base/Opamp_knowledge_base/optimization_review_guide.md`
-
-流程：
-1. 按 reward 排序选 Top 10%，至少 3 条、最多 10 条；总数少于 3 条则全部分析。
-2. 查 `optimization_review_guide.md`，根据 gain/GBW/PM/power/SR/ST 缺口选择保守调整。
-3. 对每个 Top run 生成一个候选 netlist，候选输出到 `outputs/<project>/agent_review/candidates/`。
-4. 候选仿真使用原 run 相同的 AC/SR/ST testbench。
-5. 汇总 `candidate_metrics.csv` 和 `review_report.md`，说明候选是否优于原 Top run。
-
-命令示例：
+对 BO 结果中 Top 10%（3~10条）迭代做复盘，生成候选网表并仿真验证。推荐优先使用两阶段本地 Agent 流程：Python 只准备上下文，本地 Claude/Codex 根据知识库填写 `patch_plan.json`，Python 再安全执行。
 
 ```bash
 cd Agent_LLM_BO/circuit_agent
 conda activate Auto_Agent_Design
 
+# 1. 准备本地 Agent 复盘上下文，不调用外部 LLM
+python review_optimization.py \
+  --project outputs/<project> \
+  --workspace workspace \
+  --topology two_stage_ota \
+  --prepare-agent-review
+```
+
+此时查看并填写：
+
+```text
+outputs/<project>/agent_review/
+├── agent_context.md              # 给本地 Agent 读取的 BO 结果、Top run 参数和知识库规则
+├── patch_plan_template.json      # 空模板
+└── patch_plan.json               # 本地 Agent 填写 scale/set action
+```
+
+本地 Agent 填写 `patch_plan.json` 前，必须先阅读：
+
+- `outputs/<project>/agent_review/agent_context.md`
+- `knowledge_base/Opamp_knowledge_base/optimization_review_guide.md`
+
+其中 `optimization_review_guide.md` 是调参规则来源；如果 Agent 的判断和指南冲突，需要在 `patch_plan.json` 的 `reason` 中说明原因。
+
+本地 Agent 填写 `patch_plan.json` 后执行：
+
+```bash
+python review_optimization.py \
+  --project outputs/<project> \
+  --workspace workspace \
+  --topology two_stage_ota \
+  --patch-plan outputs/<project>/agent_review/patch_plan.json \
+  --simulate
+```
+
+如果只是快速验证，也可以直接使用内置保守规则：
+
+```bash
 python review_optimization.py \
   --project outputs/<project> \
   --workspace workspace \
@@ -319,67 +167,43 @@ python review_optimization.py \
   --simulate
 ```
 
-无 Spectre 环境快速验证时可加 `--dry-run`。第一版只修改已有 `parameters`，不新增参数；所有修改会 clamp 到 topology 的 `get_param_space()` 范围内。
+无 Spectre 环境加 `--dry-run`。`patch_plan.json` 只允许对已有参数做 `scale` 或 `set`，未知参数会被忽略，所有数值会 clamp 到 topology 的 `get_param_space()` 范围；不要让 Agent 直接改 `.cir` 连接、模型、端口或 testbench。
 
 ---
 
-## 快速开始示例
+## 异常处理
 
-```bash
-# 1. 配置环境（仅首次）
-cd Agent_LLM_BO/circuit_agent
-conda activate Auto_Agent_Design
-cp .env.example .env
-# 编辑 .env，填入 DEEPSEEK_API_KEY以及其他的环境信息
+### 仿真失败
+1. 读取 `workspace/run_XXX/sim.log`
+2. 收敛问题 → 调整偏置；模型未找到 → 检查 PDK 路径
 
-# 2. 生成网表（一行完成）
-python -c "
-from topologies import get_topology
-from models import DesignTarget
-
-topo = get_topology('5t_ota')
-targets = DesignTarget(gain_db=40, bandwidth_hz=5e8, phase_margin_deg=60, power_w=0.001)
-topo.write_project('5t_ota', targets=targets, original_requirement='5T OTA gain>40dB GBW>500MHz')
-print('Project created: 5t_ota/')
-"
-
-# 3. 运行优化（dry-run 快速验证）
-python main.py \
-  --netlist 5t_ota/5t_ota.cir \
-  --testbench 5t_ota/tb_5t_ota_ac.scs \
-              5t_ota/tb_5t_ota_sr.scs \
-              5t_ota/tb_5t_ota_st.scs \
-  --requirements 5t_ota/requirements.json \
-  --dry-run
-
-# 4. 查看结果
-cat outputs/*/results.json
-```
+### 优化结束仍未达标
+1. 检查 `summary_report.txt` 的 gap 分析
+2. 考虑：扩大参数搜索范围 / 建议放宽指标 / **换拓扑**（如 5t_ota → two_stage_ota）
 
 ---
 
 ## 架构说明
 
 ```
-Agent (Claude Code)                    Python 脚本
-───────────────────                    ────────────
-• 解析用户需求                          • main.py: 接收文件路径
-• 查阅知识库选择拓扑                     • BO 优化循环
-• 调 topologies/ 库生成网表文件           • 调用 Spectre 仿真
-• 调用 main.py --netlist ...            • 解析结果，返回给 Agent
+Agent (Claude Code)                      Python 脚本
+───────────────────                      ────────────
+• 解析用户需求                            • main.py: BO 优化循环
+• 查阅知识库选择拓扑                       • topologies/: 硬约束网表生成
+• 调 topologies/ 生成网表                 • simulator.py: Spectre 仿真
+• 调 main.py 运行优化                     • review_optimization.py: BO 后 Review
 • 读 results.json，汇报用户
+• 读 agent_context.md 和知识库，填写 patch_plan.json
+• 调 review_optimization.py 执行 patch plan
 ```
-
-> **LLM 的角色已收敛**：仅用于 (1) `parse_user_requirements()` 解析自然语言需求，(2) `validate_and_adjust_params()` 在 BO 迭代中检查参数物理可行性。网表生成、修复、拓扑变更全部由 Python 硬约束代码处理。
 
 ## 参考资源
 
-- **拓扑库代码**：[Agent_LLM_BO/circuit_agent/topologies/](Agent_LLM_BO/circuit_agent/topologies/)
-  - `base.py` — 抽象基类
-  - `five_t_ota.py` — 5T OTA 实现
-  - `__init__.py` — 拓扑注册表 + 选择器
-- **PDK 约束**：[PDKs_info/tsmc28_pdk_constraints.md](Agent_LLM_BO/circuit_agent/PDKs_info/tsmc28_pdk_constraints.md)
-- **拓扑选择**：`topologies/__init__.py:get_topology_for_targets()` 程序化匹配
-- **代码入口**：[Agent_LLM_BO/circuit_agent/main.py](Agent_LLM_BO/circuit_agent/main.py)
-- **文件流说明**：[Agent_LLM_BO/circuit_agent/FILE_FLOW.md](Agent_LLM_BO/circuit_agent/FILE_FLOW.md)
-- **配置文件**：[Agent_LLM_BO/circuit_agent/config.py](Agent_LLM_BO/circuit_agent/config.py)
+- **拓扑库**：[topologies/](Agent_LLM_BO/circuit_agent/topologies/) — `base.py`, `five_t_ota.py`, `__init__.py`
+- **拓扑选择**：`topologies/__init__.py:get_topology_for_targets()`
+- **代码入口**：[main.py](Agent_LLM_BO/circuit_agent/main.py)
+- **Review 脚本**：[review_optimization.py](Agent_LLM_BO/circuit_agent/review_optimization.py)
+- **文件流说明**：[FILE_FLOW.md](Agent_LLM_BO/circuit_agent/FILE_FLOW.md)
+- **PDK 约束**：[tsmc28_pdk_constraints.md](knowledge_base/PDKs_info/tsmc28_pdk_constraints.md)
+- **Review 指南**：[optimization_review_guide.md](knowledge_base/Opamp_knowledge_base/optimization_review_guide.md)
+- **配置**：[config.py](Agent_LLM_BO/circuit_agent/config.py)

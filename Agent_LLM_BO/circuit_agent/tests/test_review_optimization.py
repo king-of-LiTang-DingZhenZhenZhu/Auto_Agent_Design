@@ -7,6 +7,7 @@ from config import Settings
 from models import ParamDef, SimResult
 from review_optimization import (
     Candidate,
+    apply_patch_plan,
     apply_review_rules,
     generate_candidate,
     inflate_width_params_from_instances,
@@ -14,6 +15,7 @@ from review_optimization import (
     select_top_records,
     simulate_candidate,
     write_candidate_metrics,
+    write_local_agent_review_package,
 )
 from topologies import get_topology
 
@@ -78,6 +80,28 @@ class ReviewOptimizationTests(unittest.TestCase):
         self.assertIn("Cc", changes)
         self.assertIn("Rz", changes)
 
+    def test_apply_patch_plan_scales_sets_clamps_and_ignores_unknowns(self):
+        params = {"Wcs": 10e-6, "Cc": 1e-12}
+        bounds = {
+            "Wcs": ParamDef("Wcs", 1e-6, 11e-6, unit="m"),
+            "Cc": ParamDef("Cc", 0.1e-12, 2e-12, unit="F"),
+        }
+        plan_entry = {
+            "iteration": 7,
+            "reason": "Agent review",
+            "actions": [
+                {"param": "Wcs", "operation": "scale", "factor": 1.5},
+                {"param": "Cc", "operation": "set", "value": 0.5e-12},
+                {"param": "NotAParam", "operation": "scale", "factor": 10},
+            ],
+        }
+
+        adjusted, changes = apply_patch_plan(params, plan_entry, bounds)
+
+        self.assertAlmostEqual(adjusted["Wcs"], 11e-6)
+        self.assertAlmostEqual(adjusted["Cc"], 0.5e-12)
+        self.assertEqual(set(changes), {"Wcs", "Cc"})
+
     def test_parse_parameters_and_inflate_rendered_widths(self):
         netlist = """
 parameters Wtail=1u Ltail=120n Wload=2.7u Cc=1p Rz=1k
@@ -141,6 +165,18 @@ ends dut
             topology = get_topology("5t_ota")
             bounds = {p.name: p for p in topology.get_param_space().params}
             settings = Settings(dry_run=True, workspace_dir=str(workspace))
+            patch_plan = {
+                "summary": "Increase compensation only.",
+                "candidates": [
+                    {
+                        "iteration": 3,
+                        "reason": "Agent chose a PM-oriented candidate.",
+                        "actions": [
+                            {"param": "Cc", "operation": "scale", "factor": 1.25}
+                        ],
+                    }
+                ],
+            }
 
             candidate = generate_candidate(
                 record=record,
@@ -149,6 +185,7 @@ ends dut
                 candidates_root=candidates_root,
                 param_bounds=bounds,
                 settings=settings,
+                patch_plan=patch_plan,
             )
             simulate_candidate(candidate, settings)
             write_candidate_metrics(project / "candidate_metrics.csv", [candidate])
@@ -157,16 +194,64 @@ ends dut
                 encoding="utf-8"
             )
             self.assertIn("parameters", candidate_netlist)
-            self.assertIn("L1=140n", candidate_netlist)
+            self.assertIn("Cc=1.25p", candidate_netlist)
             self.assertTrue((candidate.candidate_dir / "tb.scs").exists())
             self.assertTrue((candidate.candidate_dir / "metrics_summary.txt").exists())
             self.assertIsInstance(candidate.result, SimResult)
+            self.assertEqual(candidate.review_reason, "Agent chose a PM-oriented candidate.")
 
             with (project / "candidate_metrics.csv").open(encoding="utf-8") as f:
                 rows = list(csv.DictReader(f))
             self.assertEqual(rows[0]["original_iteration"], "3")
             self.assertEqual(rows[0]["original_reward"], "1.25")
-            self.assertIn("L1", rows[0]["changed_params"])
+            self.assertEqual(rows[0]["changed_params"], "Cc")
+
+    def test_write_local_agent_review_package_outputs_context_and_template(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            project = root / "outputs" / "proj"
+            review_root = project / "agent_review"
+            run_dir = workspace / "run_001"
+            run_dir.mkdir(parents=True)
+            project.mkdir(parents=True)
+            (project / "optimization_metrics.csv").write_text(
+                "iteration,reward,gain_db(dB)\n1,0.5,40.0\n",
+                encoding="utf-8",
+            )
+            (run_dir / "circuit.cir").write_text(
+                "parameters W1=5u L1=120n Cc=1p\n"
+                "M1 out in vss vss nch_lvt_mac w=5u l=120n nf=1\n",
+                encoding="utf-8",
+            )
+            history = {
+                "total_iterations": 2,
+                "best_iteration": 1,
+                "best_reward": 0.5,
+                "targets": {"gain_db": 60},
+            }
+            records = [
+                {"iteration": 1, "reward": 0.5, "result": {"gain_db": 40}},
+            ]
+            bounds = {"W1": ParamDef("W1", 1e-6, 20e-6)}
+
+            write_local_agent_review_package(
+                project=project,
+                workspace=workspace,
+                topology_name="5t_ota",
+                history=history,
+                history_path=workspace / "history.json",
+                records=records,
+                param_bounds=bounds,
+                review_root=review_root,
+            )
+
+            context = (review_root / "agent_context.md").read_text(encoding="utf-8")
+            plan = (review_root / "patch_plan.json").read_text(encoding="utf-8")
+            self.assertIn("Local Agent BO Review Context", context)
+            self.assertIn("Optimization Metrics CSV", context)
+            self.assertIn("W1", context)
+            self.assertIn('"iteration": 1', plan)
 
 
 if __name__ == "__main__":

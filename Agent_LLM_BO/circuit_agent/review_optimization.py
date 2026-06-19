@@ -32,11 +32,15 @@ class Candidate:
     source_run_dir: Path
     candidate_dir: Path
     changes: dict[str, tuple[float, float]] = field(default_factory=dict)
+    review_reason: str = ""
     result: SimResult | None = None
 
 
 def main() -> None:
     args = _parse_args()
+    prepare_agent_review = args.prepare_agent_review or args.agent_plan
+    if prepare_agent_review and args.patch_plan:
+        raise ValueError("Use either --prepare-agent-review or --patch-plan, not both.")
     settings = Settings(dry_run=args.dry_run)
     project = args.project
     workspace = args.workspace
@@ -45,6 +49,9 @@ def main() -> None:
     history = json.loads(history_path.read_text(encoding="utf-8"))
     topology = get_topology(args.topology)
     param_bounds = {p.name: p for p in topology.get_param_space().params}
+    patch_plan = None
+    if args.patch_plan:
+        patch_plan = json.loads(args.patch_plan.read_text(encoding="utf-8"))
 
     review_root = project / "agent_review"
     candidates_root = review_root / "candidates"
@@ -53,6 +60,23 @@ def main() -> None:
     candidates_root.mkdir(parents=True, exist_ok=True)
 
     records = select_top_records(history.get("history", []))
+    if prepare_agent_review:
+        write_local_agent_review_package(
+            project=project,
+            workspace=workspace,
+            topology_name=args.topology,
+            history=history,
+            history_path=history_path,
+            records=records,
+            param_bounds=param_bounds,
+            review_root=review_root,
+        )
+        print(
+            f"Wrote local Agent review package to {review_root}. "
+            "Ask Claude/Codex to fill patch_plan.json, then rerun with --patch-plan."
+        )
+        return
+
     candidates: list[Candidate] = []
     for record in records:
         candidate = generate_candidate(
@@ -62,6 +86,7 @@ def main() -> None:
             candidates_root=candidates_root,
             param_bounds=param_bounds,
             settings=settings,
+            patch_plan=patch_plan,
         )
         if args.simulate:
             simulate_candidate(candidate, settings)
@@ -89,6 +114,7 @@ def generate_candidate(
     candidates_root: Path,
     param_bounds: dict[str, ParamDef],
     settings: Settings,
+    patch_plan: dict[str, Any] | None = None,
 ) -> Candidate:
     iteration = int(record["iteration"])
     source_run_dir = workspace / f"run_{iteration:03d}"
@@ -102,12 +128,22 @@ def generate_candidate(
     source_text = source_netlist.read_text(encoding="utf-8")
     params = parse_parameter_values(source_text)
     params = inflate_width_params_from_instances(source_text, params)
-    adjusted, changes = apply_review_rules(
-        params=params,
-        result=record.get("result", {}),
-        targets=history.get("targets", {}),
-        param_bounds=param_bounds,
-    )
+    plan_entry = _plan_entry_for_iteration(patch_plan, iteration)
+    if plan_entry is not None:
+        adjusted, changes = apply_patch_plan(
+            params=params,
+            plan_entry=plan_entry,
+            param_bounds=param_bounds,
+        )
+        review_reason = str(plan_entry.get("reason", ""))
+    else:
+        adjusted, changes = apply_review_rules(
+            params=params,
+            result=record.get("result", {}),
+            targets=history.get("targets", {}),
+            param_bounds=param_bounds,
+        )
+        review_reason = "Rule-based fallback"
 
     template_path = workspace / "circuit_template.cir"
     template_text = (
@@ -129,7 +165,95 @@ def generate_candidate(
         source_run_dir=source_run_dir,
         candidate_dir=candidate_dir,
         changes=changes,
+        review_reason=review_reason,
     )
+
+
+def write_local_agent_review_package(
+    project: Path,
+    workspace: Path,
+    topology_name: str,
+    history: dict[str, Any],
+    history_path: Path,
+    records: list[dict[str, Any]],
+    param_bounds: dict[str, ParamDef],
+    review_root: Path,
+) -> None:
+    """Write context files for a local Claude/Codex Agent to review."""
+    guide_path = (
+        Path(__file__).resolve().parents[2]
+        / "knowledge_base"
+        / "Opamp_knowledge_base"
+        / "optimization_review_guide.md"
+    )
+    review_guide = (
+        guide_path.read_text(encoding="utf-8")
+        if guide_path.exists()
+        else "No optimization review guide found."
+    )
+    metrics_path = project / "optimization_metrics.csv"
+    metrics_csv = (
+        metrics_path.read_text(encoding="utf-8")
+        if metrics_path.exists()
+        else "optimization_metrics.csv not found"
+    )
+    history_summary = _build_history_summary(history, history_path)
+    candidate_context = _build_candidate_context(workspace, records, param_bounds)
+    context = _build_local_agent_context(
+        topology_name=topology_name,
+        review_guide=review_guide,
+        metrics_csv=metrics_csv,
+        history_summary=history_summary,
+        candidate_context=candidate_context,
+    )
+    review_root.mkdir(parents=True, exist_ok=True)
+    (review_root / "agent_context.md").write_text(context, encoding="utf-8")
+    (review_root / "patch_plan_template.json").write_text(
+        json.dumps(_patch_plan_template(records), indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    (review_root / "patch_plan.json").write_text(
+        json.dumps(_patch_plan_template(records), indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+
+def apply_patch_plan(
+    params: dict[str, float],
+    plan_entry: dict[str, Any],
+    param_bounds: dict[str, ParamDef],
+) -> tuple[dict[str, float], dict[str, tuple[float, float]]]:
+    """Apply a validated structured patch plan to existing parameters only."""
+    adjusted = dict(params)
+    changes: dict[str, tuple[float, float]] = {}
+    actions = plan_entry.get("actions", [])
+    if not isinstance(actions, list):
+        return adjusted, changes
+
+    for action in actions:
+        if not isinstance(action, dict):
+            continue
+        name = str(action.get("param", ""))
+        if name not in adjusted:
+            continue
+        operation = str(action.get("operation", "scale")).lower()
+        old = adjusted[name]
+        try:
+            if operation == "scale":
+                factor = float(action.get("factor", 1.0))
+                new = old * factor
+            elif operation == "set":
+                new = float(action["value"])
+            else:
+                continue
+        except (KeyError, TypeError, ValueError):
+            continue
+        new = _clamp_param(name, new, param_bounds)
+        if not math.isclose(old, new, rel_tol=1e-12, abs_tol=0.0):
+            adjusted[name] = new
+            changes[name] = (old, new)
+
+    return adjusted, changes
 
 
 def apply_review_rules(
@@ -347,6 +471,8 @@ def write_review_report(path: Path, candidates: list[Candidate], history_path: P
             f"(reward {candidate.original_reward:.6g})"
         )
         lines.append(f"- Candidate: `{candidate.candidate_dir}`")
+        if candidate.review_reason:
+            lines.append(f"- Review reason: {candidate.review_reason}")
         if candidate.changes:
             for name, (old, new) in sorted(candidate.changes.items()):
                 lines.append(f"- {name}: {_eng(old)} -> {_eng(new)}")
@@ -370,6 +496,171 @@ def _find_history(project: Path, workspace: Path) -> Path:
     raise FileNotFoundError(
         f"Cannot find optimization_log.json in {project} or history.json in {workspace}"
     )
+
+
+def _plan_entry_for_iteration(
+    patch_plan: dict[str, Any] | None,
+    iteration: int,
+) -> dict[str, Any] | None:
+    if not patch_plan:
+        return None
+    candidates = patch_plan.get("candidates", [])
+    if not isinstance(candidates, list):
+        return None
+    for entry in candidates:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            if int(entry.get("iteration")) == iteration:
+                return entry
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _build_history_summary(history: dict[str, Any], history_path: Path) -> str:
+    lines = [
+        f"history_path: {history_path}",
+        f"total_iterations: {history.get('total_iterations')}",
+        f"best_iteration: {history.get('best_iteration')}",
+        f"best_reward: {history.get('best_reward')}",
+        "targets:",
+    ]
+    targets = history.get("targets", {})
+    if isinstance(targets, dict):
+        for name, value in sorted(targets.items()):
+            lines.append(f"  {name}: {value}")
+    return "\n".join(lines)
+
+
+def _build_candidate_context(
+    workspace: Path,
+    records: list[dict[str, Any]],
+    param_bounds: dict[str, ParamDef],
+) -> str:
+    sections: list[str] = []
+    for record in records:
+        iteration = int(record["iteration"])
+        run_dir = workspace / f"run_{iteration:03d}"
+        netlist_path = run_dir / "circuit.cir"
+        params: dict[str, float] = {}
+        if netlist_path.exists():
+            text = netlist_path.read_text(encoding="utf-8")
+            params = inflate_width_params_from_instances(
+                text,
+                parse_parameter_values(text),
+            )
+        sections.append(f"iteration: {iteration}")
+        sections.append(f"reward: {record.get('reward')}")
+        sections.append(f"result: {json.dumps(record.get('result', {}), sort_keys=True)}")
+        sections.append("available_params:")
+        for name, value in sorted(params.items()):
+            bound = param_bounds.get(name)
+            if bound:
+                sections.append(
+                    f"  {name}: current={value:.6e}, "
+                    f"low={bound.low:.6e}, high={bound.high:.6e}"
+                )
+            else:
+                sections.append(f"  {name}: current={value:.6e}, unbounded")
+        sections.append("")
+    return "\n".join(sections)
+
+
+def _build_local_agent_context(
+    topology_name: str,
+    review_guide: str,
+    metrics_csv: str,
+    history_summary: str,
+    candidate_context: str,
+) -> str:
+    return f"""# Local Agent BO Review Context
+
+This file is for a local Agent such as Claude or Codex. Do not call an external
+LLM from the Python script. The local Agent should read this context and write
+`patch_plan.json` in the same directory.
+
+## Task
+
+Review the BO results, identify why the best runs miss the targets, and propose
+conservative parameter edits as a structured patch plan. Python will later
+validate the plan, ignore unknown parameters, clamp values to topology bounds,
+render candidate netlists, and optionally simulate them.
+
+## Topology
+
+{topology_name}
+
+## Required Patch Plan Schema
+
+```json
+{{
+  "summary": "one paragraph explaining the strategy",
+  "candidates": [
+    {{
+      "iteration": 3,
+      "reason": "why this run should be patched",
+      "actions": [
+        {{
+          "param": "Cc",
+          "operation": "scale",
+          "factor": 1.25,
+          "reason": "PM is low, increase compensation"
+        }}
+      ]
+    }}
+  ]
+}}
+```
+
+Allowed actions:
+- `operation="scale"` with `factor`
+- `operation="set"` with `value`
+
+Safety rules:
+- Only use parameters listed under Candidate Run Context.
+- Do not add parameters.
+- Do not edit instances, connections, ports, models, or testbenches.
+- Prefer conservative scale factors, usually `0.8` to `1.3`.
+
+## Optimization Metrics CSV
+
+```csv
+{metrics_csv.strip()}
+```
+
+## Optimization History Summary
+
+```text
+{history_summary.strip()}
+```
+
+## Candidate Run Context
+
+```text
+{candidate_context.strip()}
+```
+
+## Review Knowledge Base
+
+```text
+{review_guide.strip()}
+```
+"""
+
+
+def _patch_plan_template(records: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "summary": "",
+        "candidates": [
+            {
+                "iteration": int(record["iteration"]),
+                "reason": "",
+                "actions": [],
+            }
+            for record in records
+        ],
+    }
 
 
 def _below(
@@ -440,6 +731,27 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--topology", required=True)
     parser.add_argument("--simulate", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--agent-plan",
+        action="store_true",
+        help=(
+            "Deprecated alias for --prepare-agent-review. It prepares context "
+            "for a local Claude/Codex Agent; it does not call an external LLM."
+        ),
+    )
+    parser.add_argument(
+        "--prepare-agent-review",
+        action="store_true",
+        help=(
+            "Write agent_context.md and patch_plan.json template for local "
+            "Claude/Codex review, then exit."
+        ),
+    )
+    parser.add_argument(
+        "--patch-plan",
+        type=Path,
+        help="Use an existing structured patch plan JSON instead of built-in rules.",
+    )
     return parser.parse_args()
 
 

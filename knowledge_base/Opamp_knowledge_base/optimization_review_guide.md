@@ -11,6 +11,44 @@
 
 Top 样本选择规则：按 reward 降序选前 10%，至少 3 条，最多 10 条；总数少于 3 条时全部使用。
 
+## 本地 Agent Patch Plan 输出格式
+
+真正的 Agent review 不由 Python 调外部 LLM 完成，也不直接改 `.cir` 文件。流程是：Python 先导出 `agent_context.md` 和 `patch_plan.json` 模板；本地 Claude/Codex 读取这些文件和本知识库，填写结构化 `patch_plan.json`；随后 Python 校验参数名、clamp 到 topology 参数空间，并重新渲染候选 netlist。
+
+```json
+{
+  "summary": "本轮主要问题是 PM 不足，优先增加补偿并轻微调整零点电阻。",
+  "candidates": [
+    {
+      "iteration": 3,
+      "reason": "该 run 的 reward 靠前，但 PM 低于目标且 GBW 仍有余量。",
+      "actions": [
+        {
+          "param": "Cc",
+          "operation": "scale",
+          "factor": 1.25,
+          "reason": "PM 不足，增大 Miller 补偿电容"
+        },
+        {
+          "param": "Rz",
+          "operation": "scale",
+          "factor": 1.2,
+          "reason": "调整补偿零点位置"
+        }
+      ]
+    }
+  ]
+}
+```
+
+约束：
+
+- `param` 必须来自候选 run 的 `parameters` 行。
+- 优先使用 `operation="scale"`；`operation="set"` 仅在有明确理由时使用。
+- 不新增参数，不修改器件连接、模型、端口和 testbench。
+- 常规倍率建议保持在 `0.8 ~ 1.3`。
+- Python 执行阶段会忽略未知参数和非法 action。
+
 ## 指标缺口到调整动作
 
 ### Gain 不足
