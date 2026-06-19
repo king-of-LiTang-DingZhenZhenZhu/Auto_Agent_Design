@@ -170,6 +170,14 @@ class TwoStageOTA(BaseTopology):
 
     # ------------------------------------------------------------------
     # gm/Id support
+    # gm/Id 模式启动后，BO 搜索的是：
+    # I_tail
+    # gm_id_xxx
+    # L_xxx
+    # ratio_load_tail
+    # Cc
+    # Rz
+    # 然后 GmidSizer 用这个 L 去查 gm/Id table，算出 W
     # ------------------------------------------------------------------
 
     def get_gmid_spec(self, targets=None):
@@ -222,7 +230,7 @@ class TwoStageOTA(BaseTopology):
                 BranchCurrentSpec(
                     name="I_tail",
                     low=tail_current_low,
-                    high=200e-6,
+                    high=10*tail_current_low,
                     default=max(15e-6, tail_current_low),
                 ),
             ],
@@ -264,7 +272,7 @@ class TwoStageOTA(BaseTopology):
                     model="pch_mac",
                     current_source="I_cs", current_fraction=1.0,
                     gm_id_low=8, gm_id_high=15, gm_id_default=12,
-                    L_low=60e-9, L_high=300e-9, L_default=100e-9,
+                    L_low=120e-9, L_high=900e-9, L_default=200e-9,
                     Vds_estimate=0.45,
                 ),
                 # -- Second stage: NMOS current-source load --
@@ -274,7 +282,7 @@ class TwoStageOTA(BaseTopology):
                     model="nch_mac",
                     current_source="I_cs", current_fraction=1.0,
                     gm_id_low=8, gm_id_high=15, gm_id_default=10,
-                    L_low=100e-9, L_high=900e-9, L_default=200e-9,
+                    L_low=120e-9, L_high=900e-9, L_default=200e-9,
                     Vds_estimate=0.4,
                 ),
             ],
@@ -319,14 +327,14 @@ class TwoStageOTA(BaseTopology):
         return dict(self.DEFAULT_PARAMS)
 
     # ------------------------------------------------------------------
-    # get_param_space
+    # get_param_space: 这是 非 gm/Id 普通物理参数模式下的 BO 搜索范围
     # ------------------------------------------------------------------
     def get_param_space(self) -> ParamSpace:
         return ParamSpace(
             params=[
                 # --- First stage: tail current ---
                 ParamDef(
-                    name="Wtail", low=0.5e-6, high=50e-6,
+                    name="Wtail", low=0.5e-6, high=20e-6,
                     log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
@@ -353,7 +361,7 @@ class TwoStageOTA(BaseTopology):
                 ),
                 # --- Second stage: PMOS CS amp ---
                 ParamDef(
-                    name="Wcs", low=0.5e-6, high=100e-6,
+                    name="Wcs", low=0.5e-6, high=50e-6,
                     log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
@@ -362,7 +370,7 @@ class TwoStageOTA(BaseTopology):
                 ),
                 # --- Second stage: NMOS load ---
                 ParamDef(
-                    name="Wload", low=0.5e-6, high=100e-6,
+                    name="Wload", low=0.5e-6, high=50e-6,
                     log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
@@ -371,7 +379,7 @@ class TwoStageOTA(BaseTopology):
                 ),
                 # --- Compensation ---
                 ParamDef(
-                    name="Cc", low=0.1e-12, high=10e-12,
+                    name="Cc", low=0.1e-12, high=5e-12,
                     log_scale=True, unit="F",
                 ),
                 ParamDef(

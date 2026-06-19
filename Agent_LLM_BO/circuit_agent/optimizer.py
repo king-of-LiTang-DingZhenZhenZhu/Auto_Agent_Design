@@ -528,6 +528,9 @@ class HybridOptimizer:
                 "bandwidth_hz": state.targets.bandwidth_hz,
                 "phase_margin_deg": state.targets.phase_margin_deg,
                 "power_w": state.targets.power_w,
+                "load_cap_f": state.targets.load_cap_f,
+                "slew_rate_v_per_s": state.targets.slew_rate_v_per_s,
+                "settling_time_s": state.targets.settling_time_s,
             },
             "history": [
                 {
