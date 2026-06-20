@@ -205,7 +205,7 @@ class TwoStageOTA(BaseTopology):
             TransistorSpec,
         )
 
-        tail_current_low = 1e-6
+        tail_current_low = 50e-6
         if (
             targets is not None
             and targets.bandwidth_hz is not None
@@ -217,20 +217,16 @@ class TwoStageOTA(BaseTopology):
             gm_required = (
                 2.0 * math.pi * targets.bandwidth_hz * compensation_estimate
             )
-            single_input_current = gm_required / 24.0
+            single_input_current = gm_required / 15.0
             tail_current_low = max(tail_current_low, 2.0 * single_input_current)
-            if tail_current_low > 200e-6:
-                raise ValueError(
-                    "Two-stage OTA GBW/CL estimate requires I_tail >= "
-                    f"{tail_current_low:.3e} A, above the 200 uA upper bound"
-                )
+        tail_current_high = max(10.0 * tail_current_low, 200e-6)
 
         return GmidTopologySpec(
             branch_currents=[
                 BranchCurrentSpec(
                     name="I_tail",
                     low=tail_current_low,
-                    high=10*tail_current_low,
+                    high=tail_current_high,
                     default=max(15e-6, tail_current_low),
                 ),
             ],
@@ -242,7 +238,7 @@ class TwoStageOTA(BaseTopology):
                     model="nch_mac",
                     current_source="I_tail", current_fraction=1.0,
                     gm_id_low=8, gm_id_high=15, gm_id_default=10,
-                    L_low=100e-9, L_high=900e-9, L_default=200e-9,
+                    L_low=300e-9, L_high=900e-9, L_default=200e-9,
                     Vds_estimate=0.2,
                 ),
                 # -- First stage: NMOS diff pair (each I_tail/2) --
@@ -282,7 +278,7 @@ class TwoStageOTA(BaseTopology):
                     model="nch_mac",
                     current_source="I_cs", current_fraction=1.0,
                     gm_id_low=8, gm_id_high=15, gm_id_default=10,
-                    L_low=120e-9, L_high=900e-9, L_default=200e-9,
+                    L_low=300e-9, L_high=900e-9, L_default=200e-9,
                     Vds_estimate=0.4,
                 ),
             ],
@@ -314,7 +310,7 @@ class TwoStageOTA(BaseTopology):
                     param_name="VBIAS",
                     supply_voltage=0.0,
                     device_type="nmos",
-                    low=0.5,
+                    low=0.4,
                     high=0.95,
                 ),
             ],
@@ -388,7 +384,7 @@ class TwoStageOTA(BaseTopology):
                 ),
                 # Shared NMOS gate bias for Mtail and Mload in non-gm/Id mode.
                 ParamDef(
-                    name="VBIAS", low=0.5, high=0.85,
+                    name="VBIAS", low=0.4, high=0.85,
                     log_scale=False, unit="V",
                 ),
             ]

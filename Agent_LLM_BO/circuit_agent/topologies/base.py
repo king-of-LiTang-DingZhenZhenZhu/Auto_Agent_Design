@@ -118,7 +118,10 @@ class BaseTopology(ABC):
         out = Path(project_dir)
         out.mkdir(parents=True, exist_ok=True)
 
-        cf = self.get_circuit_files(params)
+        generation_params = dict(params or {})
+        if targets and targets.load_cap_f is not None:
+            generation_params.setdefault("CL", targets.load_cap_f)
+        cf = self.get_circuit_files(generation_params)
 
         # --- .cir ---
         cir_path = out / f"{self.meta.name}.cir"

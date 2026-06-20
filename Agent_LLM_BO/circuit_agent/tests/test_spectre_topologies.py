@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from models import NetlistTemplate
+from models import DesignTarget, NetlistTemplate
 from config import Settings
 from simulator import Simulator
 from topologies import get_topology, list_topologies
@@ -82,6 +82,19 @@ class SpectreTopologyTest(unittest.TestCase):
         self.assertIn("parameters Wtail=2.4u Ltail=200n", rendered)
         self.assertIn("Mtail (tail vbias vdd vdd) pch_mac w=2.4u l=200n nf=5", rendered)
         self.assertNotIn("w=Wtail", rendered)
+
+    def test_write_project_uses_target_load_cap_for_testbenches(self):
+        topo = get_topology("two_stage_ota")
+        targets = DesignTarget(load_cap_f=1e-12)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            project = topo.write_project(Path(tmp) / "two_stage", targets=targets)
+            for suffix in ("ac", "sr", "st"):
+                testbench = (
+                    project / f"tb_two_stage_ota_{suffix}.scs"
+                ).read_text(encoding="utf-8")
+                self.assertIn("CL=1p", testbench)
+                self.assertNotIn("CL=2p", testbench)
 
     def test_5t_vbias_is_testbench_owned_and_rendered(self):
         topo = get_topology("5t_ota")

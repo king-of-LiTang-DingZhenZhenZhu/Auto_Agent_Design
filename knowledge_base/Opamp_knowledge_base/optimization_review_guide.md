@@ -46,7 +46,7 @@ Top 样本选择规则：按 reward 降序选前 10%，至少 3 条，最多 10 
 - `param` 必须来自候选 run 的 `parameters` 行。
 - 优先使用 `operation="scale"`；`operation="set"` 仅在有明确理由时使用。
 - 不新增参数，不修改器件连接、模型、端口和 testbench。
-- 常规倍率建议保持在 `0.8 ~ 1.3`。
+- 常规微调倍率建议保持在 `0.8 ~ 1.3`；如果指标缺口很大，可以按 `目标值/实测值` 使用更大的倍率，但需要在 `reason` 中写明计算依据，例如 `GBW target/actual = 100MHz/50MHz = 2x`。
 - Python 执行阶段会忽略未知参数和非法 action。
 
 ## 指标缺口到调整动作
@@ -63,8 +63,11 @@ Top 样本选择规则：按 reward 降序选前 10%，至少 3 条，最多 10 
 
 常见原因是输入级 gm 不足、补偿电容过大或负载太重。候选调整：
 
-- 增大输入差分对宽度，例如 `Wdp`、`Wdiff`、`Wdiffp`、`Wdiff1` 约 15%。
-- 若存在 `Cc*` 且相位裕度足够，可减小 `Cc*` 约 15%。
+- 先计算缺口倍率：`gbw_factor = target_gbw / actual_gbw`。例如目标 `100MHz`、实测 `50MHz`，则 `gbw_factor = 2.0`。
+- GBW 主要由输入级跨导决定，优先按 `gbw_factor` 增大输入差分对宽度，例如 `Wdp`、`Wdiff`、`Wdiffp`、`Wdiff1`。
+- 增大输入级 `W` 时必须同步增大对应尾电流/尾管宽度，避免只加宽输入管但电流不变导致 gm 提升不足。常见参数名包括 `Wtail`、`Wtail1`、`Itail`、`I_tail`；实际以 `agent_context.md` 中已有参数为准。
+- 对两级运放，如果 GBW 缺口约为 2x，候选可将 `Wdiff`、第一级尾电流相关参数、第二级 `Wcs` 和第二级尾/负载相关参数一起放大到约 2x。当前 two-stage 拓扑中第二级 NMOS 负载通常是 `Wload`；若其他拓扑使用 `Wtail2`，则按 `Wtail2` 处理。
+- 若存在 `Cc*` 且相位裕度足够，可适当减小 `Cc*`，倍率可取 `1 / gbw_factor` 的保守版本，例如缺口 2x 时先减小到 `0.8x ~ 0.9x`，避免 PM 急剧恶化。
 - 若目标 GBW 和 CL 推导出的电流下界过高，需要扩大电流空间或换拓扑。
 
 ### Phase Margin 不足
