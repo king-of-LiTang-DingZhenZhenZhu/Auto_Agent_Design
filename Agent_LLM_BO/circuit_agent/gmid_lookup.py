@@ -686,7 +686,7 @@ class GmidSizer:
                     )
                 self._cache[cache_key] = w
 
-            # Apply PDK constraints (TSMC N28 effective: Wmin≈90nm, Wmax=2.7µm/finger)
+            # Apply guard-banded PDK constraints (Wmax kept below 2.7um bin edge).
             w = max(w, 200e-9)   # Min W = 200nm (safe margin above 90nm)
             L_val = max(L_val, 120e-9)  # Min L = 120nm (above 108nm bin boundary)
 
@@ -776,7 +776,7 @@ class GmidSizer:
         total_width = max(total_width, 200e-9)
         length = max(length, 120e-9)
         max_per_finger = (
-            transistor.max_per_finger if transistor.max_per_finger else 2.7e-6
+            transistor.max_per_finger if transistor.max_per_finger else 2.6e-6
         )
         if total_width > max_per_finger:
             import math

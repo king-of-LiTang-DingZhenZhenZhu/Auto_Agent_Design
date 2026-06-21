@@ -55,8 +55,13 @@ def main() -> None:
 
     review_root = project / "agent_review"
     candidates_root = review_root / "candidates"
-    if review_root.exists():
-        shutil.rmtree(review_root)
+    review_root.mkdir(parents=True, exist_ok=True)
+    if candidates_root.exists():
+        shutil.rmtree(candidates_root)
+    for stale_name in ("candidate_metrics.csv", "review_report.md"):
+        stale_path = review_root / stale_name
+        if stale_path.exists():
+            stale_path.unlink()
     candidates_root.mkdir(parents=True, exist_ok=True)
 
     records = select_top_records(history.get("history", []))

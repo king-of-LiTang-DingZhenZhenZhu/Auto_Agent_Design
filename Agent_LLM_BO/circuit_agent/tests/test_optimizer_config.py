@@ -65,8 +65,9 @@ class OptimizerConfigTest(unittest.TestCase):
         )
         spec = get_topology("two_stage_ota").get_gmid_spec(targets)
         currents = {branch.name: branch for branch in spec.branch_currents}
-        x = 2.0 * 3.141592653589793 * 100e6 * (0.5e-12) / 24.0
-        self.assertAlmostEqual(currents["I_tail"].low, 2.0 * x)
+        x = 2.0 * 3.141592653589793 * 100e6 * (0.5e-12) / 15.0
+        self.assertAlmostEqual(currents["I_tail"].low, max(50e-6, 2.0 * x))
+        self.assertAlmostEqual(currents["I_tail"].high, 10.0 * currents["I_tail"].low)
         self.assertNotIn("I_cs", currents)
 
     def test_two_stage_gmid_space_uses_integer_mirror_ratio(self):
@@ -131,7 +132,7 @@ class OptimizerConfigTest(unittest.TestCase):
 
         self.assertEqual(five_t_params["VBIAS"].low, 0.15)
         self.assertEqual(five_t_params["VBIAS"].high, 0.55)
-        self.assertEqual(two_stage_params["VBIAS"].low, 0.5)
+        self.assertEqual(two_stage_params["VBIAS"].low, 0.4)
         self.assertEqual(two_stage_params["VBIAS"].high, 0.85)
 
     def test_folded_current_bounds_follow_ten_x_budget(self):

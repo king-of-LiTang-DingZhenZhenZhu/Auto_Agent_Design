@@ -171,7 +171,7 @@ class FiveTOTA(BaseTopology):
                 ),
             ],
             transistors=[
-                # -- PMOS tail current source (W ≤ 2.7µm/finger) --
+                # -- PMOS tail current source (W ≤ 2.6µm/finger) --
                 TransistorSpec(
                     role="tail_pmos",
                     w_param="Wtail", l_param="Ltail",
@@ -179,7 +179,7 @@ class FiveTOTA(BaseTopology):
                     current_source="I_tail", current_fraction=1.0,
                     gm_id_low=5, gm_id_high=22, gm_id_default=14,
                     L_low=120e-9, L_high=900e-9, L_default=200e-9,
-                    Vds_estimate=0.2, max_per_finger=2.7e-6,
+                    Vds_estimate=0.2, max_per_finger=2.6e-6,
                 ),
                 # -- PMOS diff pair (each side carries I_tail / 2) --
                 TransistorSpec(
@@ -189,7 +189,7 @@ class FiveTOTA(BaseTopology):
                     current_source="I_tail", current_fraction=0.5,
                     gm_id_low=10, gm_id_high=24, gm_id_default=18,
                     L_low=120e-9, L_high=500e-9, L_default=120e-9,
-                    Vds_estimate=0.25, Vbs=-0.3, multiplicity=2, max_per_finger=2.7e-6,
+                    Vds_estimate=0.25, Vbs=-0.3, multiplicity=2, max_per_finger=2.6e-6,
                 ),
                 # -- NMOS current mirror load (each side carries I_tail / 2) --
                 TransistorSpec(
@@ -199,7 +199,7 @@ class FiveTOTA(BaseTopology):
                     current_source="I_tail", current_fraction=0.5,
                     gm_id_low=8, gm_id_high=24, gm_id_default=18,
                     L_low=120e-9, L_high=500e-9, L_default=120e-9,
-                    Vds_estimate=0.35, multiplicity=2, max_per_finger=2.7e-6,
+                    Vds_estimate=0.35, multiplicity=2, max_per_finger=2.6e-6,
                 ),
             ],
             derived_gate_biases=[
@@ -228,7 +228,7 @@ class FiveTOTA(BaseTopology):
             params=[
                 ParamDef(
                     name="Wtail", low=0.5e-6, high=200e-6,
-                    log_scale=True, unit="m", max_per_finger=2.7e-6,
+                    log_scale=True, unit="m", max_per_finger=2.6e-6,
                 ),
                 ParamDef(
                     name="Ltail", low=30e-9, high=900e-9,
@@ -236,7 +236,7 @@ class FiveTOTA(BaseTopology):
                 ),
                 ParamDef(
                     name="Wdp", low=0.5e-6, high=200e-6,
-                    log_scale=True, unit="m", max_per_finger=2.7e-6,
+                    log_scale=True, unit="m", max_per_finger=2.6e-6,
                 ),
                 ParamDef(
                     name="Ldp", low=30e-9, high=900e-9,
@@ -244,7 +244,7 @@ class FiveTOTA(BaseTopology):
                 ),
                 ParamDef(
                     name="Wcm", low=0.5e-6, high=200e-6,
-                    log_scale=True, unit="m", max_per_finger=2.7e-6,
+                    log_scale=True, unit="m", max_per_finger=2.6e-6,
                 ),
                 ParamDef(
                     name="Lcm", low=30e-9, high=900e-9,
@@ -308,7 +308,7 @@ CLload (vout 0) capacitor c=CL
 
 // Analyses
 tempOption options temp=27
-outOpts options rawfmt=psfascii
+outOpts options rawfmt=psfascii soft_bin=allmodels
 op1 dc oppoint=rawfile
 opInfo info what=oppoint where=rawfile
 ac1 ac start=1 stop=10G dec=20
@@ -336,7 +336,7 @@ Xdut (vinp vinn vout vbias vdd vss) ota_5t
 CLload (vout 0) capacitor c=CL
 
 tempOption options temp=27
-outOpts options rawfmt=psfascii
+outOpts options rawfmt=psfascii soft_bin=allmodels
 srTran tran stop=120n maxstep=10p
 
 save vinp vout
@@ -361,7 +361,7 @@ Xdut (vinp vinn vout vbias vdd vss) ota_5t
 CLload (vout 0) capacitor c=CL
 
 tempOption options temp=27
-outOpts options rawfmt=psfascii
+outOpts options rawfmt=psfascii soft_bin=allmodels
 stTran tran stop=120n maxstep=10p
 
 save vinp vout

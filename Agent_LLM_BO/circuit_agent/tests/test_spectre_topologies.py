@@ -47,6 +47,7 @@ class SpectreTopologyTest(unittest.TestCase):
                 )
                 ac_testbench = ac_file.read_text(encoding="utf-8")
                 self.assertIn("outOpts options rawfmt=psfascii", ac_testbench)
+                self.assertIn("soft_bin=allmodels", ac_testbench)
                 self.assertIn("VCMsrc (vcm 0) vsource type=dc dc=VCM", ac_testbench)
                 self.assertIn("VIPsrc (vinp vcm) vsource type=dc dc=0 mag=1", ac_testbench)
                 self.assertIn("Rfb (vout vinn) resistor r=1G", ac_testbench)

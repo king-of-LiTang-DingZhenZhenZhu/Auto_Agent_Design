@@ -28,8 +28,8 @@ class Settings(BaseSettings):
 
     vdd: float = 0.9
     min_l: float = 120e-9  # PDK nch.3/pch.3 lmin≈108nm + margin → 120nm
-    max_width_per_finger: float = 2.7e-6  # PDK wmax=2.7um per finger
-    min_width_per_finger: float = 0.2e-6  # PDK wmin≈1.35um + margin → 1.5um
+    max_width_per_finger: float = 2.6e-6  # Guard-banded below PDK wmax≈2.7um
+    min_width_per_finger: float = 0.2e-6
     w_l_grid_step: float = 1e-8  # W/L 参数网格步长 (10nm)，输出网表时自动取整
     nmos_model: str = "nch_mac"
     pmos_model: str = "pch_mac"

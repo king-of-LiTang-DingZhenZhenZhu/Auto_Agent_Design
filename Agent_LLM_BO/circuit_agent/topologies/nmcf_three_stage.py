@@ -296,7 +296,7 @@ class NMCFThreeStageOTA(BaseTopology):
             params=[
                 ParamDef(
                     name="Wtail1", low=0.5e-6, high=200e-6,
-                    log_scale=True, unit="m", max_per_finger=2.7e-6,
+                    log_scale=True, unit="m", max_per_finger=2.6e-6,
                 ),
                 ParamDef(
                     name="Ltail1", low=30e-9, high=900e-9,
@@ -304,7 +304,7 @@ class NMCFThreeStageOTA(BaseTopology):
                 ),
                 ParamDef(
                     name="Wdiff1", low=0.5e-6, high=200e-6,
-                    log_scale=True, unit="m", max_per_finger=2.7e-6,
+                    log_scale=True, unit="m", max_per_finger=2.6e-6,
                 ),
                 ParamDef(
                     name="Ldiff1", low=30e-9, high=900e-9,
@@ -312,7 +312,7 @@ class NMCFThreeStageOTA(BaseTopology):
                 ),
                 ParamDef(
                     name="Wload1", low=0.5e-6, high=200e-6,
-                    log_scale=True, unit="m", max_per_finger=2.7e-6,
+                    log_scale=True, unit="m", max_per_finger=2.6e-6,
                 ),
                 ParamDef(
                     name="Lload1", low=30e-9, high=900e-9,
@@ -320,7 +320,7 @@ class NMCFThreeStageOTA(BaseTopology):
                 ),
                 ParamDef(
                     name="Wgm2", low=0.5e-6, high=200e-6,
-                    log_scale=True, unit="m", max_per_finger=2.7e-6,
+                    log_scale=True, unit="m", max_per_finger=2.6e-6,
                 ),
                 ParamDef(
                     name="Lgm2", low=30e-9, high=900e-9,
@@ -328,7 +328,7 @@ class NMCFThreeStageOTA(BaseTopology):
                 ),
                 ParamDef(
                     name="Wload2", low=0.5e-6, high=200e-6,
-                    log_scale=True, unit="m", max_per_finger=2.7e-6,
+                    log_scale=True, unit="m", max_per_finger=2.6e-6,
                 ),
                 ParamDef(
                     name="Lload2", low=30e-9, high=900e-9,
@@ -336,7 +336,7 @@ class NMCFThreeStageOTA(BaseTopology):
                 ),
                 ParamDef(
                     name="Wgm3", low=0.5e-6, high=200e-6,
-                    log_scale=True, unit="m", max_per_finger=2.7e-6,
+                    log_scale=True, unit="m", max_per_finger=2.6e-6,
                 ),
                 ParamDef(
                     name="Lgm3", low=30e-9, high=900e-9,
@@ -344,7 +344,7 @@ class NMCFThreeStageOTA(BaseTopology):
                 ),
                 ParamDef(
                     name="Wload3", low=0.5e-6, high=200e-6,
-                    log_scale=True, unit="m", max_per_finger=2.7e-6,
+                    log_scale=True, unit="m", max_per_finger=2.6e-6,
                 ),
                 ParamDef(
                     name="Lload3", low=30e-9, high=900e-9,
@@ -352,7 +352,7 @@ class NMCFThreeStageOTA(BaseTopology):
                 ),
                 ParamDef(
                     name="Wbiasn", low=0.5e-6, high=200e-6,
-                    log_scale=True, unit="m", max_per_finger=2.7e-6,
+                    log_scale=True, unit="m", max_per_finger=2.6e-6,
                 ),
                 ParamDef(
                     name="Lbiasn", low=30e-9, high=900e-9,
@@ -360,7 +360,7 @@ class NMCFThreeStageOTA(BaseTopology):
                 ),
                 ParamDef(
                     name="Wbiasp", low=0.5e-6, high=200e-6,
-                    log_scale=True, unit="m", max_per_finger=2.7e-6,
+                    log_scale=True, unit="m", max_per_finger=2.6e-6,
                 ),
                 ParamDef(
                     name="Lbiasp", low=30e-9, high=900e-9,
@@ -441,7 +441,7 @@ Xdut (vinp vinn vout ibias vdd vss) nmcf_three_stage
 CLload (vout 0) capacitor c=CL
 
 tempOption options temp=27
-outOpts options rawfmt=psfascii
+outOpts options rawfmt=psfascii soft_bin=allmodels
 op1 dc oppoint=rawfile
 opInfo info what=oppoint where=rawfile
 ac1 ac start=1 stop=20G dec=20
@@ -469,7 +469,7 @@ Xdut (vinp vin vout ibias vdd vss) nmcf_three_stage
 CLload (vout 0) capacitor c=CL
 
 tempOption options temp=27
-outOpts options rawfmt=psfascii
+outOpts options rawfmt=psfascii soft_bin=allmodels
 srTran tran stop=120n maxstep=10p
 
 save vinp vout
@@ -494,7 +494,7 @@ Xdut (vinp vin vout ibias vdd vss) nmcf_three_stage
 CLload (vout 0) capacitor c=CL
 
 tempOption options temp=27
-outOpts options rawfmt=psfascii
+outOpts options rawfmt=psfascii soft_bin=allmodels
 stTran tran stop=120n maxstep=10p
 
 save vinp vout

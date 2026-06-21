@@ -1,7 +1,10 @@
 import csv
+import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from config import Settings
 from models import ParamDef, SimResult
@@ -16,6 +19,7 @@ from review_optimization import (
     simulate_candidate,
     write_candidate_metrics,
     write_local_agent_review_package,
+    main as review_main,
 )
 from topologies import get_topology
 
@@ -104,16 +108,16 @@ class ReviewOptimizationTests(unittest.TestCase):
 
     def test_parse_parameters_and_inflate_rendered_widths(self):
         netlist = """
-parameters Wtail=1u Ltail=120n Wload=2.7u Cc=1p Rz=1k
+parameters Wtail=1u Ltail=120n Wload=2.6u Cc=1p Rz=1k
 Mtail ntail vbias vss vss nch_lvt_mac w=1u l=120n nf=2
-Mload vout vbias vss vss nch_lvt_mac w=2.7u l=120n nf=4
+Mload vout vbias vss vss nch_lvt_mac w=2.6u l=120n nf=4
 """
         params = parse_parameter_values(netlist)
         inflated = inflate_width_params_from_instances(netlist, params)
 
-        self.assertAlmostEqual(params["Wload"], 2.7e-6)
+        self.assertAlmostEqual(params["Wload"], 2.6e-6)
         self.assertAlmostEqual(inflated["Wtail"], 2e-6)
-        self.assertAlmostEqual(inflated["Wload"], 10.8e-6)
+        self.assertAlmostEqual(inflated["Wload"], 10.4e-6)
         self.assertAlmostEqual(params["Cc"], 1e-12)
         self.assertAlmostEqual(params["Rz"], 1e3)
 
@@ -252,6 +256,89 @@ ends dut
             self.assertIn("Optimization Metrics CSV", context)
             self.assertIn("W1", context)
             self.assertIn('"iteration": 1', plan)
+
+    def test_patch_plan_run_preserves_agent_context_and_plan(self):
+        template = """
+simulator lang=spectre
+parameters W1=5u L1=120n Cc=1p
+subckt dut vip vin vout vdd vss
+M1 vout vip vss vss nch_lvt_mac w=W1 l=L1 nf=1
+Cc1 vout vss capacitor c=Cc
+ends dut
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = root / "outputs" / "proj"
+            workspace = root / "workspace"
+            review_root = project / "agent_review"
+            run_dir = workspace / "run_000"
+            run_dir.mkdir(parents=True)
+            review_root.mkdir(parents=True)
+            (workspace / "circuit_template.cir").write_text(template, encoding="utf-8")
+            (run_dir / "circuit.cir").write_text(template, encoding="utf-8")
+            (run_dir / "tb.scs").write_text("include \"circuit.cir\"\n", encoding="utf-8")
+            (project / "optimization_log.json").write_text(
+                json.dumps(
+                    {
+                        "targets": {"gain_db": 60},
+                        "history": [
+                            {
+                                "iteration": 0,
+                                "reward": 1.0,
+                                "result": {"gain_db": 40},
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            context_path = review_root / "agent_context.md"
+            plan_path = review_root / "patch_plan.json"
+            context_path.write_text("keep this context", encoding="utf-8")
+            plan_path.write_text(
+                json.dumps(
+                    {
+                        "summary": "increase cap",
+                        "candidates": [
+                            {
+                                "iteration": 0,
+                                "reason": "test",
+                                "actions": [
+                                    {
+                                        "param": "Cc",
+                                        "operation": "scale",
+                                        "factor": 1.2,
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            argv = [
+                "review_optimization.py",
+                "--project",
+                str(project),
+                "--workspace",
+                str(workspace),
+                "--topology",
+                "5t_ota",
+                "--patch-plan",
+                str(plan_path),
+                "--dry-run",
+            ]
+            with patch.object(sys, "argv", argv):
+                review_main()
+
+            self.assertEqual(context_path.read_text(encoding="utf-8"), "keep this context")
+            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            self.assertEqual(plan["summary"], "increase cap")
+            self.assertTrue((review_root / "candidate_metrics.csv").exists())
+            self.assertTrue(
+                (review_root / "candidates" / "iter_000_candidate_01" / "circuit.cir").exists()
+            )
 
 
 if __name__ == "__main__":
