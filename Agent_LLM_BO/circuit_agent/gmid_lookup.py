@@ -658,7 +658,15 @@ class GmidSizer:
             gm_id_key = f"gm_id_{ts.role}"
             L_key = f"L_{ts.role}"
             gm_id_val = gmid_params.get(gm_id_key, ts.gm_id_default)
-            L_val = gmid_params.get(L_key, ts.L_default)
+            if ts.l_param in result:
+                L_val = result[ts.l_param]
+            elif (
+                ts.l_param in self._spec.derived_length_params
+                and self._spec.derived_length_params[ts.l_param] in result
+            ):
+                L_val = result[self._spec.derived_length_params[ts.l_param]]
+            else:
+                L_val = gmid_params.get(L_key, ts.L_default)
 
             # Compute W via lookup
             cache_key = (ts.role, round(gm_id_val, 4), round(L_val, 15), round(Id_target, 15))
@@ -719,11 +727,15 @@ class GmidSizer:
                 output_l = length_by_role[mirror.reference_role]
             else:
                 output_l = gmid_params.get(f"L_{out.role}", out.L_default)
-                output_l = max(output_l, 120e-9)
+                output_l = min(max(output_l, out.L_low), out.L_high)
 
             total_width_by_role[out.role] = output_total_w
             length_by_role[out.role] = output_l
             self._write_sized_device(result, out, output_total_w, output_l)
+
+        for derived_param, source_param in self._spec.derived_length_params.items():
+            if source_param in result:
+                result[derived_param] = result[source_param]
 
         # Step 5: Derive voltage biases from lookup operating points.
         for bias in self._spec.derived_gate_biases:
@@ -772,21 +784,18 @@ class GmidSizer:
         total_width: float,
         length: float,
     ) -> None:
-        """Write W-per-finger, nf, and L for one sized transistor/group."""
+        """Write W-per-finger, nf, m, and L for one sized transistor/group."""
+        from models import split_width
+
         total_width = max(total_width, 200e-9)
-        length = max(length, 120e-9)
+        length = min(max(length, transistor.L_low), transistor.L_high)
         max_per_finger = (
             transistor.max_per_finger if transistor.max_per_finger else 2.6e-6
         )
-        if total_width > max_per_finger:
-            import math
-            nf = int(math.ceil(total_width / max_per_finger))
-            w_per_finger = total_width / nf
-        else:
-            nf = 1
-            w_per_finger = total_width
+        w_per_finger, nf, m = split_width(total_width, max_per_finger)
         result[transistor.w_param] = w_per_finger
         result[f"nf_{transistor.w_param}"] = nf
+        result[f"m_{transistor.w_param}"] = m
         result[transistor.l_param] = length
 
     def get_initial_gmid_params(self, netlist_content: str = "") -> dict[str, float]:
@@ -818,7 +827,8 @@ class GmidSizer:
             if ts.role in mirror_output_roles:
                 continue
             params[f"gm_id_{ts.role}"] = ts.gm_id_default
-            params[f"L_{ts.role}"] = ts.L_default
+            if ts.l_param not in self._spec.derived_length_params:
+                params[f"L_{ts.role}"] = ts.L_default
 
         for mirror in self._spec.current_mirrors:
             params[mirror.ratio_param] = mirror.ratio_default

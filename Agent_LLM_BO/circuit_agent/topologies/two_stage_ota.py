@@ -71,7 +71,6 @@ class TwoStageOTA(BaseTopology):
         "Lmirr": 100e-9,
         # Second stage — PMOS common-source
         "Wcs": 20e-6,
-        "Lcs": 100e-9,
         # Second stage — NMOS current-source load
         "Wload": 10e-6,
         "Lload": 200e-9,
@@ -97,7 +96,6 @@ class TwoStageOTA(BaseTopology):
             Wmirr=_fmt(p["Wmirr"]),
             Lmirr=_fmt(p["Lmirr"]),
             Wcs=_fmt(p["Wcs"]),
-            Lcs=_fmt(p["Lcs"]),
             Wload=_fmt(p["Wload"]),
             Lload=_fmt(p["Lload"]),
             Cc=_fmt(p["Cc"]),
@@ -238,7 +236,7 @@ class TwoStageOTA(BaseTopology):
                     model="nch_mac",
                     current_source="I_tail", current_fraction=1.0,
                     gm_id_low=8, gm_id_high=15, gm_id_default=10,
-                    L_low=300e-9, L_high=900e-9, L_default=200e-9,
+                    L_low=200e-9, L_high=600e-9, L_default=200e-9,
                     Vds_estimate=0.2,
                 ),
                 # -- First stage: NMOS diff pair (each I_tail/2) --
@@ -264,11 +262,11 @@ class TwoStageOTA(BaseTopology):
                 # -- Second stage: PMOS common-source amplifier --
                 TransistorSpec(
                     role="cs_pmos",
-                    w_param="Wcs", l_param="Lcs",
+                    w_param="Wcs", l_param="Lload",
                     model="pch_mac",
                     current_source="I_cs", current_fraction=1.0,
                     gm_id_low=8, gm_id_high=15, gm_id_default=12,
-                    L_low=120e-9, L_high=900e-9, L_default=200e-9,
+                    L_low=200e-9, L_high=600e-9, L_default=200e-9,
                     Vds_estimate=0.45,
                 ),
                 # -- Second stage: NMOS current-source load --
@@ -278,7 +276,7 @@ class TwoStageOTA(BaseTopology):
                     model="nch_mac",
                     current_source="I_cs", current_fraction=1.0,
                     gm_id_low=8, gm_id_high=15, gm_id_default=10,
-                    L_low=300e-9, L_high=900e-9, L_default=200e-9,
+                    L_low=200e-9, L_high=600e-9, L_default=200e-9,
                     Vds_estimate=0.4,
                 ),
             ],
@@ -314,6 +312,7 @@ class TwoStageOTA(BaseTopology):
                     high=0.95,
                 ),
             ],
+            derived_length_params={"Lload": "Ltail"},
         )
 
     # ------------------------------------------------------------------
@@ -334,7 +333,7 @@ class TwoStageOTA(BaseTopology):
                     log_scale=True, unit="m", max_per_finger=2.6e-6,
                 ),
                 ParamDef(
-                    name="Ltail", low=30e-9, high=900e-9,
+                    name="Ltail", low=200e-9, high=600e-9,
                     log_scale=True, unit="m",
                 ),
                 # --- First stage: diff pair ---
@@ -360,17 +359,13 @@ class TwoStageOTA(BaseTopology):
                     name="Wcs", low=0.5e-6, high=200e-6,
                     log_scale=True, unit="m", max_per_finger=2.6e-6,
                 ),
-                ParamDef(
-                    name="Lcs", low=30e-9, high=900e-9,
-                    log_scale=True, unit="m",
-                ),
                 # --- Second stage: NMOS load ---
                 ParamDef(
                     name="Wload", low=0.5e-6, high=200e-6,
                     log_scale=True, unit="m", max_per_finger=2.6e-6,
                 ),
                 ParamDef(
-                    name="Lload", low=30e-9, high=900e-9,
+                    name="Lload", low=200e-9, high=600e-9,
                     log_scale=True, unit="m",
                 ),
                 # --- Compensation ---
@@ -402,7 +397,7 @@ simulator lang=spectre insensitive=yes
 include "/PDKS/TSMC28nm/models/spectre/toplevel.scs" section=top_tt
 
 parameters Wtail={Wtail} Ltail={Ltail} Wdiff={Wdiff} Ldiff={Ldiff}
-parameters Wmirr={Wmirr} Lmirr={Lmirr} Wcs={Wcs} Lcs={Lcs}
+parameters Wmirr={Wmirr} Lmirr={Lmirr} Wcs={Wcs}
 parameters Wload={Wload} Lload={Lload} Cc={Cc} Rz={Rz}
 
 subckt two_stage_ota (vip vin vout vb vdd vss)
@@ -415,7 +410,7 @@ Mmirr2 (n_s1 n_mirr vdd vdd) pch_mac w=Wmirr l=Lmirr nf=1
 // First stage: NMOS tail current source
 Mtail (n_tail vb vss vss) nch_mac w=Wtail l=Ltail nf=1
 // Second stage
-Mcs (vout n_s1 vdd vdd) pch_mac w=Wcs l=Lcs nf=1
+Mcs (vout n_s1 vdd vdd) pch_mac w=Wcs l=Lload nf=1
 Mload (vout vb vss vss) nch_mac w=Wload l=Lload nf=1
 // Miller compensation
 Rz (n_s1 n_rz) resistor r=Rz

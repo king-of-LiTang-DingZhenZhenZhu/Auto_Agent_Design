@@ -105,7 +105,6 @@ class FoldedCascodeOTA(BaseTopology):
         "Lcasp": 120e-9,
         # Second-stage PMOS common-source amplifier
         "Wcs": 30e-6,
-        "Lcs": 120e-9,
         # Second-stage NMOS current-source load
         "Wload": 15e-6,
         "Lload": 200e-9,
@@ -143,7 +142,6 @@ class FoldedCascodeOTA(BaseTopology):
             Wcasp=_fmt(p["Wcasp"]),
             Lcasp=_fmt(p["Lcasp"]),
             Wcs=_fmt(p["Wcs"]),
-            Lcs=_fmt(p["Lcs"]),
             Wload=_fmt(p["Wload"]),
             Lload=_fmt(p["Lload"]),
             Wbp_big=_fmt(p["Wbp_big"]),
@@ -222,7 +220,7 @@ class FoldedCascodeOTA(BaseTopology):
                     log_scale=True, unit="m", max_per_finger=2.6e-6,
                 ),
                 ParamDef(
-                    name="Ltailp", low=30e-9, high=900e-9,
+                    name="Ltailp", low=200e-9, high=600e-9,
                     log_scale=True, unit="m",
                 ),
                 ParamDef(
@@ -238,7 +236,7 @@ class FoldedCascodeOTA(BaseTopology):
                     log_scale=True, unit="m", max_per_finger=2.6e-6,
                 ),
                 ParamDef(
-                    name="Lfoldn", low=30e-9, high=900e-9,
+                    name="Lfoldn", low=200e-9, high=600e-9,
                     log_scale=True, unit="m",
                 ),
                 ParamDef(
@@ -270,15 +268,11 @@ class FoldedCascodeOTA(BaseTopology):
                     log_scale=True, unit="m", max_per_finger=2.6e-6,
                 ),
                 ParamDef(
-                    name="Lcs", low=30e-9, high=900e-9,
-                    log_scale=True, unit="m",
-                ),
-                ParamDef(
                     name="Wload", low=0.5e-6, high=200e-6,
                     log_scale=True, unit="m", max_per_finger=2.6e-6,
                 ),
                 ParamDef(
-                    name="Lload", low=30e-9, high=900e-9,
+                    name="Lload", low=200e-9, high=600e-9,
                     log_scale=True, unit="m",
                 ),
                 # --- Internal bias generator ---
@@ -377,7 +371,7 @@ class FoldedCascodeOTA(BaseTopology):
                     model="pch_mac",
                     current_source="I_tail", current_fraction=1.0,
                     gm_id_low=5, gm_id_high=20, gm_id_default=8,
-                    L_low=100e-9, L_high=900e-9, L_default=200e-9,
+                    L_low=200e-9, L_high=600e-9, L_default=200e-9,
                     Vds_estimate=0.2,
                 ),
                 # -- PMOS diff pair (each side carries I_tail / 2) --
@@ -397,7 +391,7 @@ class FoldedCascodeOTA(BaseTopology):
                     model="nch_mac",
                     current_source="I_fold", current_fraction=1.0,
                     gm_id_low=8, gm_id_high=22, gm_id_default=12,
-                    L_low=100e-9, L_high=900e-9, L_default=200e-9,
+                    L_low=200e-9, L_high=600e-9, L_default=200e-9,
                     Vds_estimate=0.25, multiplicity=2,
                 ),
                 # -- NMOS common-gate cascode devices --
@@ -430,16 +424,6 @@ class FoldedCascodeOTA(BaseTopology):
                     L_low=80e-9, L_high=500e-9, L_default=120e-9,
                     Vds_estimate=0.3, Vbs=-0.3, multiplicity=2,
                 ),
-                # -- Second-stage PMOS common-source amplifier --
-                TransistorSpec(
-                    role="cs_pmos",
-                    w_param="Wcs", l_param="Lcs",
-                    model="pch_mac",
-                    current_source="I_cs", current_fraction=1.0,
-                    gm_id_low=8, gm_id_high=22, gm_id_default=12,
-                    L_low=60e-9, L_high=300e-9, L_default=120e-9,
-                    Vds_estimate=0.6,
-                ),
                 # -- Second-stage NMOS current-source load --
                 TransistorSpec(
                     role="load_nmos",
@@ -447,8 +431,18 @@ class FoldedCascodeOTA(BaseTopology):
                     model="nch_mac",
                     current_source="I_cs", current_fraction=1.0,
                     gm_id_low=5, gm_id_high=20, gm_id_default=8,
-                    L_low=100e-9, L_high=900e-9, L_default=200e-9,
+                    L_low=200e-9, L_high=600e-9, L_default=200e-9,
                     Vds_estimate=0.4,
+                ),
+                # -- Second-stage PMOS common-source amplifier --
+                TransistorSpec(
+                    role="cs_pmos",
+                    w_param="Wcs", l_param="Lload",
+                    model="pch_mac",
+                    current_source="I_cs", current_fraction=1.0,
+                    gm_id_low=8, gm_id_high=22, gm_id_default=12,
+                    L_low=200e-9, L_high=600e-9, L_default=200e-9,
+                    Vds_estimate=0.6,
                 ),
             ],
             pass_through_params=[
@@ -473,7 +467,7 @@ include "/PDKS/TSMC28nm/models/spectre/toplevel.scs" section=top_tt
 parameters Wtailp={Wtailp} Ltailp={Ltailp} Wdiffp={Wdiffp} Ldiffp={Ldiffp}
 parameters Wfoldn={Wfoldn} Lfoldn={Lfoldn} Wcasn={Wcasn} Lcasn={Lcasn}
 parameters Wmirrp={Wmirrp} Lmirrp={Lmirrp} Wcasp={Wcasp} Lcasp={Lcasp}
-parameters Wcs={Wcs} Lcs={Lcs} Wload={Wload} Lload={Lload}
+parameters Wcs={Wcs} Wload={Wload} Lload={Lload}
 parameters Wbp_big={Wbp_big} Lbp_big={Lbp_big} Wbp_small={Wbp_small} Lbp_small={Lbp_small}
 parameters Wbn_big={Wbn_big} Lbn_big={Lbn_big} Wbn_small={Wbn_small} Lbn_small={Lbn_small}
 parameters Cc={Cc} Rz={Rz}
@@ -512,7 +506,7 @@ Mcasp1 (pmirr VB2 npm_l vdd) pch_lvt_mac w=Wcasp l=Lcasp nf=1
 Mcasp2 (nstage1 VB2 npm_r vdd) pch_lvt_mac w=Wcasp l=Lcasp nf=1
 
 // Second stage and Miller compensation
-Mcs (vout nstage1 vdd vdd) pch_lvt_mac w=Wcs l=Lcs nf=1
+Mcs (vout nstage1 vdd vdd) pch_lvt_mac w=Wcs l=Lload nf=1
 Mload (vout VB4 vss vss) nch_lvt_mac w=Wload l=Lload nf=1
 Rz (nstage1 n_rz) resistor r=Rz
 Cc (n_rz vout) capacitor c=Cc

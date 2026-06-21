@@ -110,14 +110,14 @@ class ReviewOptimizationTests(unittest.TestCase):
         netlist = """
 parameters Wtail=1u Ltail=120n Wload=2.6u Cc=1p Rz=1k
 Mtail ntail vbias vss vss nch_lvt_mac w=1u l=120n nf=2
-Mload vout vbias vss vss nch_lvt_mac w=2.6u l=120n nf=4
+Mload vout vbias vss vss nch_lvt_mac w=2.6u l=120n nf=4 m=3
 """
         params = parse_parameter_values(netlist)
         inflated = inflate_width_params_from_instances(netlist, params)
 
         self.assertAlmostEqual(params["Wload"], 2.6e-6)
         self.assertAlmostEqual(inflated["Wtail"], 2e-6)
-        self.assertAlmostEqual(inflated["Wload"], 10.4e-6)
+        self.assertAlmostEqual(inflated["Wload"], 31.2e-6)
         self.assertAlmostEqual(params["Cc"], 1e-12)
         self.assertAlmostEqual(params["Rz"], 1e3)
 

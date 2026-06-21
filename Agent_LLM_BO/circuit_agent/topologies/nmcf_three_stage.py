@@ -208,7 +208,7 @@ class NMCFThreeStageOTA(BaseTopology):
                     model="pch_mac",
                     current_source="I_tail1", current_fraction=1.0,
                     gm_id_low=5, gm_id_high=20, gm_id_default=8,
-                    L_low=100e-9, L_high=900e-9, L_default=200e-9,
+                    L_low=200e-9, L_high=600e-9, L_default=200e-9,
                     Vds_estimate=0.2,
                 ),
                 # -- Stage 1: PMOS diff pair (each I_tail1/2) --
@@ -228,7 +228,7 @@ class NMCFThreeStageOTA(BaseTopology):
                     model="nch_mac",
                     current_source="I_tail1", current_fraction=0.5,
                     gm_id_low=8, gm_id_high=24, gm_id_default=12,
-                    L_low=60e-9, L_high=500e-9, L_default=100e-9,
+                    L_low=200e-9, L_high=600e-9, L_default=200e-9,
                     Vds_estimate=0.3, multiplicity=2,
                 ),
                 # -- Stage 2: NMOS common-source gain stage (gate=s1_out) --
@@ -248,7 +248,7 @@ class NMCFThreeStageOTA(BaseTopology):
                     model="pch_mac",
                     current_source="I_s2", current_fraction=1.0,
                     gm_id_low=5, gm_id_high=20, gm_id_default=8,
-                    L_low=100e-9, L_high=900e-9, L_default=120e-9,
+                    L_low=200e-9, L_high=600e-9, L_default=200e-9,
                     Vds_estimate=0.4,
                 ),
                 # -- Stage 3: PMOS common-source output (gate=s2_out) --
@@ -268,7 +268,7 @@ class NMCFThreeStageOTA(BaseTopology):
                     model="nch_mac",
                     current_source="I_s3", current_fraction=1.0,
                     gm_id_low=5, gm_id_high=20, gm_id_default=8,
-                    L_low=100e-9, L_high=900e-9, L_default=180e-9,
+                    L_low=200e-9, L_high=600e-9, L_default=200e-9,
                     Vds_estimate=0.35,
                 ),
             ],
@@ -299,7 +299,7 @@ class NMCFThreeStageOTA(BaseTopology):
                     log_scale=True, unit="m", max_per_finger=2.6e-6,
                 ),
                 ParamDef(
-                    name="Ltail1", low=30e-9, high=900e-9,
+                    name="Ltail1", low=200e-9, high=600e-9,
                     log_scale=True, unit="m",
                 ),
                 ParamDef(
@@ -315,7 +315,7 @@ class NMCFThreeStageOTA(BaseTopology):
                     log_scale=True, unit="m", max_per_finger=2.6e-6,
                 ),
                 ParamDef(
-                    name="Lload1", low=30e-9, high=900e-9,
+                    name="Lload1", low=200e-9, high=600e-9,
                     log_scale=True, unit="m",
                 ),
                 ParamDef(
@@ -331,7 +331,7 @@ class NMCFThreeStageOTA(BaseTopology):
                     log_scale=True, unit="m", max_per_finger=2.6e-6,
                 ),
                 ParamDef(
-                    name="Lload2", low=30e-9, high=900e-9,
+                    name="Lload2", low=200e-9, high=600e-9,
                     log_scale=True, unit="m",
                 ),
                 ParamDef(
@@ -347,7 +347,7 @@ class NMCFThreeStageOTA(BaseTopology):
                     log_scale=True, unit="m", max_per_finger=2.6e-6,
                 ),
                 ParamDef(
-                    name="Lload3", low=30e-9, high=900e-9,
+                    name="Lload3", low=200e-9, high=600e-9,
                     log_scale=True, unit="m",
                 ),
                 ParamDef(

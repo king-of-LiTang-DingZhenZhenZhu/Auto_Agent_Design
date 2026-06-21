@@ -7,6 +7,36 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+MAX_NF_PER_DEVICE = 32
+
+
+def split_width(
+    total_width: float,
+    max_per_finger: float,
+    max_nf: int = MAX_NF_PER_DEVICE,
+) -> tuple[float, int, int]:
+    """Split total MOS width into per-finger W, nf, and m.
+
+    The first 32-way split uses ``nf``. Wider devices use ``m`` as a
+    parallel multiplier while keeping ``nf <= max_nf``.
+    """
+    if total_width <= 0:
+        raise ValueError(f"total_width must be positive, got {total_width}")
+    if max_per_finger <= 0:
+        raise ValueError(
+            f"max_per_finger must be positive, got {max_per_finger}"
+        )
+
+    nf_needed = max(1, int(math.ceil(total_width / max_per_finger)))
+    if nf_needed <= max_nf:
+        nf = nf_needed
+        m = 1
+    else:
+        m = int(math.ceil(nf_needed / max_nf))
+        nf = int(math.ceil(nf_needed / m))
+    w_per_finger = total_width / (nf * m)
+    return w_per_finger, nf, m
+
 
 # ======================================================================
 # gm/Id-based transistor sizing models (universal across all topologies)
@@ -158,6 +188,7 @@ class GmidTopologySpec:
     pass_through_params: list[ParamDef] = field(default_factory=list)
     derived_gate_biases: list[DerivedGateBiasSpec] = field(default_factory=list)
     current_mirrors: list[CurrentMirrorRatioSpec] = field(default_factory=list)
+    derived_length_params: dict[str, str] = field(default_factory=dict)
 
     def build_param_space(self) -> "ParamSpace":
         """Convert the gm/Id spec into a :class:`ParamSpace` for BO.
@@ -189,7 +220,10 @@ class GmidTopologySpec:
             ))
             # L param — deduplicate when multiple transistors share the
             # same l_param name (e.g. diff pair both use "Ldp")
-            if ts.l_param not in seen_L:
+            if (
+                ts.l_param not in self.derived_length_params
+                and ts.l_param not in seen_L
+            ):
                 seen_L.add(ts.l_param)
                 params.append(ParamDef(
                     name=f"L_{ts.role}",
@@ -417,10 +451,10 @@ class ParamSpace:
         raw_params: dict[str, float],
         global_max_per_finger: float | None = None,
     ) -> dict[str, float]:
-        """Split wide transistor parameters into (W_finger, nf) pairs.
+        """Split wide transistor parameters into (W_finger, nf, m) tuples.
 
-        Example: {Wtail: 12u} -> {Wtail: 3u, nf_Wtail: 4}
-                 {Wdp: 2u}    -> {Wdp: 2u, nf_Wdp: 1}
+        Example: {Wtail: 12u} -> {Wtail: 2.4u, nf_Wtail: 5, m_Wtail: 1}
+                 very wide W  -> {Wtail: W/(nf*m), nf_Wtail <= 32, m_Wtail > 1}
         """
         resolved = dict(raw_params)
         for p in self.params:
@@ -432,12 +466,15 @@ class ParamSpace:
             if p.name not in raw_params:
                 continue
             total_w = raw_params[p.name]
-            if total_w > p.max_per_finger:
-                nf = int(math.ceil(total_w / p.max_per_finger))
-                resolved[p.name] = total_w / nf
-            else:
-                nf = 1
+            max_per_finger = (
+                global_max_per_finger
+                if global_max_per_finger is not None
+                else p.max_per_finger
+            )
+            w_per_finger, nf, m = split_width(total_w, max_per_finger)
+            resolved[p.name] = w_per_finger
             resolved[f"nf_{p.name}"] = nf
+            resolved[f"m_{p.name}"] = m
         return resolved
 
     @classmethod
@@ -701,7 +738,7 @@ class NetlistTemplate:
 
         content = self.template_content
 
-        # Phase 1: substitute .param/parameters values for non-nf parameters.
+        # Phase 1: substitute .param/parameters values for physical parameters.
         # Only match parameter declaration lines to avoid corrupting instances.
         lines = content.split("\n")
         for i, line in enumerate(lines):
@@ -712,7 +749,7 @@ class NetlistTemplate:
             ):
                 continue
             for name, value in resolved.items():
-                if name.startswith("nf_"):
+                if name.startswith(("nf_", "m_")):
                     continue
                 if w_l_grid_step:
                     value = _quantize_wl(name, value, w_l_grid_step)
@@ -722,7 +759,7 @@ class NetlistTemplate:
             lines[i] = line
         content = "\n".join(lines)
 
-        # Phase 2: inject nf values on transistor lines
+        # Phase 2: inject nf/m values on transistor lines.
         for name, value in resolved.items():
             if not name.startswith("nf_"):
                 continue
@@ -740,12 +777,48 @@ class NetlistTemplate:
                 line_pattern, line_replacement, content, flags=re.IGNORECASE
             )
 
+        for name, value in resolved.items():
+            if not name.startswith("m_"):
+                continue
+            wname = name[2:]  # m_Wtail → Wtail
+            m_int = int(value)
+
+            # Substitute param m_Wxx if present in template.
+            pattern = rf"(\b{re.escape(name)}\s*=\s*)\S+"
+            content = re.sub(pattern, rf"\g<1>{m_int}", content, flags=re.IGNORECASE)
+
+            # Add or replace m on MOS lines that reference this W parameter.
+            updated_lines: list[str] = []
+            for line in content.split("\n"):
+                stripped = line.lstrip()
+                if not stripped or not stripped[0].lower() == "m":
+                    updated_lines.append(line)
+                    continue
+                if not re.search(
+                    rf"\b[wW]\s*=\s*'?{re.escape(wname)}'?\b",
+                    line,
+                    flags=re.IGNORECASE,
+                ):
+                    updated_lines.append(line)
+                    continue
+                if re.search(r"\bm\s*=", line, flags=re.IGNORECASE):
+                    line = re.sub(
+                        r"(\bm\s*=\s*)\S+",
+                        rf"\g<1>{m_int}",
+                        line,
+                        flags=re.IGNORECASE,
+                    )
+                else:
+                    line = f"{line} m={m_int}"
+                updated_lines.append(line)
+            content = "\n".join(updated_lines)
+
         # Phase 3: resolve parameter references on transistor lines
         # Spectre (HSPICE mode) may not expand 'L2' to its .param value on
         # instance lines (L='L2'), so we replace references with literal values.
         # Patterns: W='Wtail' / W=Wtail / L='Ltail' / L=Ltail
         for name, value in resolved.items():
-            if name.startswith("nf_"):
+            if name.startswith(("nf_", "m_")):
                 continue
             # Apply same W/L grid quantization as Phase 1 so that transistor-
             # line values are consistent with .param values and never round

@@ -178,7 +178,7 @@ class FiveTOTA(BaseTopology):
                     model="pch_mac",
                     current_source="I_tail", current_fraction=1.0,
                     gm_id_low=5, gm_id_high=22, gm_id_default=14,
-                    L_low=120e-9, L_high=900e-9, L_default=200e-9,
+                    L_low=200e-9, L_high=600e-9, L_default=200e-9,
                     Vds_estimate=0.2, max_per_finger=2.6e-6,
                 ),
                 # -- PMOS diff pair (each side carries I_tail / 2) --
@@ -198,7 +198,7 @@ class FiveTOTA(BaseTopology):
                     model="nch_mac",
                     current_source="I_tail", current_fraction=0.5,
                     gm_id_low=8, gm_id_high=24, gm_id_default=18,
-                    L_low=120e-9, L_high=500e-9, L_default=120e-9,
+                    L_low=200e-9, L_high=600e-9, L_default=200e-9,
                     Vds_estimate=0.35, multiplicity=2, max_per_finger=2.6e-6,
                 ),
             ],
@@ -231,7 +231,7 @@ class FiveTOTA(BaseTopology):
                     log_scale=True, unit="m", max_per_finger=2.6e-6,
                 ),
                 ParamDef(
-                    name="Ltail", low=30e-9, high=900e-9,
+                    name="Ltail", low=200e-9, high=600e-9,
                     log_scale=True, unit="m",
                 ),
                 ParamDef(
@@ -247,7 +247,7 @@ class FiveTOTA(BaseTopology):
                     log_scale=True, unit="m", max_per_finger=2.6e-6,
                 ),
                 ParamDef(
-                    name="Lcm", low=30e-9, high=900e-9,
+                    name="Lcm", low=200e-9, high=600e-9,
                     log_scale=True, unit="m",
                 ),
                 ParamDef(

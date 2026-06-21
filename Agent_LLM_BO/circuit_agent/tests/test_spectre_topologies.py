@@ -81,8 +81,37 @@ class SpectreTopologyTest(unittest.TestCase):
         )
 
         self.assertIn("parameters Wtail=2.4u Ltail=200n", rendered)
-        self.assertIn("Mtail (tail vbias vdd vdd) pch_mac w=2.4u l=200n nf=5", rendered)
+        self.assertIn("Mtail (tail vbias vdd vdd) pch_mac w=2.4u l=200n nf=5 m=1", rendered)
         self.assertNotIn("w=Wtail", rendered)
+
+    def test_wide_transistor_rendering_uses_m_after_nf_limit(self):
+        topo = get_topology("two_stage_ota")
+        circuit = topo.generate_circuit()
+        rendered = NetlistTemplate.from_netlist(circuit).render(
+            {
+                "Wtail": 100e-6,
+                "Ltail": 200e-9,
+                "Wdiff": 5e-6,
+                "Ldiff": 120e-9,
+                "Wmirr": 5e-6,
+                "Lmirr": 120e-9,
+                "Wcs": 120e-6,
+                "Wload": 110e-6,
+                "Lload": 200e-9,
+                "Cc": 1e-12,
+                "Rz": 1e3,
+            },
+            param_space=topo.get_param_space(),
+        )
+
+        self.assertRegex(
+            rendered,
+            r"Mcs .* w=2\.5u l=200n nf=24 m=2",
+        )
+        self.assertRegex(
+            rendered,
+            r"Mload .* w=2\.5u l=200n nf=22 m=2",
+        )
 
     def test_write_project_uses_target_load_cap_for_testbenches(self):
         topo = get_topology("two_stage_ota")

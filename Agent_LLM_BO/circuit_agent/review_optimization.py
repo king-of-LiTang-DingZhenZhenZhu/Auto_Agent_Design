@@ -349,7 +349,7 @@ def inflate_width_params_from_instances(
         return inflated
 
     for name, value in width_params.items():
-        max_nf = 1
+        max_multiplier = 1
         for line in netlist_text.splitlines():
             stripped = line.strip()
             if not stripped or not stripped[0].lower() == "m":
@@ -359,6 +359,7 @@ def inflate_width_params_from_instances(
                 line,
             )
             nf_match = re.search(r"\bnf\s*=\s*'?(\d+)'?", line, re.IGNORECASE)
+            m_match = re.search(r"\bm\s*=\s*'?(\d+)'?", line, re.IGNORECASE)
             if not w_match:
                 continue
             try:
@@ -366,8 +367,10 @@ def inflate_width_params_from_instances(
             except ValueError:
                 continue
             if math.isclose(instance_w, value, rel_tol=1e-6, abs_tol=1e-15):
-                max_nf = max(max_nf, int(nf_match.group(1)) if nf_match else 1)
-        inflated[name] = value * max_nf
+                nf = int(nf_match.group(1)) if nf_match else 1
+                m = int(m_match.group(1)) if m_match else 1
+                max_multiplier = max(max_multiplier, nf * m)
+        inflated[name] = value * max_multiplier
     return inflated
 
 

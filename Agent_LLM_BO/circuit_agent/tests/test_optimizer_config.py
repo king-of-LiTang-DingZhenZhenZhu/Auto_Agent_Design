@@ -79,10 +79,62 @@ class OptimizerConfigTest(unittest.TestCase):
         self.assertNotIn("I_cs", params)
         self.assertNotIn("gm_id_load_nmos", params)
         self.assertNotIn("L_load_nmos", params)
+        self.assertNotIn("L_cs_pmos", params)
         ratio = params["ratio_load_tail"]
         self.assertEqual(ratio.value_type, "int")
         self.assertEqual(ratio.low, 1)
         self.assertEqual(ratio.high, 3)
+
+    def test_current_source_and_load_lengths_are_constrained(self):
+        physical_roles = {
+            "5t_ota": ("Ltail", "Lcm"),
+            "two_stage_ota": ("Ltail", "Lload"),
+            "folded_cascode": ("Ltailp", "Lfoldn", "Lload"),
+            "nmcf_three_stage": ("Ltail1", "Lload1", "Lload2", "Lload3"),
+        }
+        gmid_roles = {
+            "5t_ota": ("tail_pmos", "mirror_nmos"),
+            "two_stage_ota": ("tail_nmos", "load_nmos"),
+            "folded_cascode": ("tail_pmos", "fold_nmos", "load_nmos"),
+            "nmcf_three_stage": (
+                "stage1_tail_pmos",
+                "stage1_load_nmos",
+                "stage2_load_pmos",
+                "stage3_load_nmos",
+            ),
+        }
+
+        for topology_name, param_names in physical_roles.items():
+            params = {
+                param.name: param
+                for param in get_topology(topology_name).get_param_space().params
+            }
+            for param_name in param_names:
+                self.assertAlmostEqual(params[param_name].low, 200e-9)
+                self.assertAlmostEqual(params[param_name].high, 600e-9)
+
+        for topology_name, roles in gmid_roles.items():
+            transistors = {
+                transistor.role: transistor
+                for transistor in get_topology(topology_name).get_gmid_spec().transistors
+            }
+            for role in roles:
+                self.assertAlmostEqual(transistors[role].L_low, 200e-9)
+                self.assertAlmostEqual(transistors[role].L_high, 600e-9)
+
+    def test_second_stage_cs_length_is_bound_to_load_length(self):
+        for topology_name in ("two_stage_ota", "folded_cascode"):
+            topology = get_topology(topology_name)
+            param_names = [param.name for param in topology.get_param_space().params]
+            circuit = topology.generate_circuit()
+            spec = topology.get_gmid_spec()
+            gmid_params = {param.name for param in spec.build_param_space().params}
+
+            self.assertNotIn("Lcs", param_names)
+            self.assertNotIn("Lcs=", circuit)
+            self.assertIn("Mcs", circuit)
+            self.assertRegex(circuit, r"Mcs .* l=Lload\b")
+            self.assertNotIn("L_cs_pmos", gmid_params)
 
     def test_two_stage_gmid_space_derives_nmos_vbias(self):
         spec = get_topology("two_stage_ota").get_gmid_spec()
