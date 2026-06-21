@@ -330,7 +330,7 @@ class TwoStageOTA(BaseTopology):
             params=[
                 # --- First stage: tail current ---
                 ParamDef(
-                    name="Wtail", low=0.5e-6, high=20e-6,
+                    name="Wtail", low=0.5e-6, high=200e-6,
                     log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
@@ -339,7 +339,7 @@ class TwoStageOTA(BaseTopology):
                 ),
                 # --- First stage: diff pair ---
                 ParamDef(
-                    name="Wdiff", low=0.5e-6, high=50e-6,
+                    name="Wdiff", low=0.5e-6, high=200e-6,
                     log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
@@ -348,7 +348,7 @@ class TwoStageOTA(BaseTopology):
                 ),
                 # --- First stage: current mirror ---
                 ParamDef(
-                    name="Wmirr", low=0.5e-6, high=50e-6,
+                    name="Wmirr", low=0.5e-6, high=200e-6,
                     log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
@@ -357,7 +357,7 @@ class TwoStageOTA(BaseTopology):
                 ),
                 # --- Second stage: PMOS CS amp ---
                 ParamDef(
-                    name="Wcs", low=0.5e-6, high=50e-6,
+                    name="Wcs", low=0.5e-6, high=200e-6,
                     log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
@@ -366,7 +366,7 @@ class TwoStageOTA(BaseTopology):
                 ),
                 # --- Second stage: NMOS load ---
                 ParamDef(
-                    name="Wload", low=0.5e-6, high=50e-6,
+                    name="Wload", low=0.5e-6, high=200e-6,
                     log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(

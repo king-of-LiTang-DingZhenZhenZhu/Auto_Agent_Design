@@ -218,7 +218,7 @@ class FoldedCascodeOTA(BaseTopology):
         return ParamSpace(
             params=[
                 ParamDef(
-                    name="Wtailp", low=0.5e-6, high=100e-6,
+                    name="Wtailp", low=0.5e-6, high=200e-6,
                     log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
@@ -226,7 +226,7 @@ class FoldedCascodeOTA(BaseTopology):
                     log_scale=True, unit="m",
                 ),
                 ParamDef(
-                    name="Wdiffp", low=0.5e-6, high=100e-6,
+                    name="Wdiffp", low=0.5e-6, high=200e-6,
                     log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
@@ -234,7 +234,7 @@ class FoldedCascodeOTA(BaseTopology):
                     log_scale=True, unit="m",
                 ),
                 ParamDef(
-                    name="Wfoldn", low=0.5e-6, high=100e-6,
+                    name="Wfoldn", low=0.5e-6, high=200e-6,
                     log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
@@ -242,7 +242,7 @@ class FoldedCascodeOTA(BaseTopology):
                     log_scale=True, unit="m",
                 ),
                 ParamDef(
-                    name="Wcasn", low=0.5e-6, high=80e-6,
+                    name="Wcasn", low=0.5e-6, high=200e-6,
                     log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
@@ -250,7 +250,7 @@ class FoldedCascodeOTA(BaseTopology):
                     log_scale=True, unit="m",
                 ),
                 ParamDef(
-                    name="Wmirrp", low=0.5e-6, high=100e-6,
+                    name="Wmirrp", low=0.5e-6, high=200e-6,
                     log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
@@ -258,7 +258,7 @@ class FoldedCascodeOTA(BaseTopology):
                     log_scale=True, unit="m",
                 ),
                 ParamDef(
-                    name="Wcasp", low=0.5e-6, high=100e-6,
+                    name="Wcasp", low=0.5e-6, high=200e-6,
                     log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
@@ -266,7 +266,7 @@ class FoldedCascodeOTA(BaseTopology):
                     log_scale=True, unit="m",
                 ),
                 ParamDef(
-                    name="Wcs", low=0.5e-6, high=150e-6,
+                    name="Wcs", low=0.5e-6, high=200e-6,
                     log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
@@ -274,7 +274,7 @@ class FoldedCascodeOTA(BaseTopology):
                     log_scale=True, unit="m",
                 ),
                 ParamDef(
-                    name="Wload", low=0.5e-6, high=150e-6,
+                    name="Wload", low=0.5e-6, high=200e-6,
                     log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(

@@ -227,7 +227,7 @@ class FiveTOTA(BaseTopology):
         return ParamSpace(
             params=[
                 ParamDef(
-                    name="Wtail", low=0.5e-6, high=50e-6,
+                    name="Wtail", low=0.5e-6, high=200e-6,
                     log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
@@ -235,7 +235,7 @@ class FiveTOTA(BaseTopology):
                     log_scale=True, unit="m",
                 ),
                 ParamDef(
-                    name="Wdp", low=0.5e-6, high=50e-6,
+                    name="Wdp", low=0.5e-6, high=200e-6,
                     log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
@@ -243,7 +243,7 @@ class FiveTOTA(BaseTopology):
                     log_scale=True, unit="m",
                 ),
                 ParamDef(
-                    name="Wcm", low=0.5e-6, high=50e-6,
+                    name="Wcm", low=0.5e-6, high=200e-6,
                     log_scale=True, unit="m", max_per_finger=2.7e-6,
                 ),
                 ParamDef(
