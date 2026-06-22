@@ -115,6 +115,29 @@ class BranchCurrentSpec:
 
 
 @dataclass
+class DerivedBranchCurrentSpec:
+    """Branch current derived from integer mirror-multiplier parameters."""
+
+    name: str
+    unit_current: float = 20e-6
+    multiplier_param: str = ""
+    multiplier_scale: float = 1.0
+    multiplier_offset: float = 0.0
+    extra_param: str | None = None
+    extra_scale: float = 1.0
+
+    def resolve(self, params: dict[str, float]) -> float:
+        multiplier = self.multiplier_offset
+        if self.multiplier_param:
+            multiplier += self.multiplier_scale * params.get(
+                self.multiplier_param, 0.0
+            )
+        if self.extra_param:
+            multiplier += self.extra_scale * params.get(self.extra_param, 0.0)
+        return self.unit_current * multiplier
+
+
+@dataclass
 class DerivedGateBiasSpec:
     """Gate bias derived from a transistor operating point in the lookup table."""
 
@@ -185,6 +208,7 @@ class GmidTopologySpec:
 
     transistors: list[TransistorSpec] = field(default_factory=list)
     branch_currents: list[BranchCurrentSpec] = field(default_factory=list)
+    derived_branch_currents: list[DerivedBranchCurrentSpec] = field(default_factory=list)
     pass_through_params: list[ParamDef] = field(default_factory=list)
     derived_gate_biases: list[DerivedGateBiasSpec] = field(default_factory=list)
     current_mirrors: list[CurrentMirrorRatioSpec] = field(default_factory=list)
@@ -209,6 +233,7 @@ class GmidTopologySpec:
         # Transistor gm_id and L — deduplicate by (role, l_param)
         seen_L: set[str] = set()
         mirror_output_roles = {mirror.output_role for mirror in self.current_mirrors}
+        pass_through_names = {param.name for param in self.pass_through_params}
         for ts in self.transistors:
             if ts.role in mirror_output_roles:
                 continue
@@ -222,6 +247,7 @@ class GmidTopologySpec:
             # same l_param name (e.g. diff pair both use "Ldp")
             if (
                 ts.l_param not in self.derived_length_params
+                and ts.l_param not in pass_through_names
                 and ts.l_param not in seen_L
             ):
                 seen_L.add(ts.l_param)
@@ -801,7 +827,15 @@ class NetlistTemplate:
                 ):
                     updated_lines.append(line)
                     continue
-                if re.search(r"\bm\s*=", line, flags=re.IGNORECASE):
+                m_match = re.search(r"\bm\s*=\s*(\S+)", line, flags=re.IGNORECASE)
+                if m_match:
+                    existing_m = m_match.group(1).strip("'\"")
+                    if not (
+                        existing_m.isdigit()
+                        or existing_m.lower() == name.lower()
+                    ):
+                        updated_lines.append(line)
+                        continue
                     line = re.sub(
                         r"(\bm\s*=\s*)\S+",
                         rf"\g<1>{m_int}",

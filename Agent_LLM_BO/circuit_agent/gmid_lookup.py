@@ -67,21 +67,15 @@ class GmidResult:
 
 
 # ---------------------------------------------------------------------------
-# Model aliases — lvt devices use svt table data (with warning)
+# Model aliases. Real LVT tables are used when present in the lookup JSON.
 # ---------------------------------------------------------------------------
 
 MODEL_ALIASES: dict[str, str] = {
-    "nch_lvt_mac": "nch_mac",
-    "pch_lvt_mac": "pch_mac",
+    "nch_lvt_mac": "nch_lvt_mac",
+    "pch_lvt_mac": "pch_lvt_mac",
     "nch_mac": "nch_mac",
     "pch_mac": "pch_mac",
 }
-
-# Scaling factor for lvt vs svt current density.
-# lvt devices have ~15-25% higher Id/W at the same gm/Id due to lower Vth.
-# This is a rough correction — precise values require lvt-specific tables.
-LVT_IDW_SCALE = 1.20  # lvt id_w ≈ 1.2 × svt id_w
-LVT_FT_SCALE = 1.10  # lvt ft ≈ 1.1 × svt ft (rough)
 
 
 # ---------------------------------------------------------------------------
@@ -141,7 +135,6 @@ class GmidLookup:
             GmidResult with id_w, ft, gain, gds, cgg, Vgs, vth.
         """
         canonical = self._resolve_model(model)
-        is_lvt = "lvt" in model.lower()
 
         # Snap to available grid points
         L_q = self._snap(L, self._Ls[canonical], "L")
@@ -151,14 +144,6 @@ class GmidLookup:
         # Interpolate at the exact grid point(s)
         # For L: interpolate between 2 nearest lengths if not exact match
         result = self._interpolate_L(canonical, gm_id, L, L_q, Vds_q, Vbs_q)
-
-        if is_lvt:
-            result["id_w"] *= LVT_IDW_SCALE
-            result["ft"] *= LVT_FT_SCALE
-            # gain = gm/gds, both gm and gds scale similarly → gain unchanged
-            # cgg scales similarly to id_w → scale
-            result["cgg"] *= LVT_IDW_SCALE
-            result["gds"] *= LVT_IDW_SCALE
 
         try:
             return GmidResult(
@@ -259,16 +244,18 @@ class GmidLookup:
         with open(self._json_path, encoding="utf-8") as f:
             raw = json.load(f)
 
-        for model_key in ("nch_mac", "pch_mac"):
+        for model_key in ("nch_lvt_mac", "pch_lvt_mac", "nch_mac", "pch_mac"):
             if model_key not in raw:
                 logger.warning("Model %s not found in gm/Id tables, skipping", model_key)
                 continue
             self._build_model(raw[model_key], model_key)
 
         logger.info(
-            "Loaded gm/Id tables: nch_mac (%d sweeps), pch_mac (%d sweeps)",
-            len(self._splines.get("nch_mac", {})),
-            len(self._splines.get("pch_mac", {})),
+            "Loaded gm/Id tables: %s",
+            {
+                model: len(splines)
+                for model, splines in self._splines.items()
+            },
         )
 
     def _build_model(self, model_data: dict, model_name: str) -> None:
@@ -402,7 +389,7 @@ class GmidLookup:
                 f"Available: {list(self._splines.keys())}"
             )
         if model != canonical:
-            logger.debug("Model alias: %s → %s (using svt table)", model, canonical)
+            logger.debug("Model alias: %s → %s", model, canonical)
         return canonical
 
     @staticmethod
@@ -613,6 +600,8 @@ class GmidSizer:
         branch_currents: dict[str, float] = {}
         for bc in self._spec.branch_currents:
             branch_currents[bc.name] = gmid_params.get(bc.name, bc.default)
+        for dbc in self._spec.derived_branch_currents:
+            branch_currents[dbc.name] = dbc.resolve(gmid_params)
 
         transistors_by_role = {ts.role: ts for ts in self._spec.transistors}
         mirror_output_roles = {
@@ -660,6 +649,8 @@ class GmidSizer:
             gm_id_val = gmid_params.get(gm_id_key, ts.gm_id_default)
             if ts.l_param in result:
                 L_val = result[ts.l_param]
+            elif ts.l_param in gmid_params:
+                L_val = gmid_params[ts.l_param]
             elif (
                 ts.l_param in self._spec.derived_length_params
                 and self._spec.derived_length_params[ts.l_param] in result
@@ -823,11 +814,17 @@ class GmidSizer:
         mirror_output_roles = {
             mirror.output_role for mirror in self._spec.current_mirrors
         }
+        pass_through_names = {
+            param.name for param in self._spec.pass_through_params
+        }
         for ts in self._spec.transistors:
             if ts.role in mirror_output_roles:
                 continue
             params[f"gm_id_{ts.role}"] = ts.gm_id_default
-            if ts.l_param not in self._spec.derived_length_params:
+            if (
+                ts.l_param not in self._spec.derived_length_params
+                and ts.l_param not in pass_through_names
+            ):
                 params[f"L_{ts.role}"] = ts.L_default
 
         for mirror in self._spec.current_mirrors:

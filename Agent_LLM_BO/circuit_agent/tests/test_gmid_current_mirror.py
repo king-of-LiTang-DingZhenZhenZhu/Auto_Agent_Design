@@ -53,6 +53,42 @@ class GmidCurrentMirrorTest(unittest.TestCase):
         self.assertAlmostEqual(wcs_total, 2.0 * wtail_total)
         self.assertAlmostEqual(physical["VBIAS"], 0.55)
 
+    def test_folded_cascode_uses_bias_ratio_derived_currents(self):
+        spec = get_topology("folded_cascode").get_gmid_spec()
+        params = {
+            "m_half_unit": 3,
+            "m_load_extra": 5,
+            "gm_id_diff_pair_pmos": 14,
+            "L_diff_pair_pmos": 120e-9,
+            "gm_id_cs_pmos": 12,
+            "Wbp_big": 2.4e-6,
+            "Lbp_big": 400e-9,
+            "Wbp_small": 0.8e-6,
+            "Lbp_small": 400e-9,
+            "Wbn_big": 1.2e-6,
+            "Lbn_big": 400e-9,
+            "Wbn_small": 0.4e-6,
+            "Lbn_small": 400e-9,
+            "Cc": 1e-12,
+            "Rz": 1e3,
+        }
+
+        physical = GmidSizer(spec, _FakeLookup()).size(params)
+        wdiff_total = (
+            physical["Wdiffp"]
+            * physical["nf_Wdiffp"]
+            * physical["m_Wdiffp"]
+        )
+        wcs_total = physical["Wcs"] * physical["nf_Wcs"] * physical["m_Wcs"]
+
+        # I_tail = 20uA * 2 * 3, diff pair side current = I_tail/2 = 60uA.
+        self.assertAlmostEqual(wdiff_total, 6e-6)
+        # I_cs = 20uA * (2 * 3 + 5) = 220uA.
+        self.assertAlmostEqual(wcs_total, 22e-6)
+        self.assertAlmostEqual(physical["Lbn_big"], 400e-9)
+        self.assertEqual(physical["m_half_unit"], 3)
+        self.assertEqual(physical["m_load_extra"], 5)
+
 
 if __name__ == "__main__":
     unittest.main()

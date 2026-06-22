@@ -113,6 +113,49 @@ class SpectreTopologyTest(unittest.TestCase):
             r"Mload .* w=2\.5u l=200n nf=22 m=2",
         )
 
+    def test_folded_cascode_uses_bias_ratio_current_sources(self):
+        topo = get_topology("folded_cascode")
+        circuit = topo.generate_circuit()
+        rendered = NetlistTemplate.from_netlist(circuit).render(
+            topo.get_default_params(),
+            param_space=topo.get_param_space(),
+        )
+
+        self.assertNotIn("Wtailp", rendered)
+        self.assertNotIn("Wfoldn", rendered)
+        self.assertNotIn("Wload", rendered)
+        self.assertIn("parameters m_half_unit=2 m_load_extra=0", rendered)
+        self.assertIn(
+            "Mtailp (ntail VB1 vdd vdd) pch_lvt_mac "
+            "w=2.4u l=400n nf=1 m=m_tail_unit",
+            rendered,
+        )
+        self.assertIn(
+            "Mfold1 (nfold_l VB4 vss vss) nch_lvt_mac "
+            "w=1.2u l=400n nf=1 m=m_tail_unit",
+            rendered,
+        )
+        self.assertIn(
+            "Mcasn1 (pmirr VB3 nfold_l vss) nch_lvt_mac "
+            "w=1.2u l=400n nf=1 m=m_half_unit",
+            rendered,
+        )
+        self.assertIn(
+            "Mmirr1 (npm_l pmirr vdd vdd) pch_lvt_mac "
+            "w=2.4u l=400n nf=1 m=m_half_unit",
+            rendered,
+        )
+        self.assertIn(
+            "Mcs (vout nstage1 vdd vdd) pch_lvt_mac "
+            "w=2.5u l=400n nf=12 m=1",
+            rendered,
+        )
+        self.assertIn(
+            "Mload (vout VB4 vss vss) nch_lvt_mac "
+            "w=1.2u l=400n nf=1 m=m_load_unit",
+            rendered,
+        )
+
     def test_write_project_uses_target_load_cap_for_testbenches(self):
         topo = get_topology("two_stage_ota")
         targets = DesignTarget(load_cap_f=1e-12)

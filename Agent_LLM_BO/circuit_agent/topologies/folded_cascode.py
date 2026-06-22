@@ -31,8 +31,6 @@ Port order: vip vin vout ibias vdd vss
 
 from __future__ import annotations
 
-import math
-
 from topologies.base import BaseTopology, TopologyMeta
 from models import CircuitFiles, ParamDef, ParamSpace
 
@@ -40,8 +38,8 @@ from models import CircuitFiles, ParamDef, ParamSpace
 def _bias_w(name: str) -> ParamDef:
     return ParamDef(
         name=name,
-        low=0.2e-6,
-        high=5e-6,
+        low=1e-6,
+        high=20e-6,
         log_scale=True,
         unit="m",
         max_per_finger=2.6e-6,
@@ -51,8 +49,8 @@ def _bias_w(name: str) -> ParamDef:
 def _bias_l(name: str) -> ParamDef:
     return ParamDef(
         name=name,
-        low=30e-9,
-        high=500e-9,
+        low=300e-9,
+        high=600e-9,
         log_scale=True,
         unit="m",
     )
@@ -75,39 +73,24 @@ class FoldedCascodeOTA(BaseTopology):
             "PMOS common-source second stage, and Miller compensation. "
             "High gain (60-85 dB), higher GBW than a basic two-stage OTA."
         ),
-        min_gain_db=60,
+        min_gain_db=50,
         max_gain_db=85,
-        min_gbw_hz=1e6,
+        min_gbw_hz=10e6,
         max_gbw_hz=1e9,
-        typical_power_w=2e-3,
+        typical_power_w=3e-3,
         complexity=3,
         escalation="nmcf_three_stage",
     )
 
     DEFAULT_PARAMS: dict[str, float] = {
-        # PMOS tail current source
-        "Wtailp": 20e-6,
-        "Ltailp": 200e-9,
         # PMOS input differential pair
         "Wdiffp": 12e-6,
         "Ldiffp": 80e-9,
-        # NMOS folded branch current sources
-        "Wfoldn": 10e-6,
-        "Lfoldn": 200e-9,
-        # NMOS common-gate cascode devices
-        "Wcasn": 8e-6,
-        "Lcasn": 120e-9,
-        # PMOS current mirror devices
-        "Wmirrp": 12e-6,
-        "Lmirrp": 200e-9,
-        # PMOS cascode mirror devices
-        "Wcasp": 12e-6,
-        "Lcasp": 120e-9,
         # Second-stage PMOS common-source amplifier
         "Wcs": 30e-6,
-        # Second-stage NMOS current-source load
-        "Wload": 15e-6,
-        "Lload": 200e-9,
+        # Bias-ratio current mirrors
+        "m_half_unit": 2,
+        "m_load_extra": 0,
         # Internal reference-bias generator
         "Wbp_big": 2.4e-6,
         "Lbp_big": 400e-9,
@@ -127,23 +110,15 @@ class FoldedCascodeOTA(BaseTopology):
         p = dict(self.DEFAULT_PARAMS)
         if params:
             p.update(params)
+        p["m_tail_unit"] = 2 * int(round(p["m_half_unit"]))
+        p["m_load_unit"] = p["m_tail_unit"] + int(round(p["m_load_extra"]))
 
         return _CIRCUIT_TEMPLATE.format(
-            Wtailp=_fmt(p["Wtailp"]),
-            Ltailp=_fmt(p["Ltailp"]),
             Wdiffp=_fmt(p["Wdiffp"]),
             Ldiffp=_fmt(p["Ldiffp"]),
-            Wfoldn=_fmt(p["Wfoldn"]),
-            Lfoldn=_fmt(p["Lfoldn"]),
-            Wcasn=_fmt(p["Wcasn"]),
-            Lcasn=_fmt(p["Lcasn"]),
-            Wmirrp=_fmt(p["Wmirrp"]),
-            Lmirrp=_fmt(p["Lmirrp"]),
-            Wcasp=_fmt(p["Wcasp"]),
-            Lcasp=_fmt(p["Lcasp"]),
             Wcs=_fmt(p["Wcs"]),
-            Wload=_fmt(p["Wload"]),
-            Lload=_fmt(p["Lload"]),
+            m_half_unit=int(round(p["m_half_unit"])),
+            m_load_extra=int(round(p["m_load_extra"])),
             Wbp_big=_fmt(p["Wbp_big"]),
             Lbp_big=_fmt(p["Lbp_big"]),
             Wbp_small=_fmt(p["Wbp_small"]),
@@ -163,7 +138,7 @@ class FoldedCascodeOTA(BaseTopology):
     ) -> str:
         """Generate the Spectre-native testbench .scs file."""
         vdd = 1.0
-        vcm = 0.45
+        vcm = 0.35
         ibias = 20e-6
         cload = 1e-12
 
@@ -216,14 +191,6 @@ class FoldedCascodeOTA(BaseTopology):
         return ParamSpace(
             params=[
                 ParamDef(
-                    name="Wtailp", low=0.5e-6, high=200e-6,
-                    log_scale=True, unit="m", max_per_finger=2.6e-6,
-                ),
-                ParamDef(
-                    name="Ltailp", low=200e-9, high=600e-9,
-                    log_scale=True, unit="m",
-                ),
-                ParamDef(
                     name="Wdiffp", low=0.5e-6, high=200e-6,
                     log_scale=True, unit="m", max_per_finger=2.6e-6,
                 ),
@@ -232,48 +199,16 @@ class FoldedCascodeOTA(BaseTopology):
                     log_scale=True, unit="m",
                 ),
                 ParamDef(
-                    name="Wfoldn", low=0.5e-6, high=200e-6,
-                    log_scale=True, unit="m", max_per_finger=2.6e-6,
-                ),
-                ParamDef(
-                    name="Lfoldn", low=200e-9, high=600e-9,
-                    log_scale=True, unit="m",
-                ),
-                ParamDef(
-                    name="Wcasn", low=0.5e-6, high=200e-6,
-                    log_scale=True, unit="m", max_per_finger=2.6e-6,
-                ),
-                ParamDef(
-                    name="Lcasn", low=30e-9, high=900e-9,
-                    log_scale=True, unit="m",
-                ),
-                ParamDef(
-                    name="Wmirrp", low=0.5e-6, high=200e-6,
-                    log_scale=True, unit="m", max_per_finger=2.6e-6,
-                ),
-                ParamDef(
-                    name="Lmirrp", low=30e-9, high=900e-9,
-                    log_scale=True, unit="m",
-                ),
-                ParamDef(
-                    name="Wcasp", low=0.5e-6, high=200e-6,
-                    log_scale=True, unit="m", max_per_finger=2.6e-6,
-                ),
-                ParamDef(
-                    name="Lcasp", low=30e-9, high=900e-9,
-                    log_scale=True, unit="m",
-                ),
-                ParamDef(
                     name="Wcs", low=0.5e-6, high=200e-6,
                     log_scale=True, unit="m", max_per_finger=2.6e-6,
                 ),
                 ParamDef(
-                    name="Wload", low=0.5e-6, high=200e-6,
-                    log_scale=True, unit="m", max_per_finger=2.6e-6,
+                    name="m_half_unit", low=1, high=16,
+                    log_scale=False, unit="x", value_type="int",
                 ),
                 ParamDef(
-                    name="Lload", low=200e-9, high=600e-9,
-                    log_scale=True, unit="m",
+                    name="m_load_extra", low=0, high=32,
+                    log_scale=False, unit="x", value_type="int",
                 ),
                 # --- Internal bias generator ---
                 _bias_w("Wbp_big"),
@@ -285,7 +220,7 @@ class FoldedCascodeOTA(BaseTopology):
                 _bias_w("Wbn_small"),
                 _bias_l("Lbn_small"),
                 ParamDef(
-                    name="Cc", low=0.01e-12, high=5e-12,
+                    name="Cc", low=0.1e-12, high=5e-12,
                     log_scale=True, unit="F",
                 ),
                 ParamDef(
@@ -297,161 +232,75 @@ class FoldedCascodeOTA(BaseTopology):
 
     def get_gmid_spec(self, targets=None):
         """Return gm/Id spec for folded cascode — reduces 26 → 17 params."""
-        from models import BranchCurrentSpec, GmidTopologySpec, TransistorSpec
-
-        tail_current_low = 1e-6
-        folded_branch_current_low = 1e-6
-        second_stage_current_low = 1e-6
-        if (
-            targets is not None
-            and targets.bandwidth_hz is not None
-            and targets.load_cap_f is not None
-            and targets.bandwidth_hz > 0
-            and targets.load_cap_f > 0
-        ):
-            compensation_estimate = 0.5 * targets.load_cap_f
-            gm_required = (
-                2.0 * math.pi * targets.bandwidth_hz * compensation_estimate
-            )
-            single_input_current = gm_required / 22.0
-
-            # Current-budget heuristic:
-            # input pair = 2x, two folded sides = 2x + 2x,
-            # second stage = 4x, hence total minimum = 10x.
-            tail_current_low = max(tail_current_low, 2.0 * single_input_current)
-            folded_branch_current_low = max(
-                folded_branch_current_low, 2.0 * single_input_current
-            )
-            second_stage_current_low = max(
-                second_stage_current_low, 4.0 * single_input_current
-            )
-
-            bounds = (
-                ("I_tail", tail_current_low, 200e-6),
-                ("I_fold", folded_branch_current_low, 200e-6),
-                ("I_cs", second_stage_current_low, 500e-6),
-            )
-            for name, lower, upper in bounds:
-                if lower > upper:
-                    raise ValueError(
-                        "Folded-cascode GBW/CL estimate requires "
-                        f"{name} >= {lower:.3e} A, above the "
-                        f"{upper:.3e} A upper bound"
-                    )
+        from models import DerivedBranchCurrentSpec, GmidTopologySpec, TransistorSpec
 
         return GmidTopologySpec(
-            branch_currents=[
-                # Tail current for PMOS diff pair
-                BranchCurrentSpec(
+            derived_branch_currents=[
+                DerivedBranchCurrentSpec(
                     name="I_tail",
-                    low=tail_current_low,
-                    high=200e-6,
-                    default=max(20e-6, tail_current_low),
+                    unit_current=20e-6,
+                    multiplier_param="m_half_unit",
+                    multiplier_scale=2.0,
                 ),
-                # NMOS folded-branch DC current (per side)
-                BranchCurrentSpec(
+                DerivedBranchCurrentSpec(
                     name="I_fold",
-                    low=folded_branch_current_low,
-                    high=200e-6,
-                    default=max(15e-6, folded_branch_current_low),
+                    unit_current=20e-6,
+                    multiplier_param="m_half_unit",
+                    multiplier_scale=2.0,
                 ),
-                # Second-stage PMOS CS bias current
-                BranchCurrentSpec(
+                DerivedBranchCurrentSpec(
                     name="I_cs",
-                    low=second_stage_current_low,
-                    high=500e-6,
-                    default=max(40e-6, second_stage_current_low),
+                    unit_current=20e-6,
+                    multiplier_param="m_half_unit",
+                    multiplier_scale=2.0,
+                    extra_param="m_load_extra",
                 ),
             ],
             transistors=[
-                # -- PMOS tail current source --
-                TransistorSpec(
-                    role="tail_pmos",
-                    w_param="Wtailp", l_param="Ltailp",
-                    model="pch_mac",
-                    current_source="I_tail", current_fraction=1.0,
-                    gm_id_low=5, gm_id_high=20, gm_id_default=8,
-                    L_low=200e-9, L_high=600e-9, L_default=200e-9,
-                    Vds_estimate=0.2,
-                ),
                 # -- PMOS diff pair (each side carries I_tail / 2) --
                 TransistorSpec(
                     role="diff_pair_pmos",
                     w_param="Wdiffp", l_param="Ldiffp",
-                    model="pch_mac",
+                    model="pch_lvt_mac",
                     current_source="I_tail", current_fraction=0.5,
-                    gm_id_low=10, gm_id_high=22, gm_id_default=14,
+                    gm_id_low=10, gm_id_high=15, gm_id_default=12,
                     L_low=60e-9, L_high=500e-9, L_default=80e-9,
-                    Vds_estimate=0.25, Vbs=-0.3, multiplicity=2,
-                ),
-                # -- NMOS folded-branch current sources --
-                TransistorSpec(
-                    role="fold_nmos",
-                    w_param="Wfoldn", l_param="Lfoldn",
-                    model="nch_mac",
-                    current_source="I_fold", current_fraction=1.0,
-                    gm_id_low=8, gm_id_high=22, gm_id_default=12,
-                    L_low=200e-9, L_high=600e-9, L_default=200e-9,
-                    Vds_estimate=0.25, multiplicity=2,
-                ),
-                # -- NMOS common-gate cascode devices --
-                TransistorSpec(
-                    role="cas_nmos",
-                    w_param="Wcasn", l_param="Lcasn",
-                    model="nch_mac",
-                    current_source="I_fold", current_fraction=1.0,
-                    gm_id_low=10, gm_id_high=24, gm_id_default=15,
-                    L_low=80e-9, L_high=500e-9, L_default=120e-9,
-                    Vds_estimate=0.35, Vbs=-0.3, multiplicity=2,
-                ),
-                # -- PMOS current mirror devices --
-                TransistorSpec(
-                    role="mirr_pmos",
-                    w_param="Wmirrp", l_param="Lmirrp",
-                    model="pch_mac",
-                    current_source="I_fold", current_fraction=1.0,
-                    gm_id_low=8, gm_id_high=20, gm_id_default=12,
-                    L_low=100e-9, L_high=900e-9, L_default=200e-9,
-                    Vds_estimate=0.3, multiplicity=2,
-                ),
-                # -- PMOS cascode mirror devices --
-                TransistorSpec(
-                    role="casp_pmos",
-                    w_param="Wcasp", l_param="Lcasp",
-                    model="pch_mac",
-                    current_source="I_fold", current_fraction=1.0,
-                    gm_id_low=10, gm_id_high=24, gm_id_default=16,
-                    L_low=80e-9, L_high=500e-9, L_default=120e-9,
-                    Vds_estimate=0.3, Vbs=-0.3, multiplicity=2,
-                ),
-                # -- Second-stage NMOS current-source load --
-                TransistorSpec(
-                    role="load_nmos",
-                    w_param="Wload", l_param="Lload",
-                    model="nch_mac",
-                    current_source="I_cs", current_fraction=1.0,
-                    gm_id_low=5, gm_id_high=20, gm_id_default=8,
-                    L_low=200e-9, L_high=600e-9, L_default=200e-9,
-                    Vds_estimate=0.4,
+                    Vds_estimate=0.25, Vbs=-0.2, multiplicity=2,
                 ),
                 # -- Second-stage PMOS common-source amplifier --
                 TransistorSpec(
                     role="cs_pmos",
-                    w_param="Wcs", l_param="Lload",
-                    model="pch_mac",
+                    w_param="Wcs", l_param="Lbn_big",
+                    model="pch_lvt_mac",
                     current_source="I_cs", current_fraction=1.0,
-                    gm_id_low=8, gm_id_high=22, gm_id_default=12,
+                    gm_id_low=8, gm_id_high=15, gm_id_default=12,
                     L_low=200e-9, L_high=600e-9, L_default=200e-9,
                     Vds_estimate=0.6,
                 ),
             ],
             pass_through_params=[
+                _bias_w("Wbp_big"),
+                _bias_l("Lbp_big"),
+                _bias_w("Wbp_small"),
+                _bias_l("Lbp_small"),
+                _bias_w("Wbn_big"),
+                _bias_l("Lbn_big"),
+                _bias_w("Wbn_small"),
+                _bias_l("Lbn_small"),
                 ParamDef(
-                    name="Cc", low=0.01e-12, high=5e-12,
+                    name="m_half_unit", low=1, high=16,
+                    log_scale=False, unit="x", value_type="int",
+                ),
+                ParamDef(
+                    name="m_load_extra", low=0, high=32,
+                    log_scale=False, unit="x", value_type="int",
+                ),
+                ParamDef(
+                    name="Cc", low=0.1e-12, high=5e-12,
                     log_scale=True, unit="F",
                 ),
                 ParamDef(
-                    name="Rz", low=1.0, high=100e3,
+                    name="Rz", low=100, high=10e3,
                     log_scale=True, unit="Ohm",
                 ),
             ],
@@ -464,12 +313,11 @@ simulator lang=spectre insensitive=yes
 
 include "/PDKS/TSMC28nm/models/spectre/toplevel.scs" section=top_tt
 
-parameters Wtailp={Wtailp} Ltailp={Ltailp} Wdiffp={Wdiffp} Ldiffp={Ldiffp}
-parameters Wfoldn={Wfoldn} Lfoldn={Lfoldn} Wcasn={Wcasn} Lcasn={Lcasn}
-parameters Wmirrp={Wmirrp} Lmirrp={Lmirrp} Wcasp={Wcasp} Lcasp={Lcasp}
-parameters Wcs={Wcs} Wload={Wload} Lload={Lload}
+parameters Wdiffp={Wdiffp} Ldiffp={Ldiffp} Wcs={Wcs}
 parameters Wbp_big={Wbp_big} Lbp_big={Lbp_big} Wbp_small={Wbp_small} Lbp_small={Lbp_small}
 parameters Wbn_big={Wbn_big} Lbn_big={Lbn_big} Wbn_small={Wbn_small} Lbn_small={Lbn_small}
+parameters m_half_unit={m_half_unit} m_load_extra={m_load_extra}
+parameters m_tail_unit=2*m_half_unit m_load_unit=m_tail_unit+m_load_extra
 parameters Cc={Cc} Rz={Rz}
 
 subckt folded_cascode (vip vin vout ibias vdd vss)
@@ -489,25 +337,25 @@ M8 (VB4 VB3 net3 vss) nch_lvt_mac w=Wbn_big l=Lbn_big nf=1
 M5 (VB3 VB3 vss vss) nch_lvt_mac w=Wbn_small l=Lbn_small nf=1
 
 // PMOS input differential pair
-Mtailp (ntail VB1 vdd vdd) pch_lvt_mac w=Wtailp l=Ltailp nf=1
+Mtailp (ntail VB1 vdd vdd) pch_lvt_mac w=Wbp_big l=Lbp_big nf=1 m=m_tail_unit
 Mdiff1 (nfold_l vip ntail vdd) pch_lvt_mac w=Wdiffp l=Ldiffp nf=1
 Mdiff2 (nfold_r vin ntail vdd) pch_lvt_mac w=Wdiffp l=Ldiffp nf=1
 
 // NMOS folded branches and common-gate cascodes
-Mfold1 (nfold_l VB4 vss vss) nch_lvt_mac w=Wfoldn l=Lfoldn nf=1
-Mfold2 (nfold_r VB4 vss vss) nch_lvt_mac w=Wfoldn l=Lfoldn nf=1
-Mcasn1 (pmirr VB3 nfold_l vss) nch_lvt_mac w=Wcasn l=Lcasn nf=1
-Mcasn2 (nstage1 VB3 nfold_r vss) nch_lvt_mac w=Wcasn l=Lcasn nf=1
+Mfold1 (nfold_l VB4 vss vss) nch_lvt_mac w=Wbn_big l=Lbn_big nf=1 m=m_tail_unit
+Mfold2 (nfold_r VB4 vss vss) nch_lvt_mac w=Wbn_big l=Lbn_big nf=1 m=m_tail_unit
+Mcasn1 (pmirr VB3 nfold_l vss) nch_lvt_mac w=Wbn_big l=Lbn_big nf=1 m=m_half_unit
+Mcasn2 (nstage1 VB3 nfold_r vss) nch_lvt_mac w=Wbn_big l=Lbn_big nf=1 m=m_half_unit
 
 // PMOS low-voltage cascode current-mirror load
-Mmirr1 (npm_l pmirr vdd vdd) pch_lvt_mac w=Wmirrp l=Lmirrp nf=1
-Mmirr2 (npm_r pmirr vdd vdd) pch_lvt_mac w=Wmirrp l=Lmirrp nf=1
-Mcasp1 (pmirr VB2 npm_l vdd) pch_lvt_mac w=Wcasp l=Lcasp nf=1
-Mcasp2 (nstage1 VB2 npm_r vdd) pch_lvt_mac w=Wcasp l=Lcasp nf=1
+Mmirr1 (npm_l pmirr vdd vdd) pch_lvt_mac w=Wbp_big l=Lbp_big nf=1 m=m_half_unit
+Mmirr2 (npm_r pmirr vdd vdd) pch_lvt_mac w=Wbp_big l=Lbp_big nf=1 m=m_half_unit
+Mcasp1 (pmirr VB2 npm_l vdd) pch_lvt_mac w=Wbp_big l=Lbp_big nf=1 m=m_half_unit
+Mcasp2 (nstage1 VB2 npm_r vdd) pch_lvt_mac w=Wbp_big l=Lbp_big nf=1 m=m_half_unit
 
 // Second stage and Miller compensation
-Mcs (vout nstage1 vdd vdd) pch_lvt_mac w=Wcs l=Lload nf=1
-Mload (vout VB4 vss vss) nch_lvt_mac w=Wload l=Lload nf=1
+Mcs (vout nstage1 vdd vdd) pch_lvt_mac w=Wcs l=Lbn_big nf=1
+Mload (vout VB4 vss vss) nch_lvt_mac w=Wbn_big l=Lbn_big nf=1 m=m_load_unit
 Rz (nstage1 n_rz) resistor r=Rz
 Cc (n_rz vout) capacitor c=Cc
 ends folded_cascode
