@@ -25,8 +25,8 @@ class VirtuosoExportTest(unittest.TestCase):
         self.assertEqual(mtailp.nodes, ["ntail", "VB1", "vdd", "vdd"])
         self.assertEqual(mtailp.params["W"], "Wbp_big")
         self.assertEqual(mtailp.params["L"], "Lbp_big")
-        self.assertEqual(mtailp.params["nf"], "1")
-        self.assertEqual(mtailp.params["m"], "m_tail_unit")
+        self.assertEqual(mtailp.params["nf"], "nf_Wbp_big")
+        self.assertEqual(mtailp.params["m"], "m_tail_unit*m_Wbp_big")
 
     def test_parse_resistor_and_capacitor(self):
         netlist = get_topology("folded_cascode").generate_circuit()

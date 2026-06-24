@@ -117,6 +117,14 @@ class FoldedCascodeOTA(BaseTopology):
             Wdiffp=_fmt(p["Wdiffp"]),
             Ldiffp=_fmt(p["Ldiffp"]),
             Wcs=_fmt(p["Wcs"]),
+            nf_Wbp_big=int(round(p.get("nf_Wbp_big", 1))),
+            m_Wbp_big=int(round(p.get("m_Wbp_big", 1))),
+            nf_Wbp_small=int(round(p.get("nf_Wbp_small", 1))),
+            m_Wbp_small=int(round(p.get("m_Wbp_small", 1))),
+            nf_Wbn_big=int(round(p.get("nf_Wbn_big", 1))),
+            m_Wbn_big=int(round(p.get("m_Wbn_big", 1))),
+            nf_Wbn_small=int(round(p.get("nf_Wbn_small", 1))),
+            m_Wbn_small=int(round(p.get("m_Wbn_small", 1))),
             m_half_unit=int(round(p["m_half_unit"])),
             m_load_extra=int(round(p["m_load_extra"])),
             Wbp_big=_fmt(p["Wbp_big"]),
@@ -211,13 +219,9 @@ class FoldedCascodeOTA(BaseTopology):
                     log_scale=False, unit="x", value_type="int",
                 ),
                 # --- Internal bias generator ---
-                _bias_w("Wbp_big"),
                 _bias_l("Lbp_big"),
-                _bias_w("Wbp_small"),
                 _bias_l("Lbp_small"),
-                _bias_w("Wbn_big"),
                 _bias_l("Lbn_big"),
-                _bias_w("Wbn_small"),
                 _bias_l("Lbn_small"),
                 ParamDef(
                     name="Cc", low=0.1e-12, high=5e-12,
@@ -236,6 +240,11 @@ class FoldedCascodeOTA(BaseTopology):
 
         return GmidTopologySpec(
             derived_branch_currents=[
+                DerivedBranchCurrentSpec(
+                    name="I_bias_unit",
+                    unit_current=20e-6,
+                    multiplier_offset=1.0,
+                ),
                 DerivedBranchCurrentSpec(
                     name="I_tail",
                     unit_current=20e-6,
@@ -257,6 +266,45 @@ class FoldedCascodeOTA(BaseTopology):
                 ),
             ],
             transistors=[
+                # -- Bias generator unit devices.  BO searches gm/Id and L;
+                # lookup derives the unit W copied into the main current
+                # source/load devices through integer m ratios.
+                TransistorSpec(
+                    role="bias_pmos_big",
+                    w_param="Wbp_big", l_param="Lbp_big",
+                    model="pch_lvt_mac",
+                    current_source="I_bias_unit", current_fraction=1.0,
+                    gm_id_low=8, gm_id_high=15, gm_id_default=12,
+                    L_low=300e-9, L_high=600e-9, L_default=400e-9,
+                    Vds_estimate=0.3, Vbs=-0.2,
+                ),
+                TransistorSpec(
+                    role="bias_pmos_small",
+                    w_param="Wbp_small", l_param="Lbp_small",
+                    model="pch_lvt_mac",
+                    current_source="I_bias_unit", current_fraction=0.5,
+                    gm_id_low=8, gm_id_high=15, gm_id_default=12,
+                    L_low=300e-9, L_high=600e-9, L_default=400e-9,
+                    Vds_estimate=0.3, Vbs=-0.2,
+                ),
+                TransistorSpec(
+                    role="bias_nmos_big",
+                    w_param="Wbn_big", l_param="Lbn_big",
+                    model="nch_lvt_mac",
+                    current_source="I_bias_unit", current_fraction=1.0,
+                    gm_id_low=8, gm_id_high=15, gm_id_default=12,
+                    L_low=300e-9, L_high=600e-9, L_default=400e-9,
+                    Vds_estimate=0.2, Vbs=-0.2,
+                ),
+                TransistorSpec(
+                    role="bias_nmos_small",
+                    w_param="Wbn_small", l_param="Lbn_small",
+                    model="nch_lvt_mac",
+                    current_source="I_bias_unit", current_fraction=0.5,
+                    gm_id_low=8, gm_id_high=15, gm_id_default=12,
+                    L_low=300e-9, L_high=600e-9, L_default=400e-9,
+                    Vds_estimate=0.2, Vbs=-0.2,
+                ),
                 # -- PMOS diff pair (each side carries I_tail / 2) --
                 TransistorSpec(
                     role="diff_pair_pmos",
@@ -279,13 +327,9 @@ class FoldedCascodeOTA(BaseTopology):
                 ),
             ],
             pass_through_params=[
-                _bias_w("Wbp_big"),
                 _bias_l("Lbp_big"),
-                _bias_w("Wbp_small"),
                 _bias_l("Lbp_small"),
-                _bias_w("Wbn_big"),
                 _bias_l("Lbn_big"),
-                _bias_w("Wbn_small"),
                 _bias_l("Lbn_small"),
                 ParamDef(
                     name="m_half_unit", low=1, high=16,
@@ -314,6 +358,8 @@ simulator lang=spectre insensitive=yes
 include "/PDKS/TSMC28nm/models/spectre/toplevel.scs" section=top_tt
 
 parameters Wdiffp={Wdiffp} Ldiffp={Ldiffp} Wcs={Wcs}
+parameters nf_Wbp_big={nf_Wbp_big} m_Wbp_big={m_Wbp_big} nf_Wbp_small={nf_Wbp_small} m_Wbp_small={m_Wbp_small}
+parameters nf_Wbn_big={nf_Wbn_big} m_Wbn_big={m_Wbn_big} nf_Wbn_small={nf_Wbn_small} m_Wbn_small={m_Wbn_small}
 parameters Wbp_big={Wbp_big} Lbp_big={Lbp_big} Wbp_small={Wbp_small} Lbp_small={Lbp_small}
 parameters Wbn_big={Wbn_big} Lbn_big={Lbn_big} Wbn_small={Wbn_small} Lbn_small={Lbn_small}
 parameters m_half_unit={m_half_unit} m_load_extra={m_load_extra}
@@ -322,40 +368,40 @@ parameters Cc={Cc} Rz={Rz}
 
 subckt folded_cascode (vip vin vout ibias vdd vss)
 // Internal bias generator
-M7 (VB1 VB2 net4 vdd) pch_lvt_mac w=Wbp_big l=Lbp_big nf=1
-M6 (net4 VB1 vdd vdd) pch_lvt_mac w=Wbp_big l=Lbp_big nf=1
-M4 (VB2 VB2 vdd vdd) pch_lvt_mac w=Wbp_small l=Lbp_small nf=1
-M2 (VB4 ibias vdd vdd) pch_lvt_mac w=Wbp_big l=Lbp_big nf=1
-M1 (VB3 ibias vdd vdd) pch_lvt_mac w=Wbp_big l=Lbp_big nf=1
-M0 (ibias ibias vdd vdd) pch_lvt_mac w=Wbp_big l=Lbp_big nf=1
-M13 (net6 VB4 vss vss) nch_lvt_mac w=Wbn_big l=Lbn_big nf=1
-M12 (VB1 VB3 net6 vss) nch_lvt_mac w=Wbn_big l=Lbn_big nf=1
-M11 (net2 VB4 vss vss) nch_lvt_mac w=Wbn_big l=Lbn_big nf=1
-M10 (VB2 VB3 net2 vss) nch_lvt_mac w=Wbn_big l=Lbn_big nf=1
-M9 (net3 VB4 vss vss) nch_lvt_mac w=Wbn_big l=Lbn_big nf=1
-M8 (VB4 VB3 net3 vss) nch_lvt_mac w=Wbn_big l=Lbn_big nf=1
-M5 (VB3 VB3 vss vss) nch_lvt_mac w=Wbn_small l=Lbn_small nf=1
+M7 (VB1 VB2 net4 vdd) pch_lvt_mac w=Wbp_big l=Lbp_big nf=nf_Wbp_big m=m_Wbp_big
+M6 (net4 VB1 vdd vdd) pch_lvt_mac w=Wbp_big l=Lbp_big nf=nf_Wbp_big m=m_Wbp_big
+M4 (VB2 VB2 vdd vdd) pch_lvt_mac w=Wbp_small l=Lbp_small nf=nf_Wbp_small m=m_Wbp_small
+M2 (VB4 ibias vdd vdd) pch_lvt_mac w=Wbp_big l=Lbp_big nf=nf_Wbp_big m=m_Wbp_big
+M1 (VB3 ibias vdd vdd) pch_lvt_mac w=Wbp_big l=Lbp_big nf=nf_Wbp_big m=m_Wbp_big
+M0 (ibias ibias vdd vdd) pch_lvt_mac w=Wbp_big l=Lbp_big nf=nf_Wbp_big m=m_Wbp_big
+M13 (net6 VB4 vss vss) nch_lvt_mac w=Wbn_big l=Lbn_big nf=nf_Wbn_big m=m_Wbn_big
+M12 (VB1 VB3 net6 vss) nch_lvt_mac w=Wbn_big l=Lbn_big nf=nf_Wbn_big m=m_Wbn_big
+M11 (net2 VB4 vss vss) nch_lvt_mac w=Wbn_big l=Lbn_big nf=nf_Wbn_big m=m_Wbn_big
+M10 (VB2 VB3 net2 vss) nch_lvt_mac w=Wbn_big l=Lbn_big nf=nf_Wbn_big m=m_Wbn_big
+M9 (net3 VB4 vss vss) nch_lvt_mac w=Wbn_big l=Lbn_big nf=nf_Wbn_big m=m_Wbn_big
+M8 (VB4 VB3 net3 vss) nch_lvt_mac w=Wbn_big l=Lbn_big nf=nf_Wbn_big m=m_Wbn_big
+M5 (VB3 VB3 vss vss) nch_lvt_mac w=Wbn_small l=Lbn_small nf=nf_Wbn_small m=m_Wbn_small
 
 // PMOS input differential pair
-Mtailp (ntail VB1 vdd vdd) pch_lvt_mac w=Wbp_big l=Lbp_big nf=1 m=m_tail_unit
+Mtailp (ntail VB1 vdd vdd) pch_lvt_mac w=Wbp_big l=Lbp_big nf=nf_Wbp_big m=m_tail_unit*m_Wbp_big
 Mdiff1 (nfold_l vip ntail vdd) pch_lvt_mac w=Wdiffp l=Ldiffp nf=1
 Mdiff2 (nfold_r vin ntail vdd) pch_lvt_mac w=Wdiffp l=Ldiffp nf=1
 
 // NMOS folded branches and common-gate cascodes
-Mfold1 (nfold_l VB4 vss vss) nch_lvt_mac w=Wbn_big l=Lbn_big nf=1 m=m_tail_unit
-Mfold2 (nfold_r VB4 vss vss) nch_lvt_mac w=Wbn_big l=Lbn_big nf=1 m=m_tail_unit
-Mcasn1 (pmirr VB3 nfold_l vss) nch_lvt_mac w=Wbn_big l=Lbn_big nf=1 m=m_half_unit
-Mcasn2 (nstage1 VB3 nfold_r vss) nch_lvt_mac w=Wbn_big l=Lbn_big nf=1 m=m_half_unit
+Mfold1 (nfold_l VB4 vss vss) nch_lvt_mac w=Wbn_big l=Lbn_big nf=nf_Wbn_big m=m_tail_unit*m_Wbn_big
+Mfold2 (nfold_r VB4 vss vss) nch_lvt_mac w=Wbn_big l=Lbn_big nf=nf_Wbn_big m=m_tail_unit*m_Wbn_big
+Mcasn1 (pmirr VB3 nfold_l vss) nch_lvt_mac w=Wbn_big l=Lbn_big nf=nf_Wbn_big m=m_half_unit*m_Wbn_big
+Mcasn2 (nstage1 VB3 nfold_r vss) nch_lvt_mac w=Wbn_big l=Lbn_big nf=nf_Wbn_big m=m_half_unit*m_Wbn_big
 
 // PMOS low-voltage cascode current-mirror load
-Mmirr1 (npm_l pmirr vdd vdd) pch_lvt_mac w=Wbp_big l=Lbp_big nf=1 m=m_half_unit
-Mmirr2 (npm_r pmirr vdd vdd) pch_lvt_mac w=Wbp_big l=Lbp_big nf=1 m=m_half_unit
-Mcasp1 (pmirr VB2 npm_l vdd) pch_lvt_mac w=Wbp_big l=Lbp_big nf=1 m=m_half_unit
-Mcasp2 (nstage1 VB2 npm_r vdd) pch_lvt_mac w=Wbp_big l=Lbp_big nf=1 m=m_half_unit
+Mmirr1 (npm_l pmirr vdd vdd) pch_lvt_mac w=Wbp_big l=Lbp_big nf=nf_Wbp_big m=m_half_unit*m_Wbp_big
+Mmirr2 (npm_r pmirr vdd vdd) pch_lvt_mac w=Wbp_big l=Lbp_big nf=nf_Wbp_big m=m_half_unit*m_Wbp_big
+Mcasp1 (pmirr VB2 npm_l vdd) pch_lvt_mac w=Wbp_big l=Lbp_big nf=nf_Wbp_big m=m_half_unit*m_Wbp_big
+Mcasp2 (nstage1 VB2 npm_r vdd) pch_lvt_mac w=Wbp_big l=Lbp_big nf=nf_Wbp_big m=m_half_unit*m_Wbp_big
 
 // Second stage and Miller compensation
 Mcs (vout nstage1 vdd vdd) pch_lvt_mac w=Wcs l=Lbn_big nf=1
-Mload (vout VB4 vss vss) nch_lvt_mac w=Wbn_big l=Lbn_big nf=1 m=m_load_unit
+Mload (vout VB4 vss vss) nch_lvt_mac w=Wbn_big l=Lbn_big nf=nf_Wbn_big m=m_load_unit*m_Wbn_big
 Rz (nstage1 n_rz) resistor r=Rz
 Cc (n_rz vout) capacitor c=Cc
 ends folded_cascode
