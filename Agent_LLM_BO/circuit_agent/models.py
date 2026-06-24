@@ -213,6 +213,7 @@ class GmidTopologySpec:
     derived_gate_biases: list[DerivedGateBiasSpec] = field(default_factory=list)
     current_mirrors: list[CurrentMirrorRatioSpec] = field(default_factory=list)
     derived_length_params: dict[str, str] = field(default_factory=dict)
+    fixed_params: dict[str, float] = field(default_factory=dict)
 
     def build_param_space(self) -> "ParamSpace":
         """Convert the gm/Id spec into a :class:`ParamSpace` for BO.
@@ -234,6 +235,7 @@ class GmidTopologySpec:
         seen_L: set[str] = set()
         mirror_output_roles = {mirror.output_role for mirror in self.current_mirrors}
         pass_through_names = {param.name for param in self.pass_through_params}
+        fixed_names = set(self.fixed_params)
         for ts in self.transistors:
             if ts.role in mirror_output_roles:
                 continue
@@ -248,6 +250,7 @@ class GmidTopologySpec:
             if (
                 ts.l_param not in self.derived_length_params
                 and ts.l_param not in pass_through_names
+                and ts.l_param not in fixed_names
                 and ts.l_param not in seen_L
             ):
                 seen_L.add(ts.l_param)

@@ -165,31 +165,22 @@ class OptimizerConfigTest(unittest.TestCase):
         self.assertIn("m_load_extra", params)
         self.assertEqual(params["m_half_unit"].value_type, "int")
         self.assertEqual(params["m_load_extra"].value_type, "int")
-        for name in ("Wbp_big", "Wbp_small", "Wbn_big", "Wbn_small"):
+        for name in (
+            "Wbp_big", "Wbp_small", "Wbn_big", "Wbn_small",
+            "Lbp_big", "Lbp_small", "Lbn_big", "Lbn_small",
+        ):
             self.assertNotIn(name, params)
-        self.assertAlmostEqual(params["Lbp_big"].low, 300e-9)
-        self.assertAlmostEqual(params["Lbp_big"].high, 600e-9)
 
     def test_folded_gmid_space_uses_bias_ratio_currents(self):
         spec = get_topology("folded_cascode").get_gmid_spec()
         params = {param.name: param for param in spec.build_param_space().params}
         transistor_roles = {transistor.role for transistor in spec.transistors}
 
-        self.assertEqual(
-            transistor_roles,
-            {
-                "bias_pmos_big",
-                "bias_pmos_small",
-                "bias_nmos_big",
-                "bias_nmos_small",
-                "diff_pair_pmos",
-                "cs_pmos",
-            },
-        )
+        self.assertEqual(transistor_roles, {"diff_pair_pmos", "cs_pmos"})
         self.assertFalse(spec.branch_currents)
         self.assertEqual(
             {current.name for current in spec.derived_branch_currents},
-            {"I_bias_unit", "I_tail", "I_fold", "I_cs"},
+            {"I_tail", "I_fold", "I_cs"},
         )
         for name in (
             "gm_id_tail_pmos",
@@ -203,7 +194,10 @@ class OptimizerConfigTest(unittest.TestCase):
             self.assertNotIn(name, params)
         self.assertIn("m_half_unit", params)
         self.assertIn("m_load_extra", params)
-        for name in ("Wbp_big", "Wbp_small", "Wbn_big", "Wbn_small"):
+        for name in (
+            "Wbp_big", "Wbp_small", "Wbn_big", "Wbn_small",
+            "Lbp_big", "Lbp_small", "Lbn_big", "Lbn_small",
+        ):
             self.assertNotIn(name, params)
         for name in (
             "gm_id_bias_pmos_big",
@@ -211,7 +205,11 @@ class OptimizerConfigTest(unittest.TestCase):
             "gm_id_bias_nmos_big",
             "gm_id_bias_nmos_small",
         ):
-            self.assertIn(name, params)
+            self.assertNotIn(name, params)
+        self.assertEqual(spec.fixed_params["Wbp_big"], 2.4e-6)
+        self.assertEqual(spec.fixed_params["Lbp_big"], 400e-9)
+        self.assertEqual(spec.fixed_params["Wbn_big"], 1.2e-6)
+        self.assertEqual(spec.fixed_params["Lbn_big"], 400e-9)
 
     def test_two_stage_gmid_space_derives_nmos_vbias(self):
         spec = get_topology("two_stage_ota").get_gmid_spec()
@@ -262,10 +260,6 @@ class OptimizerConfigTest(unittest.TestCase):
         self.assertEqual(transistors["diff_pair_pmos"].model, "pch_lvt_mac")
         self.assertEqual(transistors["diff_pair_pmos"].Vbs, -0.2)
         self.assertEqual(transistors["cs_pmos"].model, "pch_lvt_mac")
-        self.assertEqual(transistors["bias_pmos_big"].model, "pch_lvt_mac")
-        self.assertEqual(transistors["bias_pmos_big"].Vbs, -0.2)
-        self.assertEqual(transistors["bias_nmos_big"].model, "nch_lvt_mac")
-        self.assertEqual(transistors["bias_nmos_big"].Vbs, -0.2)
 
     def test_vbias_physical_ranges_are_topology_owned(self):
         five_t_params = {
@@ -293,7 +287,6 @@ class OptimizerConfigTest(unittest.TestCase):
         self.assertAlmostEqual(currents["I_tail"], 120e-6)
         self.assertAlmostEqual(currents["I_fold"], 120e-6)
         self.assertAlmostEqual(currents["I_cs"], 220e-6)
-        self.assertAlmostEqual(currents["I_bias_unit"], 20e-6)
 
 
 if __name__ == "__main__":

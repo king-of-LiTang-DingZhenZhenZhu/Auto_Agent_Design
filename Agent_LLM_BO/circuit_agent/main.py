@@ -628,10 +628,13 @@ def _save_final_output(
             shutil.copytree(run_diagnostics, diagnostics_dir, dirs_exist_ok=True)
             dc_path = diagnostics_dir / "dc_operating_points.csv"
             ac_path = diagnostics_dir / "ac_response.csv"
+            summary_path = diagnostics_dir / "diagnostics_summary.txt"
             if dc_path.exists():
                 diagnostics_paths["dc_operating_points"] = str(dc_path)
             if ac_path.exists():
                 diagnostics_paths["ac_response"] = str(ac_path)
+            if summary_path.exists():
+                diagnostics_paths["summary"] = str(summary_path)
 
     # 4. Save structured JSON result
     result_data = result.to_result_dict(targets=targets, params=params)

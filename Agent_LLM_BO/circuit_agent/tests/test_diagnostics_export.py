@@ -5,7 +5,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from diagnostics_export import export_diagnostics, inject_diagnostic_saves
+from diagnostics_export import (
+    export_diagnostics,
+    inject_diagnostic_saves,
+    write_diagnostics_summary,
+)
 from topologies import get_topology
 
 
@@ -55,6 +59,37 @@ class DiagnosticsExportTest(unittest.TestCase):
             mtail = next(row for row in op_rows if row["instance"] == "Xdut.Mtail")
             self.assertIn("gm", mtail)
             self.assertIn("gds", mtail)
+
+    def test_writes_readable_diagnostics_summary_from_csvs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            diagnostics = Path(tmp)
+            (diagnostics / "dc_operating_points.csv").write_text(
+                "\n".join([
+                    "instance,model,vd,vg,vs,id,ids,gm,gds,vgs,vds,vth,vdsat,gmoverid",
+                    "Xdut.M1,nch_mac,0.4,0.7,0,1e-5,1e-5,2e-4,1e-6,0.7,0.05,0.4,0.12,20",
+                    "Xdut.M2,pch_mac,0.8,0.3,1,-2e-5,-2e-5,3e-4,2e-6,-0.7,0.3,-0.4,0.15,15",
+                ]),
+                encoding="utf-8",
+            )
+            (diagnostics / "ac_response.csv").write_text(
+                "\n".join([
+                    "frequency_hz,vout_real,vout_imag,magnitude_v,magnitude_db,phase_deg",
+                    "1000,100,0,100,40,-1",
+                    "1000000,1,0,1,0,-120",
+                    "10000000,0.1,0,0.1,-20,-170",
+                ]),
+                encoding="utf-8",
+            )
+
+            summary = write_diagnostics_summary(diagnostics)
+
+            self.assertIsNotNone(summary)
+            text = summary.read_text(encoding="utf-8")
+            self.assertIn("DC Operating Points", text)
+            self.assertIn("linear/warning", text)
+            self.assertIn("AC Response", text)
+            self.assertIn("Unity-gain frequency: 1.00 MHz", text)
+            self.assertIn("Estimated phase margin: 60.00 deg", text)
 
 
 if __name__ == "__main__":

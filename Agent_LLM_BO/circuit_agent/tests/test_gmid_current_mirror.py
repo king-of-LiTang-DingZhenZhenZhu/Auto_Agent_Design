@@ -61,14 +61,11 @@ class GmidCurrentMirrorTest(unittest.TestCase):
             "gm_id_diff_pair_pmos": 14,
             "L_diff_pair_pmos": 120e-9,
             "gm_id_cs_pmos": 12,
-            "gm_id_bias_pmos_big": 12,
-            "gm_id_bias_pmos_small": 12,
-            "gm_id_bias_nmos_big": 12,
-            "gm_id_bias_nmos_small": 12,
-            "Lbp_big": 400e-9,
-            "Lbp_small": 400e-9,
-            "Lbn_big": 400e-9,
-            "Lbn_small": 400e-9,
+            # Attempts to override fixed bias params should be ignored.
+            "Wbp_big": 99e-6,
+            "Lbp_big": 900e-9,
+            "Wbn_big": 99e-6,
+            "Lbn_big": 900e-9,
             "Cc": 1e-12,
             "Rz": 1e3,
         }
@@ -87,19 +84,19 @@ class GmidCurrentMirrorTest(unittest.TestCase):
         self.assertAlmostEqual(wcs_total, 22e-6)
         self.assertAlmostEqual(
             physical["Wbp_big"] * physical["nf_Wbp_big"] * physical["m_Wbp_big"],
-            2e-6,
+            2.4e-6,
         )
         self.assertAlmostEqual(
             physical["Wbp_small"] * physical["nf_Wbp_small"] * physical["m_Wbp_small"],
-            1e-6,
+            0.8e-6,
         )
         self.assertAlmostEqual(
             physical["Wbn_big"] * physical["nf_Wbn_big"] * physical["m_Wbn_big"],
-            2e-6,
+            1.2e-6,
         )
         self.assertAlmostEqual(
             physical["Wbn_small"] * physical["nf_Wbn_small"] * physical["m_Wbn_small"],
-            1e-6,
+            0.4e-6,
         )
         self.assertAlmostEqual(physical["Lbn_big"], 400e-9)
         self.assertEqual(physical["m_half_unit"], 3)

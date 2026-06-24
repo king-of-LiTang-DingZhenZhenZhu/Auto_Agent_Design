@@ -595,6 +595,16 @@ class GmidSizer:
             plus pass-through params like "Cc", "Rz".
         """
         result: dict[str, float] = {}
+        for name, value in self._spec.fixed_params.items():
+            if name.lower().startswith("w"):
+                from models import split_width
+
+                w_per_finger, nf, m = split_width(value, 2.6e-6)
+                result[name] = w_per_finger
+                result[f"nf_{name}"] = nf
+                result[f"m_{name}"] = m
+            else:
+                result[name] = value
 
         # Step 1: Resolve branch currents
         branch_currents: dict[str, float] = {}
@@ -817,6 +827,7 @@ class GmidSizer:
         pass_through_names = {
             param.name for param in self._spec.pass_through_params
         }
+        fixed_names = set(self._spec.fixed_params)
         for ts in self._spec.transistors:
             if ts.role in mirror_output_roles:
                 continue
@@ -824,6 +835,7 @@ class GmidSizer:
             if (
                 ts.l_param not in self._spec.derived_length_params
                 and ts.l_param not in pass_through_names
+                and ts.l_param not in fixed_names
             ):
                 params[f"L_{ts.role}"] = ts.L_default
 

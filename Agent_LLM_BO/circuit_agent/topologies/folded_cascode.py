@@ -218,11 +218,6 @@ class FoldedCascodeOTA(BaseTopology):
                     name="m_load_extra", low=0, high=32,
                     log_scale=False, unit="x", value_type="int",
                 ),
-                # --- Internal bias generator ---
-                _bias_l("Lbp_big"),
-                _bias_l("Lbp_small"),
-                _bias_l("Lbn_big"),
-                _bias_l("Lbn_small"),
                 ParamDef(
                     name="Cc", low=0.1e-12, high=5e-12,
                     log_scale=True, unit="F",
@@ -240,11 +235,6 @@ class FoldedCascodeOTA(BaseTopology):
 
         return GmidTopologySpec(
             derived_branch_currents=[
-                DerivedBranchCurrentSpec(
-                    name="I_bias_unit",
-                    unit_current=20e-6,
-                    multiplier_offset=1.0,
-                ),
                 DerivedBranchCurrentSpec(
                     name="I_tail",
                     unit_current=20e-6,
@@ -266,45 +256,6 @@ class FoldedCascodeOTA(BaseTopology):
                 ),
             ],
             transistors=[
-                # -- Bias generator unit devices.  BO searches gm/Id and L;
-                # lookup derives the unit W copied into the main current
-                # source/load devices through integer m ratios.
-                TransistorSpec(
-                    role="bias_pmos_big",
-                    w_param="Wbp_big", l_param="Lbp_big",
-                    model="pch_lvt_mac",
-                    current_source="I_bias_unit", current_fraction=1.0,
-                    gm_id_low=8, gm_id_high=15, gm_id_default=12,
-                    L_low=300e-9, L_high=600e-9, L_default=400e-9,
-                    Vds_estimate=0.3, Vbs=-0.2,
-                ),
-                TransistorSpec(
-                    role="bias_pmos_small",
-                    w_param="Wbp_small", l_param="Lbp_small",
-                    model="pch_lvt_mac",
-                    current_source="I_bias_unit", current_fraction=0.5,
-                    gm_id_low=8, gm_id_high=15, gm_id_default=12,
-                    L_low=300e-9, L_high=600e-9, L_default=400e-9,
-                    Vds_estimate=0.3, Vbs=-0.2,
-                ),
-                TransistorSpec(
-                    role="bias_nmos_big",
-                    w_param="Wbn_big", l_param="Lbn_big",
-                    model="nch_lvt_mac",
-                    current_source="I_bias_unit", current_fraction=1.0,
-                    gm_id_low=8, gm_id_high=15, gm_id_default=12,
-                    L_low=300e-9, L_high=600e-9, L_default=400e-9,
-                    Vds_estimate=0.2, Vbs=-0.2,
-                ),
-                TransistorSpec(
-                    role="bias_nmos_small",
-                    w_param="Wbn_small", l_param="Lbn_small",
-                    model="nch_lvt_mac",
-                    current_source="I_bias_unit", current_fraction=0.5,
-                    gm_id_low=8, gm_id_high=15, gm_id_default=12,
-                    L_low=300e-9, L_high=600e-9, L_default=400e-9,
-                    Vds_estimate=0.2, Vbs=-0.2,
-                ),
                 # -- PMOS diff pair (each side carries I_tail / 2) --
                 TransistorSpec(
                     role="diff_pair_pmos",
@@ -327,10 +278,6 @@ class FoldedCascodeOTA(BaseTopology):
                 ),
             ],
             pass_through_params=[
-                _bias_l("Lbp_big"),
-                _bias_l("Lbp_small"),
-                _bias_l("Lbn_big"),
-                _bias_l("Lbn_small"),
                 ParamDef(
                     name="m_half_unit", low=1, high=16,
                     log_scale=False, unit="x", value_type="int",
@@ -348,6 +295,15 @@ class FoldedCascodeOTA(BaseTopology):
                     log_scale=True, unit="Ohm",
                 ),
             ],
+            fixed_params={
+                name: self.DEFAULT_PARAMS[name]
+                for name in (
+                    "Wbp_big", "Lbp_big",
+                    "Wbp_small", "Lbp_small",
+                    "Wbn_big", "Lbn_big",
+                    "Wbn_small", "Lbn_small",
+                )
+            },
         )
 
 
