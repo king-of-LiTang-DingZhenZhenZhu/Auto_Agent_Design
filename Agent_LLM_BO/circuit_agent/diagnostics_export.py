@@ -224,26 +224,36 @@ def _format_dc_summary(dc_path: Path) -> list[str]:
         lines.append("No readable DC operating-point rows found.")
         return lines
 
-    lines.append("instance | model | vd | vg | vs | id | gm | gds | gm/id | vds-vdsat | region")
-    lines.append("--- | --- | --- | --- | --- | --- | --- | --- | --- | --- | ---")
+    table_rows = [[
+        "instance",
+        "vd(V)",
+        "vg(V)",
+        "vs(V)",
+        "vgs(V)",
+        "id(uA)",
+        "gm(mS)",
+        "gds(uS)",
+        "gm/id",
+        "region",
+    ]]
     for row in rows:
         vds = _safe_float(row.get("vds"))
         vdsat = _safe_float(row.get("vdsat"))
         margin = None if vds is None or vdsat is None else vds - vdsat
         region = _region_label(margin)
-        lines.append(
-            f"{row.get('instance', '')} | "
-            f"{row.get('model', '')} | "
-            f"{_fmt_v(row.get('vd'))} | "
-            f"{_fmt_v(row.get('vg'))} | "
-            f"{_fmt_v(row.get('vs'))} | "
-            f"{_fmt_scaled(row.get('id'), 1e6, 'uA', 3)} | "
-            f"{_fmt_scaled(row.get('gm'), 1e3, 'mS', 3)} | "
-            f"{_fmt_scaled(row.get('gds'), 1e6, 'uS', 3)} | "
-            f"{_fmt_plain(row.get('gmoverid'), 2)} | "
-            f"{_fmt_margin(margin)} | "
-            f"{region}"
-        )
+        table_rows.append([
+            row.get("instance", ""),
+            _fmt_number(row.get("vd"), 1.0, 2),
+            _fmt_number(row.get("vg"), 1.0, 2),
+            _fmt_number(row.get("vs"), 1.0, 2),
+            _fmt_number(row.get("vgs"), 1.0, 2),
+            _fmt_number(row.get("id"), 1e6, 2),
+            _fmt_number(row.get("gm"), 1e3, 2),
+            _fmt_number(row.get("gds"), 1e6, 2),
+            _fmt_number(row.get("gmoverid"), 1.0, 2),
+            region,
+        ])
+    lines.extend(_format_fixed_width_table(table_rows))
     return lines
 
 
@@ -412,28 +422,9 @@ def _fmt(value: float | None, digits: int) -> str:
     return f"{value:.{digits}f}"
 
 
-def _fmt_plain(value: str | None, digits: int) -> str:
+def _fmt_number(value: str | None, scale: float = 1.0, digits: int = 2) -> str:
     parsed = _safe_float(value)
-    return "" if parsed is None else _fmt(parsed, digits)
-
-
-def _fmt_v(value: str | None) -> str:
-    parsed = _safe_float(value)
-    return "" if parsed is None else f"{parsed:.4f} V"
-
-
-def _fmt_scaled(
-    value: str | None,
-    scale: float,
-    unit: str,
-    digits: int,
-) -> str:
-    parsed = _safe_float(value)
-    return "" if parsed is None else f"{parsed * scale:.{digits}f} {unit}"
-
-
-def _fmt_margin(value: float | None) -> str:
-    return "" if value is None else f"{value:.4f} V"
+    return "" if parsed is None else f"{parsed * scale:.{digits}f}"
 
 
 def _eng(value: float | None, unit: str) -> str:
@@ -454,6 +445,25 @@ def _eng(value: float | None, unit: str) -> str:
         if abs_value >= scale or scale == 1e-12:
             return f"{value / scale:.3g} {prefix}{unit}"
     return f"{value:.3g} {unit}"
+
+
+def _format_fixed_width_table(rows: list[list[str]]) -> list[str]:
+    if not rows:
+        return []
+    widths = [
+        max(len(str(row[col])) for row in rows)
+        for col in range(len(rows[0]))
+    ]
+    formatted: list[str] = []
+    for row_idx, row in enumerate(rows):
+        formatted.append(
+            "  ".join(str(cell).ljust(widths[col]) for col, cell in enumerate(row))
+        )
+        if row_idx == 0:
+            formatted.append(
+                "  ".join("-" * width for width in widths)
+            )
+    return formatted
 
 
 def main() -> int:

@@ -210,7 +210,7 @@ class OptimizerConfigTest(unittest.TestCase):
         self.assertEqual(spec.fixed_params["Lbp_big"], 400e-9)
         self.assertEqual(spec.fixed_params["nf_Wbp_big"], 4)
         self.assertEqual(spec.fixed_params["m_Wbp_big"], 1)
-        self.assertEqual(spec.fixed_params["nf_Wbp_small"], 1)
+        self.assertEqual(spec.fixed_params["nf_Wbp_small"], 2)
         self.assertEqual(spec.fixed_params["m_Wbp_small"], 1)
         self.assertEqual(spec.fixed_params["Wbn_big"], 1.2e-6)
         self.assertEqual(spec.fixed_params["Lbn_big"], 400e-9)
