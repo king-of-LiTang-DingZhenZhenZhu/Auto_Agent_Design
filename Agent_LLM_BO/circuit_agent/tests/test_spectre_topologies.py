@@ -127,22 +127,22 @@ class SpectreTopologyTest(unittest.TestCase):
         self.assertIn("parameters m_half_unit=2 m_load_extra=0", rendered)
         self.assertIn(
             "Mtailp (ntail VB1 vdd vdd) pch_lvt_mac "
-            "w=2.4u l=400n nf=nf_Wbp_big m=m_tail_unit*m_Wbp_big",
+            "w=2.4u l=400n nf=4 m=m_tail_unit*m_Wbp_big",
             rendered,
         )
         self.assertIn(
             "Mfold1 (nfold_l VB4 vss vss) nch_lvt_mac "
-            "w=1.2u l=400n nf=nf_Wbn_big m=m_tail_unit*m_Wbn_big",
+            "w=1.2u l=400n nf=4 m=m_tail_unit*m_Wbn_big",
             rendered,
         )
         self.assertIn(
             "Mcasn1 (pmirr VB3 nfold_l vss) nch_lvt_mac "
-            "w=1.2u l=400n nf=nf_Wbn_big m=m_half_unit*m_Wbn_big",
+            "w=1.2u l=400n nf=4 m=m_half_unit*m_Wbn_big",
             rendered,
         )
         self.assertIn(
             "Mmirr1 (npm_l pmirr vdd vdd) pch_lvt_mac "
-            "w=2.4u l=400n nf=nf_Wbp_big m=m_half_unit*m_Wbp_big",
+            "w=2.4u l=400n nf=4 m=m_half_unit*m_Wbp_big",
             rendered,
         )
         self.assertIn(
@@ -152,7 +152,7 @@ class SpectreTopologyTest(unittest.TestCase):
         )
         self.assertIn(
             "Mload (vout VB4 vss vss) nch_lvt_mac "
-            "w=1.2u l=400n nf=nf_Wbn_big m=m_load_unit*m_Wbn_big",
+            "w=1.2u l=400n nf=4 m=m_load_unit*m_Wbn_big",
             rendered,
         )
 

@@ -84,19 +84,19 @@ class GmidCurrentMirrorTest(unittest.TestCase):
         self.assertAlmostEqual(wcs_total, 22e-6)
         self.assertAlmostEqual(
             physical["Wbp_big"] * physical["nf_Wbp_big"] * physical["m_Wbp_big"],
-            2.4e-6,
+            9.6e-6,
         )
         self.assertAlmostEqual(
             physical["Wbp_small"] * physical["nf_Wbp_small"] * physical["m_Wbp_small"],
-            0.8e-6,
+            1.6e-6,
         )
         self.assertAlmostEqual(
             physical["Wbn_big"] * physical["nf_Wbn_big"] * physical["m_Wbn_big"],
-            1.2e-6,
+            4.8e-6,
         )
         self.assertAlmostEqual(
             physical["Wbn_small"] * physical["nf_Wbn_small"] * physical["m_Wbn_small"],
-            0.4e-6,
+            0.8e-6,
         )
         self.assertAlmostEqual(physical["Lbn_big"], 400e-9)
         self.assertEqual(physical["m_half_unit"], 3)

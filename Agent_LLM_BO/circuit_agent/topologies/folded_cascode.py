@@ -94,12 +94,20 @@ class FoldedCascodeOTA(BaseTopology):
         # Internal reference-bias generator
         "Wbp_big": 2.4e-6,
         "Lbp_big": 400e-9,
+        "nf_Wbp_big": 4,
+        "m_Wbp_big": 1,
         "Wbp_small": 0.8e-6,
         "Lbp_small": 400e-9,
+        "nf_Wbp_small": 2,
+        "m_Wbp_small": 1,
         "Wbn_big": 1.2e-6,
         "Lbn_big": 400e-9,
+        "nf_Wbn_big": 4,
+        "m_Wbn_big": 1,
         "Wbn_small": 0.4e-6,
         "Lbn_small": 400e-9,
+        "nf_Wbn_small": 2,
+        "m_Wbn_small": 1,
         # Compensation
         "Cc": 250e-15,
         "Rz": 1000.0,
@@ -299,9 +307,13 @@ class FoldedCascodeOTA(BaseTopology):
                 name: self.DEFAULT_PARAMS[name]
                 for name in (
                     "Wbp_big", "Lbp_big",
+                    "nf_Wbp_big", "m_Wbp_big",
                     "Wbp_small", "Lbp_small",
+                    "nf_Wbp_small", "m_Wbp_small",
                     "Wbn_big", "Lbn_big",
+                    "nf_Wbn_big", "m_Wbn_big",
                     "Wbn_small", "Lbn_small",
+                    "nf_Wbn_small", "m_Wbn_small",
                 )
             },
         )
