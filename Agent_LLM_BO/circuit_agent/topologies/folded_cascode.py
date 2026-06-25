@@ -90,7 +90,7 @@ class FoldedCascodeOTA(BaseTopology):
         "Wcs": 30e-6,
         # Bias-ratio current mirrors
         "m_half_unit": 2,
-        "m_load_extra": 0,
+        "m_load_ratio": 2,
         # Internal reference-bias generator
         "Wbp_big": 2.4e-6,
         "Lbp_big": 400e-9,
@@ -119,7 +119,9 @@ class FoldedCascodeOTA(BaseTopology):
         if params:
             p.update(params)
         p["m_tail_unit"] = 2 * int(round(p["m_half_unit"]))
-        p["m_load_unit"] = p["m_tail_unit"] + int(round(p["m_load_extra"]))
+        p["m_load_unit"] = (
+            int(round(p["m_half_unit"])) * int(round(p["m_load_ratio"]))
+        )
 
         return _CIRCUIT_TEMPLATE.format(
             Wdiffp=_fmt(p["Wdiffp"]),
@@ -134,7 +136,7 @@ class FoldedCascodeOTA(BaseTopology):
             nf_Wbn_small=int(round(p.get("nf_Wbn_small", 1))),
             m_Wbn_small=int(round(p.get("m_Wbn_small", 1))),
             m_half_unit=int(round(p["m_half_unit"])),
-            m_load_extra=int(round(p["m_load_extra"])),
+            m_load_ratio=int(round(p["m_load_ratio"])),
             Wbp_big=_fmt(p["Wbp_big"]),
             Lbp_big=_fmt(p["Lbp_big"]),
             Wbp_small=_fmt(p["Wbp_small"]),
@@ -219,11 +221,11 @@ class FoldedCascodeOTA(BaseTopology):
                     log_scale=True, unit="m", max_per_finger=2.6e-6,
                 ),
                 ParamDef(
-                    name="m_half_unit", low=1, high=16,
+                    name="m_half_unit", low=2, high=6,
                     log_scale=False, unit="x", value_type="int",
                 ),
                 ParamDef(
-                    name="m_load_extra", low=0, high=32,
+                    name="m_load_ratio", low=2, high=8,
                     log_scale=False, unit="x", value_type="int",
                 ),
                 ParamDef(
@@ -259,8 +261,9 @@ class FoldedCascodeOTA(BaseTopology):
                     name="I_cs",
                     unit_current=20e-6,
                     multiplier_param="m_half_unit",
-                    multiplier_scale=2.0,
-                    extra_param="m_load_extra",
+                    multiplier_scale=1.0,
+                    extra_param="m_load_ratio",
+                    extra_mode="multiply",
                 ),
             ],
             transistors=[
@@ -287,11 +290,11 @@ class FoldedCascodeOTA(BaseTopology):
             ],
             pass_through_params=[
                 ParamDef(
-                    name="m_half_unit", low=1, high=16,
+                    name="m_half_unit", low=2, high=6,
                     log_scale=False, unit="x", value_type="int",
                 ),
                 ParamDef(
-                    name="m_load_extra", low=0, high=32,
+                    name="m_load_ratio", low=2, high=8,
                     log_scale=False, unit="x", value_type="int",
                 ),
                 ParamDef(
@@ -330,8 +333,8 @@ parameters nf_Wbp_big={nf_Wbp_big} m_Wbp_big={m_Wbp_big} nf_Wbp_small={nf_Wbp_sm
 parameters nf_Wbn_big={nf_Wbn_big} m_Wbn_big={m_Wbn_big} nf_Wbn_small={nf_Wbn_small} m_Wbn_small={m_Wbn_small}
 parameters Wbp_big={Wbp_big} Lbp_big={Lbp_big} Wbp_small={Wbp_small} Lbp_small={Lbp_small}
 parameters Wbn_big={Wbn_big} Lbn_big={Lbn_big} Wbn_small={Wbn_small} Lbn_small={Lbn_small}
-parameters m_half_unit={m_half_unit} m_load_extra={m_load_extra}
-parameters m_tail_unit=2*m_half_unit m_load_unit=m_tail_unit+m_load_extra
+parameters m_half_unit={m_half_unit} m_load_ratio={m_load_ratio}
+parameters m_tail_unit=2*m_half_unit m_load_unit=m_half_unit*m_load_ratio
 parameters Cc={Cc} Rz={Rz}
 
 subckt folded_cascode (vip vin vout ibias vdd vss)

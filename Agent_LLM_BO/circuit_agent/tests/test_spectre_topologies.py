@@ -124,7 +124,7 @@ class SpectreTopologyTest(unittest.TestCase):
         self.assertNotIn("Wtailp", rendered)
         self.assertNotIn("Wfoldn", rendered)
         self.assertNotIn("Wload", rendered)
-        self.assertIn("parameters m_half_unit=2 m_load_extra=0", rendered)
+        self.assertIn("parameters m_half_unit=2 m_load_ratio=2", rendered)
         self.assertIn(
             "Mtailp (ntail VB1 vdd vdd) pch_lvt_mac "
             "w=2.4u l=400n nf=4 m=m_tail_unit*m_Wbp_big",

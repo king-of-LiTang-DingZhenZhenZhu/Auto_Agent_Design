@@ -220,6 +220,7 @@ def run_from_file(
 
     # --- Detect gm/Id mode ---
     gmid_sizer = None
+    topo = None
     topology_name_val = ""
     if args.requirements:
         try:
@@ -287,6 +288,16 @@ def run_from_file(
             suffix = "" if i == 0 else f"_{i}"
             (workspace / f"tb_template{suffix}.scs").write_text(tb, encoding="utf-8")
 
+    if gmid_sizer is not None and topo is not None:
+        _run_default_param_baseline(
+            sim=sim,
+            template=template,
+            circuit_files=circuit_files,
+            topology=topo,
+            config=config,
+            targets=targets,
+        )
+
     # --- Run initial simulation ---
     console.print("\n[bold blue][Phase 1][/bold blue] Running initial Spectre simulation...")
 
@@ -318,6 +329,10 @@ def run_from_file(
     if not success:
         console.print(f"[yellow]Initial simulation failed: {error_msg[:100]}[/yellow]")
         console.print("[dim]Proceeding to optimization — BO may find better parameters.[/dim]")
+        initial_result = SimResult(
+            converged=False,
+            error_message=error_msg[:500],
+        )
     else:
         initial_result = sim.parse_simulation_results(
             log_content, run_dir, tb_paths[0]
@@ -330,6 +345,18 @@ def run_from_file(
                 initial_result = SimResult.merge(initial_result, extra)
         console.print("[green]✓[/green] Simulation converged")
         _display_results_table(initial_result, targets, "Initial Results")
+
+    if gmid_sizer is not None:
+        _persist_initial_run(
+            source_dir=run_dir,
+            dest_dir=workspace / "initial_gmid",
+            params=initial_params,
+            result=initial_result,
+            targets=targets,
+            title="GM/Id Initial Simulation",
+        )
+
+    if success:
         all_met, _ = targets.is_satisfied(initial_result)
         if all_met:
             console.print("\n[bold green]All targets already met! No optimization needed.[/bold green]")
@@ -419,6 +446,122 @@ def _save_requirements(targets: DesignTarget, original_text: str, config: Settin
         req_data["project_name"] = project_name
     req_path.write_text(json.dumps(req_data, indent=2, ensure_ascii=False), encoding="utf-8")
     console.print(f"[green]✓[/green] Requirements saved to {req_path}")
+
+
+def _run_default_param_baseline(
+    sim: Simulator,
+    template: NetlistTemplate,
+    circuit_files: CircuitFiles | None,
+    topology,
+    config: Settings,
+    targets: DesignTarget,
+) -> None:
+    """Run and persist the topology DEFAULT_PARAMS baseline before gm/Id sizing."""
+    if circuit_files is None or not circuit_files.testbenches:
+        return
+    if not hasattr(topology, "get_default_params"):
+        return
+
+    console.print(
+        "\n[bold blue][Baseline][/bold blue] Running DEFAULT_PARAMS simulation..."
+    )
+    run_dir = config.get_workspace_path() / "initial_default"
+    if run_dir.exists():
+        shutil.rmtree(run_dir, ignore_errors=True)
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    default_params = topology.get_default_params()
+    try:
+        default_param_space = topology.get_param_space()
+    except Exception:
+        default_param_space = None
+
+    tb_paths = sim.render_circuit_and_testbench(
+        template,
+        circuit_files.testbenches,
+        default_params,
+        run_dir,
+        param_space=default_param_space,
+        w_l_grid_step=config.w_l_grid_step,
+    )
+
+    success, log_content, error_msg = sim.run_spectre(tb_paths[0], run_dir)
+    if success:
+        baseline_result = sim.parse_simulation_results(
+            log_content, run_dir, tb_paths[0]
+        )
+        for tb_path in tb_paths[1:]:
+            ok, log, _ = sim.run_spectre(tb_path, run_dir)
+            if ok:
+                extra = sim.parse_simulation_results(log, run_dir, tb_path)
+                baseline_result = SimResult.merge(baseline_result, extra)
+        console.print("[green]✓[/green] DEFAULT_PARAMS baseline converged")
+    else:
+        baseline_result = SimResult(
+            converged=False,
+            error_message=error_msg[:500],
+        )
+        console.print(
+            f"[yellow]DEFAULT_PARAMS baseline failed: {error_msg[:100]}[/yellow]"
+        )
+
+    (run_dir / "params.json").write_text(
+        json.dumps(default_params, indent=2, ensure_ascii=False, default=str),
+        encoding="utf-8",
+    )
+    (run_dir / "result.json").write_text(
+        json.dumps(
+            baseline_result.to_result_dict(targets=targets, params=default_params),
+            indent=2,
+            ensure_ascii=False,
+            default=str,
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "metrics_summary.txt").write_text(
+        "\n".join([
+            "DEFAULT_PARAMS Initial Simulation",
+            "=" * 33,
+            baseline_result.to_summary_str() or "No metrics parsed.",
+        ]) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _persist_initial_run(
+    source_dir: Path,
+    dest_dir: Path,
+    params: dict[str, float],
+    result: SimResult,
+    targets: DesignTarget,
+    title: str,
+) -> None:
+    """Persist an initial simulation before BO reuses run_000."""
+    if dest_dir.exists():
+        shutil.rmtree(dest_dir, ignore_errors=True)
+    shutil.copytree(source_dir, dest_dir, dirs_exist_ok=True)
+
+    (dest_dir / "params.json").write_text(
+        json.dumps(params, indent=2, ensure_ascii=False, default=str),
+        encoding="utf-8",
+    )
+    (dest_dir / "result.json").write_text(
+        json.dumps(
+            result.to_result_dict(targets=targets, params=params),
+            indent=2,
+            ensure_ascii=False,
+            default=str,
+        ),
+        encoding="utf-8",
+    )
+    (dest_dir / "metrics_summary.txt").write_text(
+        "\n".join([
+            title,
+            "=" * len(title),
+            result.to_summary_str() or "No metrics parsed.",
+        ]) + "\n",
+        encoding="utf-8",
+    )
 
 
 def _print_header(config: Settings):
@@ -612,6 +755,10 @@ def _save_final_output(
     best_run_dir = config.get_run_dir(best_iter)
     diagnostics_dir = project_root / "diagnostics"
     diagnostics_paths: dict[str, str] = {}
+    initial_default_dir = workspace / "initial_default"
+    initial_default_paths: dict[str, str] = {}
+    initial_gmid_dir = workspace / "initial_gmid"
+    initial_gmid_paths: dict[str, str] = {}
     if best_run_dir.exists():
         sim_log = best_run_dir / "sim.log"
         if sim_log.exists():
@@ -636,12 +783,64 @@ def _save_final_output(
             if summary_path.exists():
                 diagnostics_paths["summary"] = str(summary_path)
 
+    if initial_default_dir.exists():
+        project_initial_dir = project_root / "initial_default"
+        if project_initial_dir.exists():
+            shutil.rmtree(project_initial_dir, ignore_errors=True)
+        shutil.copytree(initial_default_dir, project_initial_dir, dirs_exist_ok=True)
+        for name in (
+            "circuit.cir",
+            "tb.scs",
+            "tb_1.scs",
+            "tb_2.scs",
+            "sim.log",
+            "params.json",
+            "result.json",
+            "metrics_summary.txt",
+        ):
+            path = project_initial_dir / name
+            if path.exists():
+                initial_default_paths[name] = str(path)
+        diagnostics_summary = (
+            project_initial_dir / "diagnostics" / "diagnostics_summary.txt"
+        )
+        if diagnostics_summary.exists():
+            initial_default_paths["diagnostics_summary"] = str(diagnostics_summary)
+
+    if initial_gmid_dir.exists():
+        project_initial_gmid_dir = project_root / "initial_gmid"
+        if project_initial_gmid_dir.exists():
+            shutil.rmtree(project_initial_gmid_dir, ignore_errors=True)
+        shutil.copytree(initial_gmid_dir, project_initial_gmid_dir, dirs_exist_ok=True)
+        for name in (
+            "circuit.cir",
+            "tb.scs",
+            "tb_1.scs",
+            "tb_2.scs",
+            "sim.log",
+            "params.json",
+            "result.json",
+            "metrics_summary.txt",
+        ):
+            path = project_initial_gmid_dir / name
+            if path.exists():
+                initial_gmid_paths[name] = str(path)
+        diagnostics_summary = (
+            project_initial_gmid_dir / "diagnostics" / "diagnostics_summary.txt"
+        )
+        if diagnostics_summary.exists():
+            initial_gmid_paths["diagnostics_summary"] = str(diagnostics_summary)
+
     # 4. Save structured JSON result
     result_data = result.to_result_dict(targets=targets, params=params)
     result_data["netlist_file"] = str(circuit_path)
     result_data["project_name"] = project_name
     if diagnostics_paths:
         result_data["diagnostics"] = diagnostics_paths
+    if initial_default_paths:
+        result_data["initial_default"] = initial_default_paths
+    if initial_gmid_paths:
+        result_data["initial_gmid"] = initial_gmid_paths
     if original_requirement:
         result_data["original_requirement"] = original_requirement
     result_path = project_root / "results.json"
@@ -766,6 +965,10 @@ def _save_final_output(
         console.print(f"  • {project_root / 'optimization_metrics.csv'}")
     if diagnostics_paths:
         console.print(f"  • {diagnostics_dir}")
+    if initial_default_paths:
+        console.print(f"  • {project_root / 'initial_default'}")
+    if initial_gmid_paths:
+        console.print(f"  • {project_root / 'initial_gmid'}")
     console.print(f"\n[dim]cd {project_root}[/dim]")
 
 

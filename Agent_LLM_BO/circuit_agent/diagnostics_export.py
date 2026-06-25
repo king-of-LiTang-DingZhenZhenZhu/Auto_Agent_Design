@@ -237,12 +237,13 @@ def _format_dc_summary(dc_path: Path) -> list[str]:
         "gm(mS)",
         "ro(kOhm)",
         "gm/id",
+        "|vds|-|vdsat|(V)",
         "region",
     ]]
     for row in rows:
         vds = _safe_float(row.get("vds"))
         vdsat = _safe_float(row.get("vdsat"))
-        margin = None if vds is None or vdsat is None else vds - vdsat
+        margin = None if vds is None or vdsat is None else abs(vds) - abs(vdsat)
         region = _region_label(margin)
         vgs = _safe_float(row.get("vgs"))
         vth = _safe_float(row.get("vth"))
@@ -262,6 +263,7 @@ def _format_dc_summary(dc_path: Path) -> list[str]:
             _fmt_number(row.get("gm"), 1e3, 2),
             _fmt_float(ro_kohm, 2),
             _fmt_number(row.get("gmoverid"), 1.0, 2),
+            _fmt_float(margin, 2),
             region,
         ])
     lines.extend(_format_fixed_width_table(table_rows))

@@ -57,7 +57,7 @@ class GmidCurrentMirrorTest(unittest.TestCase):
         spec = get_topology("folded_cascode").get_gmid_spec()
         params = {
             "m_half_unit": 3,
-            "m_load_extra": 5,
+            "m_load_ratio": 5,
             "gm_id_diff_pair_pmos": 14,
             "L_diff_pair_pmos": 120e-9,
             "gm_id_cs_pmos": 12,
@@ -80,8 +80,8 @@ class GmidCurrentMirrorTest(unittest.TestCase):
 
         # I_tail = 20uA * 2 * 3, diff pair side current = I_tail/2 = 60uA.
         self.assertAlmostEqual(wdiff_total, 6e-6)
-        # I_cs = 20uA * (2 * 3 + 5) = 220uA.
-        self.assertAlmostEqual(wcs_total, 22e-6)
+        # I_cs = 20uA * 3 * 5 = 300uA.
+        self.assertAlmostEqual(wcs_total, 30e-6)
         self.assertAlmostEqual(
             physical["Wbp_big"] * physical["nf_Wbp_big"] * physical["m_Wbp_big"],
             9.6e-6,
@@ -100,7 +100,7 @@ class GmidCurrentMirrorTest(unittest.TestCase):
         )
         self.assertAlmostEqual(physical["Lbn_big"], 400e-9)
         self.assertEqual(physical["m_half_unit"], 3)
-        self.assertEqual(physical["m_load_extra"], 5)
+        self.assertEqual(physical["m_load_ratio"], 5)
 
 
 if __name__ == "__main__":

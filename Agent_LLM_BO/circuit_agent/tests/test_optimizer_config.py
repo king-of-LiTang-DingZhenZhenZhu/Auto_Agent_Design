@@ -162,9 +162,14 @@ class OptimizerConfigTest(unittest.TestCase):
         }
         self.assertFalse(removed & set(params))
         self.assertIn("m_half_unit", params)
-        self.assertIn("m_load_extra", params)
+        self.assertIn("m_load_ratio", params)
+        self.assertNotIn("m_load_extra", params)
         self.assertEqual(params["m_half_unit"].value_type, "int")
-        self.assertEqual(params["m_load_extra"].value_type, "int")
+        self.assertEqual(params["m_load_ratio"].value_type, "int")
+        self.assertEqual(params["m_half_unit"].low, 2)
+        self.assertEqual(params["m_half_unit"].high, 6)
+        self.assertEqual(params["m_load_ratio"].low, 2)
+        self.assertEqual(params["m_load_ratio"].high, 8)
         for name in (
             "Wbp_big", "Wbp_small", "Wbn_big", "Wbn_small",
             "Lbp_big", "Lbp_small", "Lbn_big", "Lbn_small",
@@ -193,7 +198,8 @@ class OptimizerConfigTest(unittest.TestCase):
         ):
             self.assertNotIn(name, params)
         self.assertIn("m_half_unit", params)
-        self.assertIn("m_load_extra", params)
+        self.assertIn("m_load_ratio", params)
+        self.assertNotIn("m_load_extra", params)
         for name in (
             "Wbp_big", "Wbp_small", "Wbn_big", "Wbn_small",
             "Lbp_big", "Lbp_small", "Lbn_big", "Lbn_small",
@@ -287,14 +293,14 @@ class OptimizerConfigTest(unittest.TestCase):
         spec = get_topology("folded_cascode").get_gmid_spec()
         currents = {
             current.name: current.resolve(
-                {"m_half_unit": 3, "m_load_extra": 5}
+                {"m_half_unit": 3, "m_load_ratio": 5}
             )
             for current in spec.derived_branch_currents
         }
 
         self.assertAlmostEqual(currents["I_tail"], 120e-6)
         self.assertAlmostEqual(currents["I_fold"], 120e-6)
-        self.assertAlmostEqual(currents["I_cs"], 220e-6)
+        self.assertAlmostEqual(currents["I_cs"], 300e-6)
 
 
 if __name__ == "__main__":

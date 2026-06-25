@@ -125,6 +125,7 @@ class DerivedBranchCurrentSpec:
     multiplier_offset: float = 0.0
     extra_param: str | None = None
     extra_scale: float = 1.0
+    extra_mode: str = "add"
 
     def resolve(self, params: dict[str, float]) -> float:
         multiplier = self.multiplier_offset
@@ -133,7 +134,11 @@ class DerivedBranchCurrentSpec:
                 self.multiplier_param, 0.0
             )
         if self.extra_param:
-            multiplier += self.extra_scale * params.get(self.extra_param, 0.0)
+            extra = self.extra_scale * params.get(self.extra_param, 0.0)
+            if self.extra_mode == "multiply":
+                multiplier *= extra
+            else:
+                multiplier += extra
         return self.unit_current * multiplier
 
 

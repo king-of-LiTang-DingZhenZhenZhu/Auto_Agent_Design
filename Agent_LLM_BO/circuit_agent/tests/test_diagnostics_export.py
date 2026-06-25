@@ -67,7 +67,7 @@ class DiagnosticsExportTest(unittest.TestCase):
                 "\n".join([
                     "instance,model,vd,vg,vs,id,ids,gm,gds,vgs,vds,vth,vdsat,gmoverid",
                     "Xdut.M1,nch_mac,0.4,0.7,0,1e-5,1e-5,2e-4,1e-6,0.7,0.05,0.4,0.12,20",
-                    "Xdut.M2,pch_mac,0.8,0.3,1,-2e-5,-2e-5,3e-4,2e-6,-0.7,0.3,-0.4,0.15,15",
+                    "Xdut.M2,pch_mac,0.8,0.3,1,-2e-5,-2e-5,3e-4,2e-6,-0.7,-0.3,-0.4,-0.15,15",
                 ]),
                 encoding="utf-8",
             )
@@ -92,9 +92,11 @@ class DiagnosticsExportTest(unittest.TestCase):
             self.assertIn("vod(V)", text)
             self.assertIn("id(uA)", text)
             self.assertIn("ro(kOhm)", text)
+            self.assertIn("|vds|-|vdsat|(V)", text)
             self.assertIn("nch_mac", text)
             self.assertIn("10.00", text)
             self.assertIn("1000.00", text)
+            self.assertIn("0.15", text)
             self.assertNotIn("gds(uS)", text)
             self.assertNotIn("vds-vdsat", text)
             self.assertNotIn("10.000 uA", text)
