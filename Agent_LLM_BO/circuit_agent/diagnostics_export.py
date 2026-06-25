@@ -226,13 +226,16 @@ def _format_dc_summary(dc_path: Path) -> list[str]:
 
     table_rows = [[
         "instance",
+        "model",
         "vd(V)",
         "vg(V)",
         "vs(V)",
         "vgs(V)",
+        "vth(V)",
+        "vod(V)",
         "id(uA)",
         "gm(mS)",
-        "gds(uS)",
+        "ro(kOhm)",
         "gm/id",
         "region",
     ]]
@@ -241,15 +244,23 @@ def _format_dc_summary(dc_path: Path) -> list[str]:
         vdsat = _safe_float(row.get("vdsat"))
         margin = None if vds is None or vdsat is None else vds - vdsat
         region = _region_label(margin)
+        vgs = _safe_float(row.get("vgs"))
+        vth = _safe_float(row.get("vth"))
+        vod = None if vgs is None or vth is None else abs(vgs) - abs(vth)
+        gds = _safe_float(row.get("gds"))
+        ro_kohm = None if gds is None or gds == 0 else 1.0 / gds / 1e3
         table_rows.append([
             row.get("instance", ""),
+            row.get("model", ""),
             _fmt_number(row.get("vd"), 1.0, 2),
             _fmt_number(row.get("vg"), 1.0, 2),
             _fmt_number(row.get("vs"), 1.0, 2),
             _fmt_number(row.get("vgs"), 1.0, 2),
+            _fmt_number(row.get("vth"), 1.0, 2),
+            _fmt_float(vod, 2),
             _fmt_number(row.get("id"), 1e6, 2),
             _fmt_number(row.get("gm"), 1e3, 2),
-            _fmt_number(row.get("gds"), 1e6, 2),
+            _fmt_float(ro_kohm, 2),
             _fmt_number(row.get("gmoverid"), 1.0, 2),
             region,
         ])
@@ -425,6 +436,10 @@ def _fmt(value: float | None, digits: int) -> str:
 def _fmt_number(value: str | None, scale: float = 1.0, digits: int = 2) -> str:
     parsed = _safe_float(value)
     return "" if parsed is None else f"{parsed * scale:.{digits}f}"
+
+
+def _fmt_float(value: float | None, digits: int = 2) -> str:
+    return "" if value is None else f"{value:.{digits}f}"
 
 
 def _eng(value: float | None, unit: str) -> str:

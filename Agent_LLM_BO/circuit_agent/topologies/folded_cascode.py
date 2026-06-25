@@ -352,8 +352,8 @@ M5 (VB3 VB3 vss vss) nch_lvt_mac w=Wbn_small l=Lbn_small nf=nf_Wbn_small m=m_Wbn
 
 // PMOS input differential pair
 Mtailp (ntail VB1 vdd vdd) pch_lvt_mac w=Wbp_big l=Lbp_big nf=nf_Wbp_big m=m_tail_unit*m_Wbp_big
-Mdiff1 (nfold_l vip ntail vdd) pch_lvt_mac w=Wdiffp l=Ldiffp nf=1
-Mdiff2 (nfold_r vin ntail vdd) pch_lvt_mac w=Wdiffp l=Ldiffp nf=1
+Mdiff1 (nfold_l vin ntail vdd) pch_lvt_mac w=Wdiffp l=Ldiffp nf=1
+Mdiff2 (nfold_r vip ntail vdd) pch_lvt_mac w=Wdiffp l=Ldiffp nf=1
 
 // NMOS folded branches and common-gate cascodes
 Mfold1 (nfold_l VB4 vss vss) nch_lvt_mac w=Wbn_big l=Lbn_big nf=nf_Wbn_big m=m_tail_unit*m_Wbn_big
