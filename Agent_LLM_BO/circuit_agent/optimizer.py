@@ -286,10 +286,17 @@ class HybridOptimizer:
             reward -= 50.0
             all_met = False
 
-        # Phase margin
+        # Phase margin: enough margin is good, but excessive PM often means
+        # over-compensation and wasted GBW/SR. Prefer the target-to-75deg window.
         if targets.phase_margin_deg is not None and result.phase_margin_deg is not None:
             if result.phase_margin_deg >= targets.phase_margin_deg:
                 reward += 10.0 * self.weights["phase_margin_deg"]
+                pm_high_limit = 75.0
+                if result.phase_margin_deg > pm_high_limit:
+                    excess = (result.phase_margin_deg - pm_high_limit) / max(
+                        pm_high_limit, 1.0
+                    )
+                    reward -= excess * 30.0 * self.weights["phase_margin_deg"]
             else:
                 gap = (targets.phase_margin_deg - result.phase_margin_deg) / max(
                     targets.phase_margin_deg, 1.0

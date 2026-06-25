@@ -156,7 +156,7 @@ class FoldedCascodeOTA(BaseTopology):
     ) -> str:
         """Generate the Spectre-native testbench .scs file."""
         vdd = 1.0
-        vcm = 0.35
+        vcm = 0.3
         ibias = 20e-6
         cload = 1e-12
 

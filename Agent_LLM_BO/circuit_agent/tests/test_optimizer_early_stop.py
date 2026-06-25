@@ -58,6 +58,21 @@ class OptimizerEarlyStopTest(unittest.TestCase):
             self._optimizer()._is_severe_deviation(SimResult(), targets)
         )
 
+    def test_reward_penalizes_excessive_phase_margin(self):
+        targets = DesignTarget(phase_margin_deg=60)
+        optimizer = self._optimizer()
+
+        moderate_pm = optimizer.compute_reward(
+            SimResult(phase_margin_deg=70),
+            targets,
+        )
+        excessive_pm = optimizer.compute_reward(
+            SimResult(phase_margin_deg=90),
+            targets,
+        )
+
+        self.assertLess(excessive_pm, moderate_pm)
+
     def test_writes_iteration_summary_and_metrics_csv(self):
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(workspace_dir=tmp)
