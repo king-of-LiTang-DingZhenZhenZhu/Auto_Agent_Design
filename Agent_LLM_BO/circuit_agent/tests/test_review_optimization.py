@@ -116,8 +116,8 @@ Mload vout vbias vss vss nch_lvt_mac w=2.6u l=120n nf=4 m=3
         inflated = inflate_width_params_from_instances(netlist, params)
 
         self.assertAlmostEqual(params["Wload"], 2.6e-6)
-        self.assertAlmostEqual(inflated["Wtail"], 2e-6)
-        self.assertAlmostEqual(inflated["Wload"], 31.2e-6)
+        self.assertAlmostEqual(inflated["Wtail"], 1e-6)
+        self.assertAlmostEqual(inflated["Wload"], 7.8e-6)
         self.assertAlmostEqual(params["Cc"], 1e-12)
         self.assertAlmostEqual(params["Rz"], 1e3)
 

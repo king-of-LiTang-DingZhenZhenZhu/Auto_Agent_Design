@@ -595,14 +595,38 @@ class GmidSizer:
             plus pass-through params like "Cc", "Rz".
         """
         result: dict[str, float] = {}
+        fixed_width_scale = 1.0
+        if self._spec.fixed_width_scale_param:
+            scale_param = self._spec.fixed_width_scale_param
+            reference = self._spec.fixed_width_scale_reference
+            if reference <= 0:
+                raise ValueError(
+                    f"Invalid fixed_width_scale_reference={reference} for {scale_param}"
+                )
+            scale_value = gmid_params.get(
+                scale_param,
+                self._spec.fixed_params.get(scale_param, reference),
+            )
+            fixed_width_scale = scale_value / reference
+
         for name, value in self._spec.fixed_params.items():
+            if name.startswith(("nf_", "m_")):
+                continue
             if name.lower().startswith("w"):
                 from models import split_width
 
-                w_per_finger, nf, m = split_width(value, 2.6e-6)
-                result[name] = w_per_finger
-                result[f"nf_{name}"] = nf
-                result[f"m_{name}"] = m
+                scaled_width = value * fixed_width_scale
+                result[name] = scaled_width
+                nf_name = f"nf_{name}"
+                m_name = f"m_{name}"
+                if nf_name in self._spec.fixed_params:
+                    result[nf_name] = self._spec.fixed_params[nf_name]
+                if m_name in self._spec.fixed_params:
+                    result[m_name] = self._spec.fixed_params[m_name]
+                if nf_name not in result or m_name not in result:
+                    _instance_w, nf, m = split_width(scaled_width, 2.6e-6)
+                    result.setdefault(nf_name, nf)
+                    result.setdefault(m_name, m)
             else:
                 result[name] = value
 
@@ -785,7 +809,7 @@ class GmidSizer:
         total_width: float,
         length: float,
     ) -> None:
-        """Write W-per-finger, nf, m, and L for one sized transistor/group."""
+        """Write Spectre instance W, nf, m, and L for one sized transistor/group."""
         from models import split_width
 
         total_width = max(total_width, 200e-9)
@@ -793,8 +817,8 @@ class GmidSizer:
         max_per_finger = (
             transistor.max_per_finger if transistor.max_per_finger else 2.6e-6
         )
-        w_per_finger, nf, m = split_width(total_width, max_per_finger)
-        result[transistor.w_param] = w_per_finger
+        instance_total_w, nf, m = split_width(total_width, max_per_finger)
+        result[transistor.w_param] = instance_total_w
         result[f"nf_{transistor.w_param}"] = nf
         result[f"m_{transistor.w_param}"] = m
         result[transistor.l_param] = length

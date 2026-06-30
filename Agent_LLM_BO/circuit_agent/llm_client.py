@@ -64,7 +64,8 @@ class LLMClient:
             f"- VDD = {self.config.vdd}V (core devices)",
             f"- Minimum channel length L >= {self.config.min_l * 1e9:.0f}nm",
             f"- Maximum width per finger: {self.config.max_width_per_finger * 1e6:.0f}um",
-            f"- Total effective width = W * nf * M (nf/M system-managed)",
+            "- Spectre MOS width semantics: effective width = W * M; "
+            "nf only splits W into fingers",
             f"- NMOS bulk → gnd! (or VSS), PMOS bulk → vdd! (or VDD)",
             f"- Analog design recommendation: L >= 60nm for better output impedance",
             "",

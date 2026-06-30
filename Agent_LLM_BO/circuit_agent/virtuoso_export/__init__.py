@@ -1,6 +1,6 @@
 """Export optimized BO netlists to Cadence Virtuoso SKILL."""
 
-from .exporter import export_from_results, export_netlist
+from .exporter import export_from_results, export_netlist, prepare_virtuoso_workspace
 from .models import DeviceMap, SchematicIR
 from .parser import parse_netlist
 
@@ -10,4 +10,5 @@ __all__ = [
     "export_from_results",
     "export_netlist",
     "parse_netlist",
+    "prepare_virtuoso_workspace",
 ]

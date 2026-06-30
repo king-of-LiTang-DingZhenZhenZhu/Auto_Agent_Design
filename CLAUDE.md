@@ -31,7 +31,7 @@
 ## 第二步：拓扑选择（决策树）
 
 ```
-gain ≥ 40 dB → two_stage_ota 或 folded_cascode
+gain ≥ 40 dB → two_stage_ota 或 folded_cascode，folded_cascode 尚未完善
 gain < 40 dB → 5t_ota
 gain ≥ 100 dB → nmcf_three_stage      # 尚未完善
 ```
@@ -110,7 +110,18 @@ python main.py --netlist ... --testbench ... --gain 40 --gbw 500e6 --pm 60 --pow
 
 关键字段：`all_targets_met`（是否全部达标）、`target_status`（逐项达标状态）、`gap`（与目标的差距，正=超额，负=不足）、`metrics`（实际仿真值）、`params`（最优参数）。
 
-其他输出详见 [README.md](README.md#输出结果)。
+其他重要输出：
+
+```text
+outputs/<project_name>/
+├── initial_default/              # topology DEFAULT_PARAMS 初始仿真
+├── initial_gmid/                 # 默认 gm/Id 推导尺寸后的初始仿真
+├── diagnostics/
+│   └── diagnostics_summary.txt   # 最优 run 的 DC/AC 人类可读诊断
+├── optimization_metrics.csv      # 每轮 gain/GBW/PM/power/SR/ST 表格
+└── optimization_log.json         # 完整优化历史
+```
+
 
 ---
 

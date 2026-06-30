@@ -44,9 +44,9 @@ class GmidCurrentMirrorTest(unittest.TestCase):
         }
 
         physical = GmidSizer(spec, _FakeLookup()).size(params)
-        wtail_total = physical["Wtail"] * physical["nf_Wtail"]
-        wload_total = physical["Wload"] * physical["nf_Wload"]
-        wcs_total = physical["Wcs"] * physical["nf_Wcs"]
+        wtail_total = physical["Wtail"] * physical["m_Wtail"]
+        wload_total = physical["Wload"] * physical["m_Wload"]
+        wcs_total = physical["Wcs"] * physical["m_Wcs"]
 
         self.assertAlmostEqual(wload_total, 2.0 * wtail_total)
         self.assertAlmostEqual(physical["Lload"], physical["Ltail"])
@@ -58,47 +58,44 @@ class GmidCurrentMirrorTest(unittest.TestCase):
         params = {
             "m_half_unit": 3,
             "m_load_ratio": 5,
+            "Lbias": 500e-9,
             "gm_id_diff_pair_pmos": 14,
             "L_diff_pair_pmos": 120e-9,
             "gm_id_cs_pmos": 12,
             # Attempts to override fixed bias params should be ignored.
             "Wbp_big": 99e-6,
-            "Lbp_big": 900e-9,
             "Wbn_big": 99e-6,
-            "Lbn_big": 900e-9,
             "Cc": 1e-12,
             "Rz": 1e3,
         }
 
         physical = GmidSizer(spec, _FakeLookup()).size(params)
-        wdiff_total = (
-            physical["Wdiffp"]
-            * physical["nf_Wdiffp"]
-            * physical["m_Wdiffp"]
-        )
-        wcs_total = physical["Wcs"] * physical["nf_Wcs"] * physical["m_Wcs"]
+        wdiff_total = physical["Wdiffp"] * physical["m_Wdiffp"]
+        wcs_total = physical["Wcs"] * physical["m_Wcs"]
 
         # I_tail = 20uA * 2 * 3, diff pair side current = I_tail/2 = 60uA.
         self.assertAlmostEqual(wdiff_total, 6e-6)
         # I_cs = 20uA * 3 * 5 = 300uA.
         self.assertAlmostEqual(wcs_total, 30e-6)
         self.assertAlmostEqual(
-            physical["Wbp_big"] * physical["nf_Wbp_big"] * physical["m_Wbp_big"],
-            9.6e-6,
+            physical["Wbp_big"] * physical["m_Wbp_big"],
+            6.0e-6,
         )
         self.assertAlmostEqual(
-            physical["Wbp_small"] * physical["nf_Wbp_small"] * physical["m_Wbp_small"],
-            1.6e-6,
+            physical["Wbp_small"] * physical["m_Wbp_small"],
+            1.5e-6,
         )
         self.assertAlmostEqual(
-            physical["Wbn_big"] * physical["nf_Wbn_big"] * physical["m_Wbn_big"],
-            4.8e-6,
+            physical["Wbn_big"] * physical["m_Wbn_big"],
+            6.0e-6,
         )
         self.assertAlmostEqual(
-            physical["Wbn_small"] * physical["nf_Wbn_small"] * physical["m_Wbn_small"],
-            0.8e-6,
+            physical["Wbn_small"] * physical["m_Wbn_small"],
+            1.5e-6,
         )
-        self.assertAlmostEqual(physical["Lbn_big"], 400e-9)
+        self.assertAlmostEqual(physical["Lbias"], 500e-9)
+        self.assertAlmostEqual(physical["Wbp_big"] / physical["nf_Wbp_big"], 1.5e-6)
+        self.assertAlmostEqual(physical["Wbn_big"] / physical["nf_Wbn_big"], 1.5e-6)
         self.assertEqual(physical["m_half_unit"], 3)
         self.assertEqual(physical["m_load_ratio"], 5)
 

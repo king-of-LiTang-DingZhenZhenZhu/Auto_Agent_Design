@@ -15,11 +15,11 @@
 | Parameter | Min | Max | Notes |
 |-----------|-----|-----|-------|
 | L (channel length) | 30nm | 1um | Min L=30nm for reliability; **analog circuits: recommend L ≥ 60nm** to reduce short-channel effects and improve output impedance |
-| W (finger width) | 100nm | 2.7um | Per finger |
-| nf (finger count) | 1 | 64 | Power of 2 preferred |
+| W/nf (finger width) | 100nm | 2.6um | Project guard-band below the PDK bin edge |
+| nf (finger count) | 1 | 32 | Splits one Spectre instance width into fingers; does not multiply effective width |
 | M (multiplier) | 1 | 32 | Integer |
 
-**Effective width** = W x nf x m
+Spectre native MOS `w` is the total width of one instance. Effective width = `W * m`; `nf` only controls finger splitting.
 
 
 ## Current Density Guidelines

@@ -15,10 +15,12 @@ def split_width(
     max_per_finger: float,
     max_nf: int = MAX_NF_PER_DEVICE,
 ) -> tuple[float, int, int]:
-    """Split total MOS width into per-finger W, nf, and m.
+    """Split effective MOS width into Spectre instance W, nf, and m.
 
-    The first 32-way split uses ``nf``. Wider devices use ``m`` as a
-    parallel multiplier while keeping ``nf <= max_nf``.
+    In Spectre native syntax, ``w`` is the total width of one MOS instance and
+    ``nf`` splits that width into fingers.  ``nf`` does not multiply effective
+    width; only ``m`` creates parallel instances.  Therefore effective width is
+    ``w * m``.
     """
     if total_width <= 0:
         raise ValueError(f"total_width must be positive, got {total_width}")
@@ -27,15 +29,16 @@ def split_width(
             f"max_per_finger must be positive, got {max_per_finger}"
         )
 
-    nf_needed = max(1, int(math.ceil(total_width / max_per_finger)))
-    if nf_needed <= max_nf:
-        nf = nf_needed
+    max_instance_width = max_nf * max_per_finger
+    if total_width <= max_instance_width:
+        instance_total_w = total_width
         m = 1
     else:
-        m = int(math.ceil(nf_needed / max_nf))
-        nf = int(math.ceil(nf_needed / m))
-    w_per_finger = total_width / (nf * m)
-    return w_per_finger, nf, m
+        m = int(math.ceil(total_width / max_instance_width))
+        instance_total_w = total_width / m
+
+    nf = max(1, int(math.ceil(instance_total_w / max_per_finger)))
+    return instance_total_w, nf, m
 
 
 # ======================================================================
@@ -219,6 +222,8 @@ class GmidTopologySpec:
     current_mirrors: list[CurrentMirrorRatioSpec] = field(default_factory=list)
     derived_length_params: dict[str, str] = field(default_factory=dict)
     fixed_params: dict[str, float] = field(default_factory=dict)
+    fixed_width_scale_param: str | None = None
+    fixed_width_scale_reference: float = 1.0
 
     def build_param_space(self) -> "ParamSpace":
         """Convert the gm/Id spec into a :class:`ParamSpace` for BO.
@@ -485,10 +490,10 @@ class ParamSpace:
         raw_params: dict[str, float],
         global_max_per_finger: float | None = None,
     ) -> dict[str, float]:
-        """Split wide transistor parameters into (W_finger, nf, m) tuples.
+        """Split wide transistor parameters into Spectre ``w``, ``nf``, ``m``.
 
-        Example: {Wtail: 12u} -> {Wtail: 2.4u, nf_Wtail: 5, m_Wtail: 1}
-                 very wide W  -> {Wtail: W/(nf*m), nf_Wtail <= 32, m_Wtail > 1}
+        Example: {Wtail: 12u} -> {Wtail: 12u, nf_Wtail: 5, m_Wtail: 1}
+                 very wide W  -> {Wtail: W/m, nf_Wtail <= 32, m_Wtail > 1}
         """
         resolved = dict(raw_params)
         for p in self.params:
@@ -505,8 +510,8 @@ class ParamSpace:
                 if global_max_per_finger is not None
                 else p.max_per_finger
             )
-            w_per_finger, nf, m = split_width(total_w, max_per_finger)
-            resolved[p.name] = w_per_finger
+            instance_total_w, nf, m = split_width(total_w, max_per_finger)
+            resolved[p.name] = instance_total_w
             resolved[f"nf_{p.name}"] = nf
             resolved[f"m_{p.name}"] = m
         return resolved
@@ -545,6 +550,8 @@ class ParamSpace:
                 name = kv.group(1)
                 if name.upper() in ("NF", "M"):
                     continue  # system-managed
+                if name.lower().endswith("_ref"):
+                    continue  # fixed reference constant, not a BO parameter
                 try:
                     value = _parse_spice_suffix(kv.group(2))
                     param_entries.append((name, value))
@@ -757,8 +764,9 @@ class NetlistTemplate:
     ) -> str:
         """Substitute parameter values into the template.
 
-        If param_space is provided, wide transistors are automatically split
-        into multiple fingers: W_total > max_per_finger → W_finger × nf.
+        If param_space is provided, wide transistors are automatically split:
+        ``w`` remains the instance total width, ``nf`` limits per-finger width,
+        and ``m`` is used only after ``nf`` would exceed the configured limit.
 
         Replaces .param lines: `.param W1 = 5u`
         Also injects nf values on transistor lines: `nf=1` → `nf=4`

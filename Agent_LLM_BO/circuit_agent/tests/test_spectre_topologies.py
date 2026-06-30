@@ -4,13 +4,26 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from models import DesignTarget, NetlistTemplate
+from models import DesignTarget, NetlistTemplate, split_width
 from config import Settings
 from simulator import Simulator
 from topologies import get_topology, list_topologies
 
 
 class SpectreTopologyTest(unittest.TestCase):
+    def test_split_width_uses_spectre_native_w_nf_m_semantics(self):
+        instance_w, nf, m = split_width(12e-6, 2.6e-6)
+        self.assertAlmostEqual(instance_w, 12e-6)
+        self.assertEqual(nf, 5)
+        self.assertEqual(m, 1)
+        self.assertLessEqual(instance_w / nf, 2.6e-6)
+
+        wide_w, wide_nf, wide_m = split_width(120e-6, 2.6e-6)
+        self.assertEqual(wide_nf, 24)
+        self.assertEqual(wide_m, 2)
+        self.assertAlmostEqual(wide_w * wide_m, 120e-6)
+        self.assertLessEqual(wide_w / wide_nf, 2.6e-6)
+
     def test_topology_metadata_uses_gbw_capability_names(self):
         for meta in list_topologies():
             self.assertGreaterEqual(meta.max_gbw_hz, meta.min_gbw_hz)
@@ -80,8 +93,8 @@ class SpectreTopologyTest(unittest.TestCase):
             w_l_grid_step=10e-9,
         )
 
-        self.assertIn("parameters Wtail=2.4u Ltail=200n", rendered)
-        self.assertIn("Mtail (tail vbias vdd vdd) pch_mac w=2.4u l=200n nf=5 m=1", rendered)
+        self.assertIn("parameters Wtail=12u Ltail=200n", rendered)
+        self.assertIn("Mtail (tail vbias vdd vdd) pch_mac w=12u l=200n nf=5 m=1", rendered)
         self.assertNotIn("w=Wtail", rendered)
 
     def test_wide_transistor_rendering_uses_m_after_nf_limit(self):
@@ -106,11 +119,11 @@ class SpectreTopologyTest(unittest.TestCase):
 
         self.assertRegex(
             rendered,
-            r"Mcs .* w=2\.5u l=200n nf=24 m=2",
+            r"Mcs .* w=60u l=200n nf=24 m=2",
         )
         self.assertRegex(
             rendered,
-            r"Mload .* w=2\.5u l=200n nf=22 m=2",
+            r"Mload .* w=55u l=200n nf=22 m=2",
         )
 
     def test_folded_cascode_uses_bias_ratio_current_sources(self):
@@ -124,36 +137,48 @@ class SpectreTopologyTest(unittest.TestCase):
         self.assertNotIn("Wtailp", rendered)
         self.assertNotIn("Wfoldn", rendered)
         self.assertNotIn("Wload", rendered)
+        self.assertIn("parameters Wbp_big=4.8u*Lbias/Lbias_ref", rendered)
         self.assertIn("parameters m_half_unit=2 m_load_ratio=2", rendered)
         self.assertIn(
             "Mtailp (ntail VB1 vdd vdd) pch_lvt_mac "
-            "w=2.4u l=400n nf=4 m=m_tail_unit*m_Wbp_big",
+            "w=Wbp_big l=400n nf=nf_Wbp_big m=m_tail_unit*m_Wbp_big",
             rendered,
         )
         self.assertIn(
             "Mfold1 (nfold_l VB4 vss vss) nch_lvt_mac "
-            "w=1.2u l=400n nf=4 m=m_tail_unit*m_Wbn_big",
+            "w=Wbn_big l=400n nf=nf_Wbn_big m=m_tail_unit*m_Wbn_big",
             rendered,
         )
         self.assertIn(
             "Mcasn1 (pmirr VB3 nfold_l vss) nch_lvt_mac "
-            "w=1.2u l=400n nf=4 m=m_half_unit*m_Wbn_big",
+            "w=Wbn_big l=400n nf=nf_Wbn_big m=m_half_unit*m_Wbn_big",
             rendered,
         )
         self.assertIn(
             "Mmirr1 (npm_l pmirr vdd vdd) pch_lvt_mac "
-            "w=2.4u l=400n nf=4 m=m_half_unit*m_Wbp_big",
+            "w=Wbp_big l=400n nf=nf_Wbp_big m=m_half_unit*m_Wbp_big",
             rendered,
         )
         self.assertIn(
             "Mcs (vout nstage1 vdd vdd) pch_lvt_mac "
-            "w=2.5u l=400n nf=12 m=1",
+            "w=30u l=400n nf=12 m=1",
             rendered,
         )
         self.assertIn(
             "Mload (vout VB4 vss vss) nch_lvt_mac "
-            "w=1.2u l=400n nf=4 m=m_load_unit*m_Wbn_big",
+            "w=Wbn_big l=400n nf=nf_Wbn_big m=m_load_unit*m_Wbn_big",
             rendered,
+        )
+
+        lscaled = NetlistTemplate.from_netlist(circuit).render(
+            {"Lbias": 500e-9},
+            param_space=topo.get_param_space(),
+        )
+        self.assertIn("parameters Lbias=500n Lbias_ref=400n", lscaled)
+        self.assertIn("parameters Wbp_big=4.8u*Lbias/Lbias_ref", lscaled)
+        self.assertIn(
+            "M9 (VB4 VB3 net3 vss) nch_lvt_mac l=500n w=Wbn_big",
+            lscaled,
         )
 
     def test_write_project_uses_target_load_cap_for_testbenches(self):

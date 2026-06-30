@@ -1,6 +1,6 @@
 # Auto Agent Design — 模拟电路自动设计优化系统
 
-基于 **拓扑库 + gm/Id 查找表 + 贝叶斯优化** 的模拟电路自动设计闭环系统。用户描述需求，系统自动选择拓扑、生成 Spectre native 网表、调用 Spectre 仿真、运行 BO 优化迭代，最终输出达标的设计参数。
+基于 **拓扑库 + gm/Id 查找表 + 贝叶斯优化** 的模拟电路自动设计闭环系统。用户描述需求后，系统生成 Spectre native 网表、调用 Spectre 仿真、解析结果并运行 BO 优化迭代，最终输出最优设计参数、诊断文件和可复现实验目录。
 
 ## 项目结构
 
@@ -20,6 +20,7 @@ Auto_Agent_Design/
     │   ├── simulator.py               # Spectre 仿真调用
     │   ├── llm_client.py              # DeepSeek LLM 客户端
     │   ├── psf_results.py             # PSF 结果解析（AC/瞬态）
+    │   ├── diagnostics_export.py       # DC/AC 诊断 CSV 与可读摘要
     │   ├── gmid_lookup.py             # gm/Id 查找表与尺寸计算
     │   ├── utils.py                   # 工具函数
     │   ├── requirements.txt           # Python 依赖
@@ -80,7 +81,7 @@ Auto_Agent_Design/
 ⑤ 读取 outputs/<project>/results.json → 汇报结果
     │
     ▼
-⑥ BO 后 Review → 选取 Top 迭代，指标缺口规则生成候选网表，仿真验证
+⑥ BO 后 Review → 选取 Top 迭代，指标缺口规则或本地 Agent patch plan 生成候选网表，仿真验证
 ```
 
 ## 快速开始
@@ -147,7 +148,7 @@ python main.py \
 
 ## BO 后 Review
 
-BO 优化完成后，可对 Top 迭代应用指标缺口规则生成候选网表：
+BO 优化完成后，可对 Top 迭代应用指标缺口规则生成候选网表；也可以先生成本地 Agent review 上下文，再由本地 Claude/Codex 根据知识库填写 `patch_plan.json`。
 
 ```bash
 cd Agent_LLM_BO/circuit_agent
@@ -162,6 +163,41 @@ python review_optimization.py \
 
 规则参考：[optimization_review_guide.md](knowledge_base/Opamp_knowledge_base/optimization_review_guide.md)
 
+## Virtuoso 导出
+
+`export_to_virtuoso.py --results outputs/<project>/results.json` 会导出最终应采用的 netlist：若 `agent_review/candidate_metrics.csv` 中存在满足原始目标的 review candidate，则优先导出该 candidate；否则导出 BO 最优的 `outputs/<project>/netlist/circuit.cir`。也可以用 `--netlist` 显式指定要导出的 `.cir`。
+
+默认行为只生成 SKILL，不启动 Cadence：
+
+```bash
+python export_to_virtuoso.py \
+  --results outputs/<project>/results.json \
+  --lib BO_Designs
+```
+
+如需自动创建 Virtuoso 工作目录、生成 `cds.lib` 和 wrapper SKILL，并用批处理加载原理图：
+
+```bash
+python export_to_virtuoso.py \
+  --results outputs/<project>/results.json \
+  --lib BO_Designs \
+  --tech-lib tsmcN28 \
+  --run-virtuoso
+```
+
+自动导入工作目录默认在：
+
+```text
+Agent_LLM_BO/virtuoso_runs/<project>/
+├── cds.lib
+├── import_schematic.il
+├── run_import.il
+├── virtuoso_import.log
+└── README_import.md
+```
+
+`--tech-lib` 是 Virtuoso technology library 名称，不是 Spectre model include 文件路径。
+
 ## 可用拓扑
 
 | 拓扑 | 增益范围 | GBW 范围 | 复杂度 |
@@ -175,33 +211,36 @@ python review_optimization.py \
 
 系统使用 gm/Id 查找表将目标跨导和电流映射为器件尺寸：
 
-1. **BO 搜索 gm/Id 空间** — 搜索 `gm_id`、`L`、支路电流等独立参数
-2. **查找表映射** — `GmidSizer.size()` 将 gm/Id 参数转换为 W/L/nf
-3. **电流镜比例** — 镜像输出管宽度由参考管 × 整数比自动推导
-4. **偏置推导** — VBIAS 由尾管查表得到的 VGS 自动计算
+1. **BO 搜索 gm/Id 空间** — 搜索 `gm_id`、`L`、支路电流或整数电流比例。
+2. **查找表映射** — `GmidSizer.size()` 根据 gm/Id、L、电流和预估 VDS/VBS 推导 W/L/nf/m。
+3. **电流镜比例** — 镜像输出管使用整数倍率复制参考电流，宽器件先拆 `nf`，`nf>32` 后再用 `m`。
+4. **偏置推导** — 支持由 lookup 的 VGS/VSG 推导 VBIAS；folded cascode 当前固定 internal bias generator，主路径通过电流比例和 gm/Id 推导尺寸。
 
-无需手动处理 W/L 或 finger 数，系统自动满足 PDK 约束（W≤2.7μm/finger）。
+无需手动处理单指 W 或 finger 数，系统使用 `2.6μm/finger` guard-band 满足 PDK bin 约束。
 
 ## 优化算法
 
 | 方法 | 角色 |
 |------|------|
-| **BO（贝叶斯优化）** | Optuna TPE 采样 + 高斯过程代理模型，全局搜索 |
-| **LLM（大语言模型）** | 每 N 轮验证参数物理可行性，利用电路先验知识指导搜索方向 |
+| **BO（贝叶斯优化）** | Optuna TPE 采样，在物理参数或 gm/Id 参数空间中搜索 |
+| **Spectre + parser** | 执行 AC/SR/ST 仿真，解析 gain/GBW/PM/power/SR/ST 与诊断数据 |
+| **LLM（可选）** | 解析自然语言需求、周期性检查参数物理可行性；不负责修改拓扑网表 |
 
 ## PDK 约束（TSMC N28）
 
 | 参数 | 范围 | 说明 |
 |------|------|------|
 | L | 30 nm – 1 μm | 模拟推荐 ≥ 60 nm |
-| W_per_finger | 100 nm – 2.7 μm | 超出自动拆分 nf |
-| nf | 1 – 64 | 建议 2 的幂次 |
+| W_per_finger | 100 nm – 2.6 μm | guard-band，低于 PDK bin 上界 |
+| nf/m | nf ≤ 32 | `nf` 只把 instance 总宽 `W` 分成多个 finger；有效宽度为 `W*m` |
 | VDD | 0.9 V | 带 I/O 的 core 器件 |
 
 ## 输出结果
 
 ```
 outputs/<project>/
+├── initial_default/              # DEFAULT_PARAMS 初始仿真结果
+├── initial_gmid/                 # 默认 gm/Id 推导尺寸后的初始仿真结果
 ├── netlist/
 │   └── circuit.cir              # 最优参数渲染后的电路
 ├── simulation/
@@ -211,6 +250,10 @@ outputs/<project>/
 ├── data/
 │   ├── sim.log                  # 最优迭代仿真日志
 │   └── raw/                     # Spectre PSF ASCII 数据
+├── diagnostics/
+│   ├── dc_operating_points.csv   # MOS DC 工作点
+│   ├── ac_response.csv           # AC 幅相数据
+│   └── diagnostics_summary.txt   # 人类可读 DC/AC 诊断摘要
 ├── results.json                 # 结构化结果
 ├── summary_report.txt           # 人类可读报告
 ├── optimization_log.json        # 完整优化历史

@@ -79,7 +79,7 @@
 1. **简单优先**: 在满足指标的前提下，优先选择复杂度最低的拓扑
 2. **升级路径**: 如果当前拓扑经过 BO 优化仍不达标，按升级路径自动切换
 3. **指标平衡**: 高增益和高带宽通常冲突；普通 two_stage_ota 用五管第一级，复杂度和功耗较低；folded_cascode 用折叠 Cascode 第一级，换取更高第一级输出阻抗和更强增益/带宽潜力；nmcf_three_stage 用三级增益和 nested Miller 补偿换取极高增益/负载能力
-4. **PDK 约束**: 所有拓扑严格遵循 TSMC N28 PDK 约束（L≥30nm, W_per_finger≤2.7um）
+4. **PDK 约束**: 所有拓扑严格遵循 TSMC N28 PDK 约束（L≥30nm, W/nf≤2.6um；有效宽度为 W*m）
 
 ## 什么时候使用 folded_cascode
 

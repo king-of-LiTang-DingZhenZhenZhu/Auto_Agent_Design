@@ -36,6 +36,10 @@ def main() -> None:
             cell_name=args.cell,
             out_path=args.out,
             device_map_path=args.device_map,
+            virtuoso_workdir=args.virtuoso_workdir,
+            tech_lib=args.tech_lib,
+            run_virtuoso=args.run_virtuoso,
+            virtuoso_bin=args.virtuoso_bin,
         )
     else:
         if not args.cell:
@@ -48,11 +52,19 @@ def main() -> None:
             cell_name=args.cell,
             out_path=args.out,
             device_map_path=args.device_map,
+            virtuoso_workdir=args.virtuoso_workdir,
+            tech_lib=args.tech_lib,
+            run_virtuoso=args.run_virtuoso,
+            virtuoso_bin=args.virtuoso_bin,
         )
 
     print(f"SKILL file: {report['skill_file']}")
     print(f"Report: {Path(report['skill_file']).parent / 'export_report.json'}")
     print(f"Virtuoso target: {report['target_lib']}/{report['target_cell']}/schematic")
+    if "virtuoso_workdir" in report:
+        print(f"Virtuoso workdir: {report['virtuoso_workdir']}")
+        print(f"Run script: {report['run_script']}")
+        print(f"Run log: {report['run_log']}")
 
 
 def parse_args() -> argparse.Namespace:
@@ -100,6 +112,32 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default=None,
         help="Write the default device map JSON to this path and exit",
+    )
+    parser.add_argument(
+        "--virtuoso-workdir",
+        type=str,
+        default=None,
+        help=(
+            "Cadence working directory. Defaults to "
+            "Agent_LLM_BO/virtuoso_runs/<project> when --run-virtuoso is used."
+        ),
+    )
+    parser.add_argument(
+        "--tech-lib",
+        type=str,
+        default="tsmcN28",
+        help="Virtuoso technology library to attach to the generated design library",
+    )
+    parser.add_argument(
+        "--virtuoso-bin",
+        type=str,
+        default="virtuoso",
+        help="Virtuoso executable used with --run-virtuoso",
+    )
+    parser.add_argument(
+        "--run-virtuoso",
+        action="store_true",
+        help="Launch virtuoso -nograph -replay run_import.il after exporting SKILL",
     )
     return parser.parse_args()
 

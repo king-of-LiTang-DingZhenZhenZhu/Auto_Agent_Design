@@ -340,7 +340,7 @@ def inflate_width_params_from_instances(
     netlist_text: str,
     params: dict[str, float],
 ) -> dict[str, float]:
-    """Recover total W from rendered per-finger W and instance nf values."""
+    """Recover effective W from rendered Spectre instance W and m values."""
     inflated = dict(params)
     width_params = {
         name: value for name, value in params.items() if name.lower().startswith("w")
@@ -367,9 +367,8 @@ def inflate_width_params_from_instances(
             except ValueError:
                 continue
             if math.isclose(instance_w, value, rel_tol=1e-6, abs_tol=1e-15):
-                nf = int(nf_match.group(1)) if nf_match else 1
                 m = int(m_match.group(1)) if m_match else 1
-                max_multiplier = max(max_multiplier, nf * m)
+                max_multiplier = max(max_multiplier, m)
         inflated[name] = value * max_multiplier
     return inflated
 

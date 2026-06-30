@@ -170,9 +170,11 @@ class OptimizerConfigTest(unittest.TestCase):
         self.assertEqual(params["m_half_unit"].high, 6)
         self.assertEqual(params["m_load_ratio"].low, 2)
         self.assertEqual(params["m_load_ratio"].high, 8)
+        self.assertIn("Lbias", params)
+        self.assertAlmostEqual(params["Lbias"].low, 300e-9)
+        self.assertAlmostEqual(params["Lbias"].high, 600e-9)
         for name in (
             "Wbp_big", "Wbp_small", "Wbn_big", "Wbn_small",
-            "Lbp_big", "Lbp_small", "Lbn_big", "Lbn_small",
         ):
             self.assertNotIn(name, params)
 
@@ -199,6 +201,7 @@ class OptimizerConfigTest(unittest.TestCase):
             self.assertNotIn(name, params)
         self.assertIn("m_half_unit", params)
         self.assertIn("m_load_ratio", params)
+        self.assertIn("Lbias", params)
         self.assertNotIn("m_load_extra", params)
         for name in (
             "Wbp_big", "Wbp_small", "Wbn_big", "Wbn_small",
@@ -212,18 +215,20 @@ class OptimizerConfigTest(unittest.TestCase):
             "gm_id_bias_nmos_small",
         ):
             self.assertNotIn(name, params)
-        self.assertEqual(spec.fixed_params["Wbp_big"], 2.4e-6)
-        self.assertEqual(spec.fixed_params["Lbp_big"], 400e-9)
+        self.assertEqual(spec.fixed_params["Wbp_big"], 4.8e-6)
         self.assertEqual(spec.fixed_params["nf_Wbp_big"], 4)
         self.assertEqual(spec.fixed_params["m_Wbp_big"], 1)
-        self.assertEqual(spec.fixed_params["nf_Wbp_small"], 2)
+        self.assertEqual(spec.fixed_params["Wbp_small"], 1.2e-6)
+        self.assertEqual(spec.fixed_params["nf_Wbp_small"], 1)
         self.assertEqual(spec.fixed_params["m_Wbp_small"], 1)
-        self.assertEqual(spec.fixed_params["Wbn_big"], 1.2e-6)
-        self.assertEqual(spec.fixed_params["Lbn_big"], 400e-9)
+        self.assertEqual(spec.fixed_params["Wbn_big"], 4.8e-6)
         self.assertEqual(spec.fixed_params["nf_Wbn_big"], 4)
         self.assertEqual(spec.fixed_params["m_Wbn_big"], 1)
-        self.assertEqual(spec.fixed_params["nf_Wbn_small"], 2)
+        self.assertEqual(spec.fixed_params["Wbn_small"], 1.2e-6)
+        self.assertEqual(spec.fixed_params["nf_Wbn_small"], 1)
         self.assertEqual(spec.fixed_params["m_Wbn_small"], 1)
+        self.assertEqual(spec.fixed_width_scale_param, "Lbias")
+        self.assertEqual(spec.fixed_width_scale_reference, 400e-9)
 
     def test_two_stage_gmid_space_derives_nmos_vbias(self):
         spec = get_topology("two_stage_ota").get_gmid_spec()
