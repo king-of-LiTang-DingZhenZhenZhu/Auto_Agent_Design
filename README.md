@@ -182,6 +182,8 @@ python export_to_virtuoso.py \
   --results outputs/<project>/results.json \
   --lib BO_Designs \
   --tech-lib tsmcN28 \
+  --include-cds-lib /home/userone/cds.lib \
+  --pdk-lib-path /PDKS/TSMC28nm/tsmcN28 \
   --run-virtuoso
 ```
 
@@ -196,7 +198,7 @@ Agent_LLM_BO/virtuoso_runs/<project>/
 └── README_import.md
 ```
 
-`--tech-lib` 是 Virtuoso technology library 名称，不是 Spectre model include 文件路径。
+`--tech-lib` 是 Virtuoso technology library 名称，不是 Spectre model include 文件路径。batch Virtuoso 不一定会自动读取用户主目录的 `cds.lib`，因此建议用 `--include-cds-lib` 显式引入站点/用户 `cds.lib`，或用 `--pdk-lib-path` 显式写入 `DEFINE tsmcN28 /PDKS/TSMC28nm/tsmcN28`。自动运行时脚本会把 `CDS_LOG` 指到工作目录下的 `CDS.log`，避免和已打开的 Virtuoso GUI 争用 `~/CDS.log` 锁。
 
 ## 可用拓扑
 

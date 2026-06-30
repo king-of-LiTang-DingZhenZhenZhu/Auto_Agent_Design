@@ -7,6 +7,8 @@ from datetime import datetime
 from .models import DeviceMap, Instance, SchematicIR
 from .placement import Placement, get_placements
 
+_SCHEMATIC_SCALE = 0.01
+
 
 def write_skill(
     ir: SchematicIR,
@@ -33,7 +35,17 @@ def write_skill(
         "procedure(boReplaceProp(obj name value)",
         "  when(value",
         "    when(dbFindProp(obj name) dbDeleteObject(dbFindProp(obj name)))",
-        "    dbCreateProp(obj name \"string\" value)",
+        "    if(rexMatchp(\"^[0-9]+$\" value) then",
+        "      dbCreateProp(obj name \"int\" atoi(value))",
+        "    else",
+        "      dbCreateProp(obj name \"string\" value)",
+        "    )",
+        "  )",
+        ")",
+        "",
+        "procedure(boMaybeCreateLabel(cv text x y)",
+        "  when(boundp('dbCreateLabel)",
+        "    errset(dbCreateLabel(cv list(\"wire\" \"label\") list(x y) text \"centerCenter\" \"R0\" \"stick\" 0.125) t)",
         "  )",
         ")",
         "",
@@ -49,6 +61,12 @@ def write_skill(
         "  when(boundp('schCreateWire)",
         "    errset(schCreateWire(cv \"draw\" \"full\" list(list(x1 y1) list(x2 y2)) 0.0625 0.0625 0.0) t)",
         "  )",
+        ")",
+        "",
+        "procedure(boCreateNetStub(cv netName x1 y1 x2 y2 lx ly)",
+        "  ;; Visual net-name stub. Electrical connectivity is created by dbCreateConnByName.",
+        "  boMaybeCreateWire(cv x1 y1 x2 y2)",
+        "  boMaybeCreateLabel(cv netName lx ly)",
         ")",
         "",
         "let((libName cellName cv master inst net)",
@@ -72,6 +90,7 @@ def write_skill(
         lines.append(f"  net = boEnsureNet(cv {_skill_str(port)})")
         lines.append(f"  dbCreateTerm(net {_skill_str(port)} {_skill_str(direction)})")
         lines.append(f"  boMaybeCreateWire(cv {x1} {y1} {x2} {y2})")
+        lines.append(f"  boMaybeCreateLabel(cv {_skill_str(port)} {x1} {y1})")
 
     lines.extend(["", "  ;; Create and connect instances"])
     for inst_obj in ir.instances:
@@ -110,7 +129,7 @@ def _instance_lines(
         f"  unless(master error(\"Unable to open master {entry.lib}/{entry.cell}/{entry.view}\\n\"))",
         (
             f"  inst = dbCreateInst(cv master {_skill_str(inst.name)} "
-            f"list({placement.x} {placement.y}) {_skill_str(placement.orient)})"
+            f"list({_coord(placement.x)} {_coord(placement.y)}) {_skill_str(placement.orient)})"
         ),
     ]
 
@@ -119,8 +138,13 @@ def _instance_lines(
         lines.append(f"  boReplaceProp(inst {_skill_str(skill_param)} {_skill_str(value)})")
 
     term_order = _term_order(inst, entry.term_order)
-    for node, term_name in zip(inst.nodes, term_order):
+    for index, (node, term_name) in enumerate(zip(inst.nodes, term_order)):
         lines.append(f"  dbCreateConnByName(boEnsureNet(cv {_skill_str(node)}) inst {_skill_str(term_name)})")
+        stub = _instance_stub(inst, placement, term_name, index)
+        lines.append(
+            "  boCreateNetStub(cv "
+            f"{_skill_str(node)} {stub[0]} {stub[1]} {stub[2]} {stub[3]} {stub[4]} {stub[5]})"
+        )
 
     lines.append("")
     return lines
@@ -144,8 +168,47 @@ def _port_direction(port: str) -> str:
 
 
 def _port_stub(index: int) -> tuple[int, int, int, int]:
-    y = 750 - index * 140
-    return (-1300, y, -1100, y)
+    y = 7.5 - index * 1.4
+    return (-13.0, y, -11.0, y)
+
+
+def _instance_stub(
+    inst: Instance,
+    placement: Placement,
+    term_name: str,
+    index: int,
+) -> tuple[float, float, float, float, float, float]:
+    x = _coord(placement.x)
+    y = _coord(placement.y)
+    term = term_name.upper()
+    if inst.kind == "mos":
+        offsets = {
+            "D": (0.0, 0.65, 0.0, 1.05),
+            "G": (-0.65, 0.0, -1.05, 0.0),
+            "S": (0.0, -0.65, 0.0, -1.05),
+            "B": (0.65, 0.0, 1.05, 0.0),
+        }
+        dx1, dy1, dx2, dy2 = offsets.get(term, _fallback_stub_offset(index))
+    else:
+        offsets = {
+            "PLUS": (-0.55, 0.0, -0.95, 0.0),
+            "MINUS": (0.55, 0.0, 0.95, 0.0),
+        }
+        dx1, dy1, dx2, dy2 = offsets.get(term, _fallback_stub_offset(index))
+    x1 = x + dx1
+    y1 = y + dy1
+    x2 = x + dx2
+    y2 = y + dy2
+    return (x1, y1, x2, y2, x2, y2)
+
+
+def _fallback_stub_offset(index: int) -> tuple[float, float, float, float]:
+    y = 0.4 - index * 0.25
+    return (-0.55, y, -0.95, y)
+
+
+def _coord(value: float) -> float:
+    return round(value * _SCHEMATIC_SCALE, 3)
 
 
 def _skill_str(value: str) -> str:

@@ -62,8 +62,35 @@ class VirtuosoExportTest(unittest.TestCase):
         self.assertIn('cellName = "ota_5t_opt"', skill)
         self.assertIn('dbCreateInst(cv master "Mtail"', skill)
         self.assertIn('dbCreateInst(cv master "Mdp1"', skill)
+        self.assertIn("boCreateNetStub", skill)
+        self.assertIn("boMaybeCreateLabel", skill)
         for port in ["vip", "vin", "vout", "vbias", "vdd", "vss"]:
             self.assertIn(f'dbCreateTerm(net "{port}"', skill)
+
+    def test_skill_writer_preserves_m_and_uses_compact_coordinates(self):
+        ir = parse_netlist(
+            """
+simulator lang=spectre
+parameters Wtail=12u Ltail=200n
+subckt tiny vip vin vout vdd vss
+Mtail (vout vin vss vss) nch_mac w=12u l=200n nf=5 m=4
+ends tiny
+"""
+        )
+
+        skill = write_skill(
+            ir,
+            DEFAULT_DEVICE_MAP,
+            lib_name="BO_Designs",
+            cell_name="tiny_opt",
+        )
+
+        self.assertIn('boReplaceProp(inst "m"', skill)
+        self.assertIn('dbCreateProp(obj name "int" atoi(value))', skill)
+        self.assertIn('boReplaceProp(inst "nf" "5")', skill)
+        self.assertIn('boReplaceProp(inst "m" "4")', skill)
+        self.assertIn('dbCreateInst(cv master "Mtail" list(-7.5 3.0) "R0")', skill)
+        self.assertIn('boCreateNetStub(cv "vout"', skill)
 
     def test_missing_device_map_fails_before_writing_skill(self):
         ir = parse_netlist(get_topology("5t_ota").generate_circuit())
@@ -159,6 +186,8 @@ class VirtuosoExportTest(unittest.TestCase):
             skill_path = root / "import_schematic.il"
             skill_path.write_text("printf(\"loaded\\n\")\n", encoding="utf-8")
             workdir = root / "virtuoso_runs" / "proj"
+            user_cds = root / "home" / "cds.lib"
+            pdk_path = root / "PDKS" / "TSMC28nm" / "tsmcN28"
 
             with patch("virtuoso_export.exporter.subprocess.run") as run_mock:
                 report = prepare_virtuoso_workspace(
@@ -168,6 +197,8 @@ class VirtuosoExportTest(unittest.TestCase):
                     tech_lib="tsmcN28",
                     workdir=workdir,
                     run_virtuoso=False,
+                    include_cds_libs=[user_cds],
+                    pdk_lib_path=pdk_path,
                 )
 
             run_mock.assert_not_called()
@@ -175,6 +206,10 @@ class VirtuosoExportTest(unittest.TestCase):
             self.assertTrue((workdir / "import_schematic.il").exists())
             self.assertTrue((workdir / "run_import.il").exists())
             self.assertTrue((workdir / "README_import.md").exists())
+            cds_lib = (workdir / "cds.lib").read_text(encoding="utf-8")
+            self.assertIn(f"SOFTINCLUDE {user_cds}", cds_lib)
+            self.assertIn(f"DEFINE tsmcN28 {pdk_path}", cds_lib)
+            self.assertIn("DEFINE BO_Designs ./BO_Designs", cds_lib)
             wrapper = (workdir / "run_import.il").read_text(encoding="utf-8")
             self.assertIn('libName = "BO_Designs"', wrapper)
             self.assertIn('cellName = "proj_opt"', wrapper)
@@ -183,7 +218,12 @@ class VirtuosoExportTest(unittest.TestCase):
             self.assertIn("techBindTechFile(libObj techLibName)", wrapper)
             self.assertIn("ddReleaseObj(libObj)", wrapper)
             self.assertIn('load(importSkill)', wrapper)
+            readme = (workdir / "README_import.md").read_text(encoding="utf-8")
+            self.assertIn(f"SOFTINCLUDE `{user_cds}`", readme)
+            self.assertIn(f"DEFINE `tsmcN28` `{pdk_path}`", readme)
             self.assertEqual(report["virtuoso_workdir"], str(workdir.resolve()))
+            self.assertEqual(report["include_cds_libs"], [str(user_cds)])
+            self.assertEqual(report["pdk_lib_path"], str(pdk_path))
             self.assertFalse(report["virtuoso_ran"])
 
     def test_prepare_virtuoso_workspace_runs_batch_import_when_requested(self):
@@ -192,6 +232,7 @@ class VirtuosoExportTest(unittest.TestCase):
             skill_path = root / "import_schematic.il"
             skill_path.write_text("printf(\"loaded\\n\")\n", encoding="utf-8")
             workdir = root / "virtuoso_runs" / "proj"
+            cds_log = workdir / "batch_CDS.log"
 
             with patch("virtuoso_export.exporter.subprocess.run") as run_mock:
                 run_mock.return_value.returncode = 0
@@ -204,14 +245,18 @@ class VirtuosoExportTest(unittest.TestCase):
                     workdir=workdir,
                     run_virtuoso=True,
                     virtuoso_bin="virtuoso",
+                    cds_log_path=cds_log,
                 )
 
             run_mock.assert_called_once()
             command = run_mock.call_args.args[0]
+            env = run_mock.call_args.kwargs["env"]
             self.assertEqual(command[:3], ["virtuoso", "-nograph", "-replay"])
             self.assertEqual(Path(command[3]), workdir.resolve() / "run_import.il")
+            self.assertEqual(env["CDS_LOG"], str(cds_log.resolve()))
             self.assertTrue(report["virtuoso_ran"])
             self.assertEqual(report["virtuoso_returncode"], 0)
+            self.assertEqual(report["cds_log"], str(cds_log.resolve()))
             self.assertEqual(
                 (workdir / "virtuoso_import.log").read_text(encoding="utf-8"),
                 "ok\n",

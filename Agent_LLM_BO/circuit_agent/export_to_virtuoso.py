@@ -40,6 +40,9 @@ def main() -> None:
             tech_lib=args.tech_lib,
             run_virtuoso=args.run_virtuoso,
             virtuoso_bin=args.virtuoso_bin,
+            include_cds_libs=args.include_cds_lib,
+            pdk_lib_path=args.pdk_lib_path,
+            cds_log_path=args.cds_log,
         )
     else:
         if not args.cell:
@@ -56,6 +59,9 @@ def main() -> None:
             tech_lib=args.tech_lib,
             run_virtuoso=args.run_virtuoso,
             virtuoso_bin=args.virtuoso_bin,
+            include_cds_libs=args.include_cds_lib,
+            pdk_lib_path=args.pdk_lib_path,
+            cds_log_path=args.cds_log,
         )
 
     print(f"SKILL file: {report['skill_file']}")
@@ -65,6 +71,7 @@ def main() -> None:
         print(f"Virtuoso workdir: {report['virtuoso_workdir']}")
         print(f"Run script: {report['run_script']}")
         print(f"Run log: {report['run_log']}")
+        print(f"CDS log: {report['cds_log']}")
 
 
 def parse_args() -> argparse.Namespace:
@@ -127,6 +134,33 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default="tsmcN28",
         help="Virtuoso technology library to attach to the generated design library",
+    )
+    parser.add_argument(
+        "--include-cds-lib",
+        action="append",
+        default=[],
+        help=(
+            "Add SOFTINCLUDE <path> to generated cds.lib. May be passed "
+            "multiple times, e.g. --include-cds-lib /home/userone/cds.lib"
+        ),
+    )
+    parser.add_argument(
+        "--pdk-lib-path",
+        type=str,
+        default=None,
+        help=(
+            "Explicit OA library path for --tech-lib, written as "
+            "DEFINE <tech-lib> <path> in generated cds.lib"
+        ),
+    )
+    parser.add_argument(
+        "--cds-log",
+        type=str,
+        default=None,
+        help=(
+            "CDS_LOG path for --run-virtuoso. Defaults to "
+            "<virtuoso-workdir>/CDS.log to avoid locking ~/CDS.log"
+        ),
     )
     parser.add_argument(
         "--virtuoso-bin",

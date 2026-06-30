@@ -192,6 +192,8 @@ def _normalize_params(params: dict[str, str]) -> dict[str, str]:
             normalized["C"] = value
         elif name.lower() == "nf":
             normalized["nf"] = value
+        elif name.lower() == "m":
+            normalized["m"] = value
         else:
             normalized[name] = value
     return normalized

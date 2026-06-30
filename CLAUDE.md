@@ -23,6 +23,7 @@
 4. **运行优化** — `python main.py --netlist ... --testbench ... --requirements ...`
 5. **读取结果** — 查看 `outputs/<project>/results.json`，重点关注 `all_targets_met`、`target_status`、`gap`
 6. **BO 后 Review** — 若结果未完全达标，运行 `review_optimization.py` 分析 Top 迭代，生成候选网表并仿真验证
+7. **导出 Virtuoso 原理图** — 若 BO 最优或 Review candidate 已达标，运行 `export_to_virtuoso.py` 选择最终 netlist 并生成 Virtuoso 导入脚本/工作区
 
 > **文件命名**：根据电路拓扑命名，例如 5T OTA → `5t_ota.cir` + `tb_5t_ota_ac.scs`。所有文件放在同名文件夹下。
 
@@ -182,6 +183,68 @@ python review_optimization.py \
 
 ---
 
+## 第七步：达标后生成 Virtuoso 原理图
+
+优化完成后，如果 `outputs/<project>/results.json` 中 `all_targets_met=true`，或 BO 后 Review 的 `candidate_metrics.csv` 中存在达标 candidate，可以导出最终 netlist 到 Virtuoso。
+
+导出选择规则由 `export_to_virtuoso.py --results` 自动处理：
+
+- 若 Review candidate 达标：导出 `outputs/<project>/agent_review/candidates/.../circuit.cir`
+- 否则导出 BO 最优：`outputs/<project>/netlist/circuit.cir`
+
+默认只生成 SKILL 和导出报告，不启动 Cadence：
+
+```bash
+cd Agent_LLM_BO/circuit_agent
+conda activate Auto_Agent_Design
+
+python export_to_virtuoso.py \
+  --results outputs/<project>/results.json \
+  --lib BO_Designs \
+  --tech-lib tsmcN28
+```
+
+输出通常位于：
+
+```text
+outputs/<project>/virtuoso/
+├── import_schematic.il
+└── export_report.json
+```
+
+如果需要创建独立 Cadence 工作目录并尝试自动导入，显式加 `--run-virtuoso`：
+
+```bash
+python export_to_virtuoso.py \
+  --results outputs/<project>/results.json \
+  --lib BO_Designs \
+  --tech-lib tsmcN28 \
+  --include-cds-lib /home/userone/cds.lib \
+  --pdk-lib-path /PDKS/TSMC28nm/tsmcN28 \
+  --run-virtuoso
+```
+
+这会在 `Agent_LLM_BO/virtuoso_runs/<project>/` 下生成：
+
+```text
+cds.lib
+import_schematic.il
+run_import.il
+virtuoso_import.log
+README_import.md
+```
+
+`run_import.il` 会创建/打开目标 library，尝试绑定 `--tech-lib` 指定的工艺库，然后加载 `import_schematic.il` 生成 `BO_Designs/<cell>/schematic`。如果不使用 `--run-virtuoso`，也可以手动在 Virtuoso CIW 中 `load(".../import_schematic.il")`。
+
+batch Virtuoso 常见问题：
+
+- 如果报 `CDS.log File is already locked`，说明已有 GUI 进程占用默认 log；导出器默认把 `CDS_LOG` 指到 `virtuoso_runs/<project>/CDS.log`，也可以用 `--cds-log <path>` 覆盖。
+- 如果报 `Tech library tsmcN28 is not visible`，说明 batch 进程没看到 PDK library；使用 `--include-cds-lib /home/userone/cds.lib` 引入用户/站点 `cds.lib`，或使用 `--pdk-lib-path /PDKS/TSMC28nm/tsmcN28` 显式写入 `DEFINE tsmcN28 ...`。
+
+> 注意：导出脚本第一版是通过 SKILL 画 schematic，不做 layout，也不自动运行 ADE。
+
+---
+
 ## 异常处理
 
 ### 仿真失败
@@ -206,6 +269,7 @@ Agent (Claude Code)                      Python 脚本
 • 读 results.json，汇报用户
 • 读 agent_context.md 和知识库，填写 patch_plan.json
 • 调 review_optimization.py 执行 patch plan
+• 达标后调 export_to_virtuoso.py 导出 Virtuoso SKILL/工作区
 ```
 
 ## 参考资源
@@ -214,6 +278,7 @@ Agent (Claude Code)                      Python 脚本
 - **拓扑选择**：`topologies/__init__.py:get_topology_for_targets()`
 - **代码入口**：[main.py](Agent_LLM_BO/circuit_agent/main.py)
 - **Review 脚本**：[review_optimization.py](Agent_LLM_BO/circuit_agent/review_optimization.py)
+- **Virtuoso 导出**：[export_to_virtuoso.py](Agent_LLM_BO/circuit_agent/export_to_virtuoso.py)
 - **文件流说明**：[FILE_FLOW.md](Agent_LLM_BO/circuit_agent/FILE_FLOW.md)
 - **PDK 约束**：[tsmc28_pdk_constraints.md](knowledge_base/PDKs_info/tsmc28_pdk_constraints.md)
 - **Review 指南**：[optimization_review_guide.md](knowledge_base/Opamp_knowledge_base/optimization_review_guide.md)
