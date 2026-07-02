@@ -14,6 +14,7 @@ Auto_Agent_Design/
     ├── circuit_agent/                 # 核心优化引擎
     │   ├── main.py                    # 入口：BO 优化循环
     │   ├── config.py                  # 全局配置
+    │   ├── pdk_profiles.py            # PDK profile：模型路径、器件名、VDD、尺寸约束
     │   ├── models.py                  # 数据模型
     │   ├── optimizer.py               # HybridOptimizer：LLM + BO 协同优化
     │   ├── review_optimization.py     # BO 后 Review：指标缺口分析 + 候选网表生成
@@ -42,12 +43,14 @@ Auto_Agent_Design/
     │   │
     │   ├── tests/                     # 单元测试
     │   │
-    │   ├── Opamp_knowledge_base/      # 运放设计知识库
-    │   │   └── topology_selection_guide.md
-    │   ├── PDKs_info/                 # 工艺库信息
-    │   │   └── tsmc28_pdk_constraints.md
     │   ├── outputs/                   # 优化结果输出
     │   └── workspace/                 # 运行时工作目录
+    │
+    ├── knowledge_base/                # 设计知识库与 PDK 说明
+    │   ├── Opamp_knowledge_base/
+    │   └── PDKs_info/
+    │       ├── pdk_profiles.md
+    │       └── tsmc28_pdk_constraints.md
     │
     ├── Spice_Scripts/                 # HSPICE 格式参考
     ├── Scs_Scirpts/                   # Spectre 格式参考
@@ -228,14 +231,37 @@ Agent_LLM_BO/virtuoso_runs/<project>/
 | **Spectre + parser** | 执行 AC/SR/ST 仿真，解析 gain/GBW/PM/power/SR/ST 与诊断数据 |
 | **LLM（可选）** | 解析自然语言需求、周期性检查参数物理可行性；不负责修改拓扑网表 |
 
-## PDK 约束（TSMC N28）
+## PDK Profile 与约束
+
+工艺相关信息集中在 `Agent_LLM_BO/circuit_agent/pdk_profiles.py`，拓扑脚本从当前 profile 读取 Spectre include 路径、section、NMOS/PMOS/LVT model 名称、默认 VDD、VDD 允许范围、尺寸边界和 Virtuoso tech library。默认 profile 是 `tsmc28`。
+
+可通过环境变量切换或覆盖：
+
+```bash
+export CIRCUIT_AGENT_PDK=tsmc28
+export PDK_SPECTRE_PATH=/PDKS/TSMC28nm/models/spectre/toplevel.scs
+export NMOS_MODEL=nch_mac
+export PMOS_MODEL=pch_mac
+export NMOS_LVT_MODEL=nch_lvt_mac
+export PMOS_LVT_MODEL=pch_lvt_mac
+export VDD=1.1
+export VIRTUOSO_TECH_LIB=tsmcN28
+```
+
+VDD 使用优先级：单次 `params["VDD"]` 最高，其次 `.env`/环境变量 `VDD`，最后才是 profile 默认值。profile 中的 `VDD_MIN/VDD_MAX` 记录该工艺允许范围，例如 TSMC28 当前为 `0.9~1.1V`；如果希望 BO 搜索 VDD，应在 topology 的 `get_param_space()` 或显式 `params.json` 中加入 `VDD`，范围不要超过 profile 允许值。
+
+晶体管类型由 topology 选择 profile 字段：`five_t_ota`、`two_stage_ota`、`nmcf_three_stage` 使用 `nmos_model/pmos_model`；`folded_cascode` 使用 `nmos_lvt_model/pmos_lvt_model`。换 PDK 时改 profile，不要在 topology 模板里硬编码 model 名。
+
+添加新工艺时，在 `pdk_profiles.py` 新增一组 profile，并同步补充 `knowledge_base/PDKs_info/` 下的人类可读约束说明。
+
+默认 TSMC N28 约束：
 
 | 参数 | 范围 | 说明 |
 |------|------|------|
 | L | 30 nm – 1 μm | 模拟推荐 ≥ 60 nm |
 | W_per_finger | 100 nm – 2.6 μm | guard-band，低于 PDK bin 上界 |
 | nf/m | nf ≤ 32 | `nf` 只把 instance 总宽 `W` 分成多个 finger；有效宽度为 `W*m` |
-| VDD | 0.9 V | 带 I/O 的 core 器件 |
+| VDD | 默认 0.9 V，允许 0.9–1.1 V | 单次设计可用 `VDD` 参数覆盖 |
 
 ## 输出结果
 

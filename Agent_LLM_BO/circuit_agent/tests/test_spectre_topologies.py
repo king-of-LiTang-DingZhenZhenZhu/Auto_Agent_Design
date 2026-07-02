@@ -6,6 +6,7 @@ from pathlib import Path
 
 from models import DesignTarget, NetlistTemplate, split_width
 from config import Settings
+from pdk_profiles import get_pdk_profile
 from simulator import Simulator
 from topologies import get_topology, list_topologies
 
@@ -32,6 +33,7 @@ class SpectreTopologyTest(unittest.TestCase):
 
     def test_all_topologies_generate_native_spectre_projects(self):
         forbidden = [".lib ", ".options ", ".param ", ".subckt ", ".meas "]
+        pdk = get_pdk_profile()
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -42,7 +44,8 @@ class SpectreTopologyTest(unittest.TestCase):
                 file_names = [path.name for path in project.iterdir()]
 
                 self.assertIn("simulator lang=spectre", circuit)
-                self.assertIn('include "/PDKS/TSMC28nm/models/spectre/toplevel.scs"', circuit)
+                self.assertIn(f'include "{pdk.spectre_model_path}"', circuit)
+                self.assertIn(f"section={pdk.spectre_section}", circuit)
                 self.assertIn("parameters ", circuit)
                 self.assertRegex(circuit, rf"(?m)^subckt\s+\w+\s+\(")
                 for token in forbidden:
@@ -76,6 +79,17 @@ class SpectreTopologyTest(unittest.TestCase):
                 self.assertIn("stTran tran", st_testbench)
                 self.assertIn("save vinp vout", sr_testbench)
                 self.assertIn("save vinp vout", st_testbench)
+
+    def test_topologies_use_pdk_profile_model_names(self):
+        pdk = get_pdk_profile()
+
+        five_t = get_topology("5t_ota").generate_circuit()
+        self.assertIn(f") {pdk.pmos_model} w=Wtail", five_t)
+        self.assertIn(f") {pdk.nmos_model} w=Wcm", five_t)
+
+        folded = get_topology("folded_cascode").generate_circuit()
+        self.assertIn(f") {pdk.pmos_lvt_model} l=Lbias", folded)
+        self.assertIn(f") {pdk.nmos_lvt_model} l=Lbias", folded)
 
     def test_spectre_parameter_rendering_and_finger_split(self):
         topo = get_topology("5t_ota")

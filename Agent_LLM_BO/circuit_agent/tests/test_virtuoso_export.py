@@ -29,10 +29,10 @@ class VirtuosoExportTest(unittest.TestCase):
         mtailp = next(inst for inst in ir.instances if inst.name == "Mtailp")
         self.assertEqual(mtailp.model, "pch_lvt_mac")
         self.assertEqual(mtailp.nodes, ["ntail", "VB1", "vdd", "vdd"])
-        self.assertEqual(mtailp.params["W"], "Wbp_big")
-        self.assertEqual(mtailp.params["L"], "Lbias")
-        self.assertEqual(mtailp.params["nf"], "nf_Wbp_big")
-        self.assertEqual(mtailp.params["m"], "m_tail_unit*m_Wbp_big")
+        self.assertEqual(mtailp.params["W"], "4.8u")
+        self.assertEqual(mtailp.params["L"], "400n")
+        self.assertEqual(mtailp.params["nf"], "4")
+        self.assertEqual(mtailp.params["m"], "4")
 
     def test_parse_resistor_and_capacitor(self):
         netlist = get_topology("folded_cascode").generate_circuit()
@@ -43,10 +43,10 @@ class VirtuosoExportTest(unittest.TestCase):
         cc = next(inst for inst in ir.instances if inst.name == "Cc")
         self.assertEqual(rz.kind, "res")
         self.assertEqual(rz.nodes, ["nstage1", "n_rz"])
-        self.assertEqual(rz.params["R"], "Rz")
+        self.assertEqual(rz.params["R"], "1k")
         self.assertEqual(cc.kind, "cap")
         self.assertEqual(cc.nodes, ["n_rz", "vout"])
-        self.assertEqual(cc.params["C"], "Cc")
+        self.assertEqual(cc.params["C"], "250f")
 
     def test_skill_writer_contains_target_and_instances(self):
         ir = parse_netlist(get_topology("5t_ota").generate_circuit())

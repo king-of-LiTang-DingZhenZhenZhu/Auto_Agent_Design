@@ -10,6 +10,7 @@ from virtuoso_export.exporter import (
     export_from_results,
     export_netlist,
 )
+from pdk_profiles import get_pdk_profile
 
 
 def main() -> None:
@@ -75,6 +76,7 @@ def main() -> None:
 
 
 def parse_args() -> argparse.Namespace:
+    pdk = get_pdk_profile()
     parser = argparse.ArgumentParser(
         description="Export Circuit Agent BO final netlist to Virtuoso SKILL"
     )
@@ -132,7 +134,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--tech-lib",
         type=str,
-        default="tsmcN28",
+        default=pdk.virtuoso_tech_lib,
         help="Virtuoso technology library to attach to the generated design library",
     )
     parser.add_argument(
@@ -147,7 +149,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--pdk-lib-path",
         type=str,
-        default=None,
+        default=pdk.virtuoso_pdk_lib_path,
         help=(
             "Explicit OA library path for --tech-lib, written as "
             "DEFINE <tech-lib> <path> in generated cds.lib"

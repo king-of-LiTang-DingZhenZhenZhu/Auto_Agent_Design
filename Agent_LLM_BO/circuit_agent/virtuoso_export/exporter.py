@@ -11,9 +11,14 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from pdk_profiles import get_pdk_profile
+
 from .models import DEFAULT_DEVICE_MAP, DeviceMap, DeviceMapEntry
 from .parser import parse_netlist
 from .skill_writer import write_skill
+
+
+_PDK = get_pdk_profile()
 
 
 def export_from_results(
@@ -23,7 +28,7 @@ def export_from_results(
     out_path: str | Path | None = None,
     device_map_path: str | Path | None = None,
     virtuoso_workdir: str | Path | None = None,
-    tech_lib: str = "tsmcN28",
+    tech_lib: str = _PDK.virtuoso_tech_lib,
     run_virtuoso: bool = False,
     virtuoso_bin: str = "virtuoso",
     include_cds_libs: list[str | Path] | None = None,
@@ -69,7 +74,7 @@ def export_netlist(
     results_path: str | Path | None = None,
     export_source: str = "explicit_netlist",
     virtuoso_workdir: str | Path | None = None,
-    tech_lib: str = "tsmcN28",
+    tech_lib: str = _PDK.virtuoso_tech_lib,
     run_virtuoso: bool = False,
     virtuoso_bin: str = "virtuoso",
     include_cds_libs: list[str | Path] | None = None,
@@ -131,7 +136,7 @@ def prepare_virtuoso_workspace(
     skill_path: str | Path,
     lib_name: str,
     cell_name: str,
-    tech_lib: str = "tsmcN28",
+    tech_lib: str = _PDK.virtuoso_tech_lib,
     workdir: str | Path | None = None,
     run_virtuoso: bool = False,
     virtuoso_bin: str = "virtuoso",
@@ -155,6 +160,8 @@ def prepare_virtuoso_workspace(
     run_log = workdir / "virtuoso_import.log"
     cds_log = Path(cds_log_path).resolve() if cds_log_path else workdir / "CDS.log"
     readme = workdir / "README_import.md"
+    if pdk_lib_path is None:
+        pdk_lib_path = _PDK.virtuoso_pdk_lib_path
 
     cds_lib.write_text(
         _render_cds_lib(

@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
+from pdk_profiles import get_pdk_profile
+
 
 DeviceKind = Literal["mos", "res", "cap"]
 
@@ -44,31 +46,34 @@ class SchematicIR:
 DeviceMap = dict[str, DeviceMapEntry]
 
 
+_PDK = get_pdk_profile()
+
+
 DEFAULT_DEVICE_MAP: DeviceMap = {
-    "pch_lvt_mac": DeviceMapEntry(
-        lib="tsmcN28",
-        cell="pch_lvt_mac",
+    _PDK.pmos_lvt_model: DeviceMapEntry(
+        lib=_PDK.virtuoso_tech_lib,
+        cell=_PDK.pmos_lvt_model,
         view="symbol",
         term_order=["D", "G", "S", "B"],
         param_map={"W": "w", "L": "l", "nf": "nf", "m": "m"},
     ),
-    "nch_lvt_mac": DeviceMapEntry(
-        lib="tsmcN28",
-        cell="nch_lvt_mac",
+    _PDK.nmos_lvt_model: DeviceMapEntry(
+        lib=_PDK.virtuoso_tech_lib,
+        cell=_PDK.nmos_lvt_model,
         view="symbol",
         term_order=["D", "G", "S", "B"],
         param_map={"W": "w", "L": "l", "nf": "nf", "m": "m"},
     ),
-    "pch_mac": DeviceMapEntry(
-        lib="tsmcN28",
-        cell="pch_mac",
+    _PDK.pmos_model: DeviceMapEntry(
+        lib=_PDK.virtuoso_tech_lib,
+        cell=_PDK.pmos_model,
         view="symbol",
         term_order=["D", "G", "S", "B"],
         param_map={"W": "w", "L": "l", "nf": "nf", "m": "m"},
     ),
-    "nch_mac": DeviceMapEntry(
-        lib="tsmcN28",
-        cell="nch_mac",
+    _PDK.nmos_model: DeviceMapEntry(
+        lib=_PDK.virtuoso_tech_lib,
+        cell=_PDK.nmos_model,
         view="symbol",
         term_order=["D", "G", "S", "B"],
         param_map={"W": "w", "L": "l", "nf": "nf", "m": "m"},

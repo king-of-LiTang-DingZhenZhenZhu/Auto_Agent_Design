@@ -32,7 +32,7 @@
 ## 第二步：拓扑选择（决策树）
 
 ```
-gain ≥ 40 dB → two_stage_ota 或 folded_cascode，folded_cascode 尚未完善
+gain ≥ 40 dB → two_stage_ota 或 folded_cascode，folded_cascode 
 gain < 40 dB → 5t_ota
 gain ≥ 100 dB → nmcf_three_stage      # 尚未完善
 ```
@@ -46,7 +46,14 @@ python -c "from topologies import list_topologies; [print(f'{m.name}: {m.display
 
 参考文档：
 - `./knowledge_base/Opamp_knowledge_base/topology_selection_guide.md`
+- `./knowledge_base/PDKs_info/pdk_profiles.md`
 - `./knowledge_base/PDKs_info/tsmc28_pdk_constraints.md`
+
+PDK 路径、Spectre section、NMOS/PMOS/LVT model 名称、默认 VDD、VDD 允许范围、Virtuoso tech library 的代码入口统一在 `Agent_LLM_BO/circuit_agent/pdk_profiles.py`。不要在 topology 文件里新增硬编码 PDK 路径、MOS model 或电源默认值；换工艺时新增/选择 `PDKProfile`，或用 `.env` 覆盖对应字段。
+
+VDD 使用规则：profile 的 `vdd` 是默认值，`vdd_min/vdd_max` 是允许范围；单次设计需要 1.0V 或 1.1V 时，通过 `params={"VDD": 1.1}`、requirements/CLI 或 `.env` 的 `VDD=1.1` 覆盖。若要让 BO 搜索 VDD，必须在 topology `get_param_space()` 或显式 `params.json` 中加入 `VDD`，并限制在 profile 范围内。
+
+晶体管类型规则：常规拓扑使用 profile 的 `nmos_model/pmos_model`；folded cascode 当前使用 `nmos_lvt_model/pmos_lvt_model`。不要在 netlist template 中直接写死 `nch_mac/pch_mac/nch_lvt_mac/pch_lvt_mac`。
 
 ---
 
@@ -281,5 +288,6 @@ Agent (Claude Code)                      Python 脚本
 - **Virtuoso 导出**：[export_to_virtuoso.py](Agent_LLM_BO/circuit_agent/export_to_virtuoso.py)
 - **文件流说明**：[FILE_FLOW.md](Agent_LLM_BO/circuit_agent/FILE_FLOW.md)
 - **PDK 约束**：[tsmc28_pdk_constraints.md](knowledge_base/PDKs_info/tsmc28_pdk_constraints.md)
+- **PDK Profile**：[pdk_profiles.py](Agent_LLM_BO/circuit_agent/pdk_profiles.py)
 - **Review 指南**：[optimization_review_guide.md](knowledge_base/Opamp_knowledge_base/optimization_review_guide.md)
 - **配置**：[config.py](Agent_LLM_BO/circuit_agent/config.py)

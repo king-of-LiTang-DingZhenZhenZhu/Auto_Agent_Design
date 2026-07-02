@@ -30,6 +30,7 @@ from __future__ import annotations
 
 from topologies.base import BaseTopology, TopologyMeta
 from models import CircuitFiles, ParamDef, ParamSpace
+from pdk_profiles import get_pdk_profile, spectre_include_line
 
 
 class NMCFThreeStageOTA(BaseTopology):
@@ -92,8 +93,12 @@ class NMCFThreeStageOTA(BaseTopology):
         p = dict(self.DEFAULT_PARAMS)
         if params:
             p.update(params)
+        pdk = get_pdk_profile()
 
         return _CIRCUIT_TEMPLATE.format(
+            spectre_include=spectre_include_line(pdk),
+            nmos_model=pdk.nmos_model,
+            pmos_model=pdk.pmos_model,
             Wtail1=_fmt(p["Wtail1"]),
             Ltail1=_fmt(p["Ltail1"]),
             Wdiff1=_fmt(p["Wdiff1"]),
@@ -123,7 +128,8 @@ class NMCFThreeStageOTA(BaseTopology):
         analysis_type: str = "ac",
     ) -> str:
         """Generate the Spectre-native testbench .scs file."""
-        vdd = 0.8
+        pdk = get_pdk_profile()
+        vdd = pdk.vdd
         vcm = 0.3
         ibias = 40e-6
         cload = 10e-12
@@ -187,6 +193,7 @@ class NMCFThreeStageOTA(BaseTopology):
         that generate vbiasn/vbiasp from the external ibias current.
         """
         from models import BranchCurrentSpec, GmidTopologySpec, TransistorSpec
+        pdk = get_pdk_profile()
 
         return GmidTopologySpec(
             branch_currents=[
@@ -205,7 +212,7 @@ class NMCFThreeStageOTA(BaseTopology):
                 TransistorSpec(
                     role="stage1_tail_pmos",
                     w_param="Wtail1", l_param="Ltail1",
-                    model="pch_mac",
+                    model=pdk.pmos_model,
                     current_source="I_tail1", current_fraction=1.0,
                     gm_id_low=5, gm_id_high=20, gm_id_default=8,
                     L_low=200e-9, L_high=600e-9, L_default=200e-9,
@@ -215,7 +222,7 @@ class NMCFThreeStageOTA(BaseTopology):
                 TransistorSpec(
                     role="stage1_diff_pmos",
                     w_param="Wdiff1", l_param="Ldiff1",
-                    model="pch_mac",
+                    model=pdk.pmos_model,
                     current_source="I_tail1", current_fraction=0.5,
                     gm_id_low=10, gm_id_high=24, gm_id_default=14,
                     L_low=60e-9, L_high=500e-9, L_default=80e-9,
@@ -225,7 +232,7 @@ class NMCFThreeStageOTA(BaseTopology):
                 TransistorSpec(
                     role="stage1_load_nmos",
                     w_param="Wload1", l_param="Lload1",
-                    model="nch_mac",
+                    model=pdk.nmos_model,
                     current_source="I_tail1", current_fraction=0.5,
                     gm_id_low=8, gm_id_high=24, gm_id_default=12,
                     L_low=200e-9, L_high=600e-9, L_default=200e-9,
@@ -235,7 +242,7 @@ class NMCFThreeStageOTA(BaseTopology):
                 TransistorSpec(
                     role="stage2_gain_nmos",
                     w_param="Wgm2", l_param="Lgm2",
-                    model="nch_mac",
+                    model=pdk.nmos_model,
                     current_source="I_s2", current_fraction=1.0,
                     gm_id_low=10, gm_id_high=24, gm_id_default=15,
                     L_low=60e-9, L_high=500e-9, L_default=80e-9,
@@ -245,7 +252,7 @@ class NMCFThreeStageOTA(BaseTopology):
                 TransistorSpec(
                     role="stage2_load_pmos",
                     w_param="Wload2", l_param="Lload2",
-                    model="pch_mac",
+                    model=pdk.pmos_model,
                     current_source="I_s2", current_fraction=1.0,
                     gm_id_low=5, gm_id_high=20, gm_id_default=8,
                     L_low=200e-9, L_high=600e-9, L_default=200e-9,
@@ -255,7 +262,7 @@ class NMCFThreeStageOTA(BaseTopology):
                 TransistorSpec(
                     role="stage3_gain_pmos",
                     w_param="Wgm3", l_param="Lgm3",
-                    model="pch_mac",
+                    model=pdk.pmos_model,
                     current_source="I_s3", current_fraction=1.0,
                     gm_id_low=8, gm_id_high=22, gm_id_default=12,
                     L_low=60e-9, L_high=300e-9, L_default=100e-9,
@@ -265,7 +272,7 @@ class NMCFThreeStageOTA(BaseTopology):
                 TransistorSpec(
                     role="stage3_load_nmos",
                     w_param="Wload3", l_param="Lload3",
-                    model="nch_mac",
+                    model=pdk.nmos_model,
                     current_source="I_s3", current_fraction=1.0,
                     gm_id_low=5, gm_id_high=20, gm_id_default=8,
                     L_low=200e-9, L_high=600e-9, L_default=200e-9,
@@ -386,7 +393,7 @@ _CIRCUIT_TEMPLATE = """\
 // nmcf_three_stage.cir -- NMCF Three-Stage OTA (Spectre native syntax)
 simulator lang=spectre insensitive=yes
 
-include "/PDKS/TSMC28nm/models/spectre/toplevel.scs" section=top_tt
+{spectre_include}
 
 parameters Wtail1={Wtail1} Ltail1={Ltail1} Wdiff1={Wdiff1} Ldiff1={Ldiff1}
 parameters Wload1={Wload1} Lload1={Lload1} Wgm2={Wgm2} Lgm2={Lgm2}
@@ -397,22 +404,22 @@ parameters Cc1={Cc1} Rz1={Rz1} Cc2={Cc2}
 
 subckt nmcf_three_stage (vip vin vout ibias vdd vss)
 // Bias generator
-Mbn1 (ibias ibias vss vss) nch_mac w=Wbiasn l=Lbiasn nf=1
-Mbn2 (vbiasp ibias vss vss) nch_mac w=Wbiasn l=Lbiasn nf=1
-Mbp1 (vbiasp vbiasp vdd vdd) pch_mac w=Wbiasp l=Lbiasp nf=1
+Mbn1 (ibias ibias vss vss) {nmos_model} w=Wbiasn l=Lbiasn nf=1
+Mbn2 (vbiasp ibias vss vss) {nmos_model} w=Wbiasn l=Lbiasn nf=1
+Mbp1 (vbiasp vbiasp vdd vdd) {pmos_model} w=Wbiasp l=Lbiasp nf=1
 
 // Stage 1: PMOS input differential pair and NMOS mirror load
-Mtail1 (tail vbiasp vdd vdd) pch_mac w=Wtail1 l=Ltail1 nf=1
-Mdiff1a (s1_mirr vip tail vdd) pch_mac w=Wdiff1 l=Ldiff1 nf=1
-Mdiff1b (s1_out vin tail vdd) pch_mac w=Wdiff1 l=Ldiff1 nf=1
-Mload1a (s1_mirr s1_mirr vss vss) nch_mac w=Wload1 l=Lload1 nf=1
-Mload1b (s1_out s1_mirr vss vss) nch_mac w=Wload1 l=Lload1 nf=1
+Mtail1 (tail vbiasp vdd vdd) {pmos_model} w=Wtail1 l=Ltail1 nf=1
+Mdiff1a (s1_mirr vip tail vdd) {pmos_model} w=Wdiff1 l=Ldiff1 nf=1
+Mdiff1b (s1_out vin tail vdd) {pmos_model} w=Wdiff1 l=Ldiff1 nf=1
+Mload1a (s1_mirr s1_mirr vss vss) {nmos_model} w=Wload1 l=Lload1 nf=1
+Mload1b (s1_out s1_mirr vss vss) {nmos_model} w=Wload1 l=Lload1 nf=1
 
 // Stage 2 and stage 3
-Mgm2 (s2_out s1_out vss vss) nch_mac w=Wgm2 l=Lgm2 nf=1
-Mload2 (s2_out vbiasp vdd vdd) pch_mac w=Wload2 l=Lload2 nf=1
-Mgm3 (vout s2_out vdd vdd) pch_mac w=Wgm3 l=Lgm3 nf=1
-Mload3 (vout ibias vss vss) nch_mac w=Wload3 l=Lload3 nf=1
+Mgm2 (s2_out s1_out vss vss) {nmos_model} w=Wgm2 l=Lgm2 nf=1
+Mload2 (s2_out vbiasp vdd vdd) {pmos_model} w=Wload2 l=Lload2 nf=1
+Mgm3 (vout s2_out vdd vdd) {pmos_model} w=Wgm3 l=Lgm3 nf=1
+Mload3 (vout ibias vss vss) {nmos_model} w=Wload3 l=Lload3 nf=1
 
 // Nested Miller compensation
 Rz1 (s1_out n_rz1) resistor r=Rz1

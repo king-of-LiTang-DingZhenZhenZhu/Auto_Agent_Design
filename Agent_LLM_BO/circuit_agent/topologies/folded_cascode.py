@@ -33,6 +33,7 @@ from __future__ import annotations
 
 from topologies.base import BaseTopology, TopologyMeta
 from models import CircuitFiles, ParamDef, ParamSpace
+from pdk_profiles import get_pdk_profile, spectre_include_line
 
 
 _FIXED_BIAS_PARAM_NAMES = {
@@ -123,12 +124,16 @@ class FoldedCascodeOTA(BaseTopology):
         p = dict(self.DEFAULT_PARAMS)
         if params:
             p.update(params)
+        pdk = get_pdk_profile()
         p["m_tail_unit"] = 2 * int(round(p["m_half_unit"]))
         p["m_load_unit"] = (
             int(round(p["m_half_unit"])) * int(round(p["m_load_ratio"]))
         )
 
         return _CIRCUIT_TEMPLATE.format(
+            spectre_include=spectre_include_line(pdk),
+            pmos_lvt_model=pdk.pmos_lvt_model,
+            nmos_lvt_model=pdk.nmos_lvt_model,
             Wdiffp=_fmt(p["Wdiffp"]),
             Ldiffp=_fmt(p["Ldiffp"]),
             Wcs=_fmt(p["Wcs"]),
@@ -157,7 +162,8 @@ class FoldedCascodeOTA(BaseTopology):
         analysis_type: str = "ac",
     ) -> str:
         """Generate the Spectre-native testbench .scs file."""
-        vdd = 1.1
+        pdk = get_pdk_profile()
+        vdd = pdk.vdd
         vcm = 0.4
         ibias = 20e-6
         cload = 1e-12
@@ -251,6 +257,7 @@ class FoldedCascodeOTA(BaseTopology):
     def get_gmid_spec(self, targets=None):
         """Return gm/Id spec for folded cascode — reduces 26 → 17 params."""
         from models import DerivedBranchCurrentSpec, GmidTopologySpec, TransistorSpec
+        pdk = get_pdk_profile()
 
         return GmidTopologySpec(
             derived_branch_currents=[
@@ -280,7 +287,7 @@ class FoldedCascodeOTA(BaseTopology):
                 TransistorSpec(
                     role="diff_pair_pmos",
                     w_param="Wdiffp", l_param="Ldiffp",
-                    model="pch_lvt_mac",
+                    model=pdk.pmos_lvt_model,
                     current_source="I_tail", current_fraction=0.5,
                     gm_id_low=10, gm_id_high=15, gm_id_default=12,
                     L_low=60e-9, L_high=500e-9, L_default=80e-9,
@@ -290,7 +297,7 @@ class FoldedCascodeOTA(BaseTopology):
                 TransistorSpec(
                     role="cs_pmos",
                     w_param="Wcs", l_param="Lbias",
-                    model="pch_lvt_mac",
+                    model=pdk.pmos_lvt_model,
                     current_source="I_cs", current_fraction=1.0,
                     gm_id_low=8, gm_id_high=15, gm_id_default=12,
                     L_low=300e-9, L_high=600e-9, L_default=400e-9,
@@ -341,7 +348,7 @@ _CIRCUIT_TEMPLATE = """\
 // folded_cascode.cir -- Folded-Cascode Miller OTA (Spectre native syntax)
 simulator lang=spectre insensitive=yes
 
-include "/PDKS/TSMC28nm/models/spectre/toplevel.scs" section=top_tt
+{spectre_include}
 
 parameters Wdiffp={Wdiffp} Ldiffp={Ldiffp} Wcs={Wcs}
 parameters Lbias={Lbias} Lbias_ref=400n
@@ -356,56 +363,56 @@ parameters Cc={Cc} Rz={Rz}
 
 subckt folded_cascode (vip vin vout ibias vdd vss)
 // Internal bias generator
-M2 (ibias ibias vdd vdd) pch_lvt_mac l=Lbias w=Wbp_big m=m_Wbp_big nf=nf_Wbp_big 
+M2 (ibias ibias vdd vdd) {pmos_lvt_model} l=Lbias w=Wbp_big m=m_Wbp_big nf=nf_Wbp_big 
 
-M1 (VB4 ibias vdd vdd) pch_lvt_mac l=Lbias w=Wbp_big m=m_Wbp_big nf=nf_Wbp_big 
+M1 (VB4 ibias vdd vdd) {pmos_lvt_model} l=Lbias w=Wbp_big m=m_Wbp_big nf=nf_Wbp_big 
 
-M0 (VB3 ibias vdd vdd) pch_lvt_mac l=Lbias w=Wbp_big m=m_Wbp_big nf=nf_Wbp_big 
+M0 (VB3 ibias vdd vdd) {pmos_lvt_model} l=Lbias w=Wbp_big m=m_Wbp_big nf=nf_Wbp_big 
 
-M52 (net7 VB1 vdd vdd) pch_lvt_mac l=Lbias w=Wbp_big m=m_Wbp_big nf=nf_Wbp_big 
+M52 (net7 VB1 vdd vdd) {pmos_lvt_model} l=Lbias w=Wbp_big m=m_Wbp_big nf=nf_Wbp_big 
 
-M3 (VB2 VB2 net5 vdd) pch_lvt_mac l=Lbias w=Wbp_big m=m_Wbp_big nf=nf_Wbp_big 
+M3 (VB2 VB2 net5 vdd) {pmos_lvt_model} l=Lbias w=Wbp_big m=m_Wbp_big nf=nf_Wbp_big 
 
-M6 (net5 VB2 vdd vdd) pch_lvt_mac l=Lbias w=Wbp_small m=m_Wbp_small nf=nf_Wbp_small 
+M6 (net5 VB2 vdd vdd) {pmos_lvt_model} l=Lbias w=Wbp_small m=m_Wbp_small nf=nf_Wbp_small 
 
-M7 (VB1 VB2 net7 vdd) pch_lvt_mac l=Lbias w=Wbp_big m=m_Wbp_big nf=nf_Wbp_big 
+M7 (VB1 VB2 net7 vdd) {pmos_lvt_model} l=Lbias w=Wbp_big m=m_Wbp_big nf=nf_Wbp_big 
 
-M25 (net2 VB3 vss vss) nch_lvt_mac l=Lbias w=Wbn_small m=m_Wbn_small nf=nf_Wbn_small 
+M25 (net2 VB3 vss vss) {nmos_lvt_model} l=Lbias w=Wbn_small m=m_Wbn_small nf=nf_Wbn_small 
 
-M9 (VB4 VB3 net3 vss) nch_lvt_mac l=Lbias w=Wbn_big m=m_Wbn_big nf=nf_Wbn_big 
+M9 (VB4 VB3 net3 vss) {nmos_lvt_model} l=Lbias w=Wbn_big m=m_Wbn_big nf=nf_Wbn_big 
 
-M13 (VB3 VB3 net2 vss) nch_lvt_mac l=Lbias w=Wbn_big m=m_Wbn_big nf=nf_Wbn_big 
+M13 (VB3 VB3 net2 vss) {nmos_lvt_model} l=Lbias w=Wbn_big m=m_Wbn_big nf=nf_Wbn_big 
 
-M8 (net3 VB4 vss vss) nch_lvt_mac l=Lbias w=Wbn_big m=m_Wbn_big nf=nf_Wbn_big 
+M8 (net3 VB4 vss vss) {nmos_lvt_model} l=Lbias w=Wbn_big m=m_Wbn_big nf=nf_Wbn_big 
 
-M10 (VB1 VB3 net6 vss) nch_lvt_mac l=Lbias w=Wbn_big m=m_Wbn_big nf=nf_Wbn_big 
+M10 (VB1 VB3 net6 vss) {nmos_lvt_model} l=Lbias w=Wbn_big m=m_Wbn_big nf=nf_Wbn_big 
 
-M11 (net6 VB4 vss vss) nch_lvt_mac l=Lbias w=Wbn_big m=m_Wbn_big nf=nf_Wbn_big 
+M11 (net6 VB4 vss vss) {nmos_lvt_model} l=Lbias w=Wbn_big m=m_Wbn_big nf=nf_Wbn_big 
 
-M12 (VB2 VB3 net4 vss) nch_lvt_mac l=Lbias w=Wbn_big m=m_Wbn_big nf=nf_Wbn_big 
+M12 (VB2 VB3 net4 vss) {nmos_lvt_model} l=Lbias w=Wbn_big m=m_Wbn_big nf=nf_Wbn_big 
 
-M4 (net4 VB4 vss vss) nch_lvt_mac l=Lbias w=Wbn_big m=m_Wbn_big nf=nf_Wbn_big 
+M4 (net4 VB4 vss vss) {nmos_lvt_model} l=Lbias w=Wbn_big m=m_Wbn_big nf=nf_Wbn_big 
 
 // PMOS input differential pair
-Mtailp (ntail VB1 vdd vdd) pch_lvt_mac w=Wbp_big l=Lbias nf=nf_Wbp_big m=m_tail_unit*m_Wbp_big
-Mdiff1 (nfold_l vin ntail vdd) pch_lvt_mac w=Wdiffp l=Ldiffp nf=1
-Mdiff2 (nfold_r vip ntail vdd) pch_lvt_mac w=Wdiffp l=Ldiffp nf=1
+Mtailp (ntail VB1 vdd vdd) {pmos_lvt_model} w=Wbp_big l=Lbias nf=nf_Wbp_big m=m_tail_unit*m_Wbp_big
+Mdiff1 (nfold_l vin ntail vdd) {pmos_lvt_model} w=Wdiffp l=Ldiffp nf=1
+Mdiff2 (nfold_r vip ntail vdd) {pmos_lvt_model} w=Wdiffp l=Ldiffp nf=1
 
 // NMOS folded branches and common-gate cascodes
-Mfold1 (nfold_l VB4 vss vss) nch_lvt_mac w=Wbn_big l=Lbias nf=nf_Wbn_big m=m_tail_unit*m_Wbn_big
-Mfold2 (nfold_r VB4 vss vss) nch_lvt_mac w=Wbn_big l=Lbias nf=nf_Wbn_big m=m_tail_unit*m_Wbn_big
-Mcasn1 (pmirr VB3 nfold_l vss) nch_lvt_mac w=Wbn_big l=Lbias nf=nf_Wbn_big m=m_half_unit*m_Wbn_big
-Mcasn2 (nstage1 VB3 nfold_r vss) nch_lvt_mac w=Wbn_big l=Lbias nf=nf_Wbn_big m=m_half_unit*m_Wbn_big
+Mfold1 (nfold_l VB4 vss vss) {nmos_lvt_model} w=Wbn_big l=Lbias nf=nf_Wbn_big m=m_tail_unit*m_Wbn_big
+Mfold2 (nfold_r VB4 vss vss) {nmos_lvt_model} w=Wbn_big l=Lbias nf=nf_Wbn_big m=m_tail_unit*m_Wbn_big
+Mcasn1 (pmirr VB3 nfold_l vss) {nmos_lvt_model} w=Wbn_big l=Lbias nf=nf_Wbn_big m=m_half_unit*m_Wbn_big
+Mcasn2 (nstage1 VB3 nfold_r vss) {nmos_lvt_model} w=Wbn_big l=Lbias nf=nf_Wbn_big m=m_half_unit*m_Wbn_big
 
 // PMOS low-voltage cascode current-mirror load
-Mmirr1 (npm_l pmirr vdd vdd) pch_lvt_mac w=Wbp_big l=Lbias nf=nf_Wbp_big m=m_half_unit*m_Wbp_big
-Mmirr2 (npm_r pmirr vdd vdd) pch_lvt_mac w=Wbp_big l=Lbias nf=nf_Wbp_big m=m_half_unit*m_Wbp_big
-Mcasp1 (pmirr VB2 npm_l vdd) pch_lvt_mac w=Wbp_big l=Lbias nf=nf_Wbp_big m=m_half_unit*m_Wbp_big
-Mcasp2 (nstage1 VB2 npm_r vdd) pch_lvt_mac w=Wbp_big l=Lbias nf=nf_Wbp_big m=m_half_unit*m_Wbp_big
+Mmirr1 (npm_l pmirr vdd vdd) {pmos_lvt_model} w=Wbp_big l=Lbias nf=nf_Wbp_big m=m_half_unit*m_Wbp_big
+Mmirr2 (npm_r pmirr vdd vdd) {pmos_lvt_model} w=Wbp_big l=Lbias nf=nf_Wbp_big m=m_half_unit*m_Wbp_big
+Mcasp1 (pmirr VB2 npm_l vdd) {pmos_lvt_model} w=Wbp_big l=Lbias nf=nf_Wbp_big m=m_half_unit*m_Wbp_big
+Mcasp2 (nstage1 VB2 npm_r vdd) {pmos_lvt_model} w=Wbp_big l=Lbias nf=nf_Wbp_big m=m_half_unit*m_Wbp_big
 
 // Second stage and Miller compensation
-Mcs (vout nstage1 vdd vdd) pch_lvt_mac w=Wcs l=Lbias nf=1
-Mload (vout VB4 vss vss) nch_lvt_mac w=Wbn_big l=Lbias nf=nf_Wbn_big m=m_load_unit*m_Wbn_big
+Mcs (vout nstage1 vdd vdd) {pmos_lvt_model} w=Wcs l=Lbias nf=1
+Mload (vout VB4 vss vss) {nmos_lvt_model} w=Wbn_big l=Lbias nf=nf_Wbn_big m=m_load_unit*m_Wbn_big
 Rz (nstage1 n_rz) resistor r=Rz
 Cc (n_rz vout) capacitor c=Cc
 ends folded_cascode

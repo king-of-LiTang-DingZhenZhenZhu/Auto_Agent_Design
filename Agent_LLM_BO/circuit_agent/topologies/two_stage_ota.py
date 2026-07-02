@@ -29,6 +29,7 @@ import math
 
 from topologies.base import BaseTopology, TopologyMeta
 from models import CircuitFiles, ParamDef, ParamSpace
+from pdk_profiles import get_pdk_profile, spectre_include_line
 
 
 class TwoStageOTA(BaseTopology):
@@ -87,8 +88,12 @@ class TwoStageOTA(BaseTopology):
         p = dict(self.DEFAULT_PARAMS)
         if params:
             p.update(params)
+        pdk = get_pdk_profile()
 
         return _CIRCUIT_TEMPLATE.format(
+            spectre_include=spectre_include_line(pdk),
+            nmos_model=pdk.nmos_model,
+            pmos_model=pdk.pmos_model,
             Wtail=_fmt(p["Wtail"]),
             Ltail=_fmt(p["Ltail"]),
             Wdiff=_fmt(p["Wdiff"]),
@@ -116,7 +121,8 @@ class TwoStageOTA(BaseTopology):
             params: Override defaults (VDD, VCM, VBIAS, CL).
             analysis_type: "ac", "sr" (or legacy "tran"), or "st".
         """
-        vdd = 1.0       # NMOS input needs ~0.75V ICMR min → VDD=1.0V
+        pdk = get_pdk_profile()
+        vdd = pdk.vdd
         vcm = 0.7
         vbias = 0.55     # shared bias for M5 (tail) and M7 (load)
         cload = 2e-12   # 2 pF (typical for ADC driver)
@@ -202,6 +208,7 @@ class TwoStageOTA(BaseTopology):
             GmidTopologySpec,
             TransistorSpec,
         )
+        pdk = get_pdk_profile()
 
         tail_current_low = 50e-6
         if (
@@ -233,7 +240,7 @@ class TwoStageOTA(BaseTopology):
                 TransistorSpec(
                     role="tail_nmos",
                     w_param="Wtail", l_param="Ltail",
-                    model="nch_mac",
+                    model=pdk.nmos_model,
                     current_source="I_tail", current_fraction=1.0,
                     gm_id_low=8, gm_id_high=15, gm_id_default=10,
                     L_low=200e-9, L_high=600e-9, L_default=200e-9,
@@ -243,7 +250,7 @@ class TwoStageOTA(BaseTopology):
                 TransistorSpec(
                     role="diff_pair_nmos",
                     w_param="Wdiff", l_param="Ldiff",
-                    model="nch_mac",
+                    model=pdk.nmos_model,
                     current_source="I_tail", current_fraction=0.5,
                     gm_id_low=8, gm_id_high=15, gm_id_default=10,
                     L_low=60e-9, L_high=500e-9, L_default=60e-9,
@@ -253,7 +260,7 @@ class TwoStageOTA(BaseTopology):
                 TransistorSpec(
                     role="mirror_pmos",
                     w_param="Wmirr", l_param="Lmirr",
-                    model="pch_mac",
+                    model=pdk.pmos_model,
                     current_source="I_tail", current_fraction=0.5,
                     gm_id_low=8, gm_id_high=15, gm_id_default=10,
                     L_low=60e-9, L_high=500e-9, L_default=100e-9,
@@ -263,7 +270,7 @@ class TwoStageOTA(BaseTopology):
                 TransistorSpec(
                     role="cs_pmos",
                     w_param="Wcs", l_param="Lload",
-                    model="pch_mac",
+                    model=pdk.pmos_model,
                     current_source="I_cs", current_fraction=1.0,
                     gm_id_low=8, gm_id_high=15, gm_id_default=12,
                     L_low=200e-9, L_high=600e-9, L_default=200e-9,
@@ -273,7 +280,7 @@ class TwoStageOTA(BaseTopology):
                 TransistorSpec(
                     role="load_nmos",
                     w_param="Wload", l_param="Lload",
-                    model="nch_mac",
+                    model=pdk.nmos_model,
                     current_source="I_cs", current_fraction=1.0,
                     gm_id_low=8, gm_id_high=15, gm_id_default=10,
                     L_low=200e-9, L_high=600e-9, L_default=200e-9,
@@ -394,7 +401,7 @@ _CIRCUIT_TEMPLATE = """\
 // two_stage_ota.cir -- Two-Stage Miller OTA (Spectre native syntax)
 simulator lang=spectre insensitive=yes
 
-include "/PDKS/TSMC28nm/models/spectre/toplevel.scs" section=top_tt
+{spectre_include}
 
 parameters Wtail={Wtail} Ltail={Ltail} Wdiff={Wdiff} Ldiff={Ldiff}
 parameters Wmirr={Wmirr} Lmirr={Lmirr} Wcs={Wcs}
@@ -402,16 +409,16 @@ parameters Wload={Wload} Lload={Lload} Cc={Cc} Rz={Rz}
 
 subckt two_stage_ota (vip vin vout vb vdd vss)
 // First stage: NMOS differential pair
-Mdiff1 (n_mirr vin n_tail vss) nch_mac w=Wdiff l=Ldiff nf=1
-Mdiff2 (n_s1 vip n_tail vss) nch_mac w=Wdiff l=Ldiff nf=1
+Mdiff1 (n_mirr vin n_tail vss) {nmos_model} w=Wdiff l=Ldiff nf=1
+Mdiff2 (n_s1 vip n_tail vss) {nmos_model} w=Wdiff l=Ldiff nf=1
 // First stage: PMOS current mirror load
-Mmirr1 (n_mirr n_mirr vdd vdd) pch_mac w=Wmirr l=Lmirr nf=1
-Mmirr2 (n_s1 n_mirr vdd vdd) pch_mac w=Wmirr l=Lmirr nf=1
+Mmirr1 (n_mirr n_mirr vdd vdd) {pmos_model} w=Wmirr l=Lmirr nf=1
+Mmirr2 (n_s1 n_mirr vdd vdd) {pmos_model} w=Wmirr l=Lmirr nf=1
 // First stage: NMOS tail current source
-Mtail (n_tail vb vss vss) nch_mac w=Wtail l=Ltail nf=1
+Mtail (n_tail vb vss vss) {nmos_model} w=Wtail l=Ltail nf=1
 // Second stage
-Mcs (vout n_s1 vdd vdd) pch_mac w=Wcs l=Lload nf=1
-Mload (vout vb vss vss) nch_mac w=Wload l=Lload nf=1
+Mcs (vout n_s1 vdd vdd) {pmos_model} w=Wcs l=Lload nf=1
+Mload (vout vb vss vss) {nmos_model} w=Wload l=Lload nf=1
 // Miller compensation
 Rz (n_s1 n_rz) resistor r=Rz
 Cc (n_rz vout) capacitor c=Cc

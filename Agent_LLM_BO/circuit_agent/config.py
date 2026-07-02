@@ -6,10 +6,13 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
+from pdk_profiles import get_pdk_profile
 
 # Load .env from the circuit_agent directory
 _ENV_PATH = Path(__file__).parent / ".env"
 load_dotenv(_ENV_PATH)
+
+_DEFAULT_PDK = get_pdk_profile()
 
 
 class Settings(BaseSettings):
@@ -19,20 +22,27 @@ class Settings(BaseSettings):
     deepseek_model: str = "deepseek-v4-pro"
 
     # PDK — HSPICE format (.cir / .sp)
-    pdk_hspice_path: str = "/PDKS/TSMC28nm/models/hspice/toplevel.l"
-    pdk_hspice_section: str = "TOP_TT"
+    pdk_profile: str = _DEFAULT_PDK.name
+    pdk_hspice_path: str = _DEFAULT_PDK.hspice_model_path
+    pdk_hspice_section: str = _DEFAULT_PDK.hspice_section
 
     # PDK — Spectre format (.scs)
-    pdk_spectre_path: str = "/PDKS/TSMC28nm/models/spectre/toplevel.scs"
-    pdk_spectre_section: str = "top_tt"
+    pdk_spectre_path: str = _DEFAULT_PDK.spectre_model_path
+    pdk_spectre_section: str = _DEFAULT_PDK.spectre_section
 
-    vdd: float = 0.9
-    min_l: float = 120e-9  # PDK nch.3/pch.3 lmin≈108nm + margin → 120nm
-    max_width_per_finger: float = 2.6e-6  # Guard-banded below PDK wmax≈2.7um
-    min_width_per_finger: float = 0.2e-6
+    vdd: float = _DEFAULT_PDK.vdd
+    vdd_min: float = _DEFAULT_PDK.vdd_min
+    vdd_max: float = _DEFAULT_PDK.vdd_max
+    min_l: float = _DEFAULT_PDK.min_l
+    max_width_per_finger: float = _DEFAULT_PDK.max_width_per_finger
+    min_width_per_finger: float = _DEFAULT_PDK.min_width_per_finger
     w_l_grid_step: float = 1e-8  # W/L 参数网格步长 (10nm)，输出网表时自动取整
-    nmos_model: str = "nch_mac"
-    pmos_model: str = "pch_mac"
+    nmos_model: str = _DEFAULT_PDK.nmos_model
+    pmos_model: str = _DEFAULT_PDK.pmos_model
+    nmos_lvt_model: str = _DEFAULT_PDK.nmos_lvt_model
+    pmos_lvt_model: str = _DEFAULT_PDK.pmos_lvt_model
+    virtuoso_tech_lib: str = _DEFAULT_PDK.virtuoso_tech_lib
+    virtuoso_pdk_lib_path: str = _DEFAULT_PDK.virtuoso_pdk_lib_path
 
     # gm/Id lookup table path
     gmid_table_path: str = str(

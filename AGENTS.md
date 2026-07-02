@@ -28,6 +28,7 @@
 ② 如果用户没有指定拓扑架构，通过拓扑库程序化匹配，选择拓扑
    ├── ./knowledge_base/Opamp_knowledge_base/topology_selection_guide.md
    └── ./knowledge_base/PDKs_info/tsmc28_pdk_constraints.md        ← TSMC N28 约束
+      工艺路径/器件名/VDD 的代码入口统一为 Agent_LLM_BO/circuit_agent/pdk_profiles.py
       │
       ▼
 ③ 调 Python 拓扑库生成网表文件（硬约束，语法保证正确）
@@ -78,7 +79,15 @@
 
 按以下方式获取拓扑信息和工艺约束：
 1. 调用 `python -c "from topologies import list_topologies; [print(f'{m.name}: {m.display_name} (gain {m.min_gain_db}-{m.max_gain_db} dB, GBW {m.min_gbw_hz}-{m.max_gbw_hz} Hz)') for m in list_topologies()]"` — 查看可用拓扑和各指标能力范围
-2. **[PDKs_info/tsmc28_pdk_constraints.md](Agent_LLM_BO/circuit_agent/PDKs_info/tsmc28_pdk_constraints.md)** — TSMC N28 工艺约束（器件模型、W/L 范围、电流密度）
+2. **[PDKs_info/tsmc28_pdk_constraints.md](knowledge_base/PDKs_info/tsmc28_pdk_constraints.md)** — TSMC N28 工艺约束（W/L 范围、电流密度）
+3. **[PDKs_info/pdk_profiles.md](knowledge_base/PDKs_info/pdk_profiles.md)** — PDK profile 使用说明
+4. **[pdk_profiles.py](Agent_LLM_BO/circuit_agent/pdk_profiles.py)** — 代码实际使用的 PDK 分组：Spectre/HSPICE model 路径、section、NMOS/PMOS/LVT model 名称、默认 VDD、VDD 允许范围、Virtuoso tech library
+
+> 不要在 topology 文件中硬编码 PDK 路径或 MOS model 名称；需要换工艺时，新增/选择 `PDKProfile`，或用 `.env` 覆盖 `PDK_SPECTRE_PATH`、`NMOS_MODEL`、`PMOS_MODEL`、`NMOS_LVT_MODEL`、`PMOS_LVT_MODEL`、`VIRTUOSO_TECH_LIB` 等字段。
+
+> VDD 不是只能由 PDK profile 写死。profile 的 `vdd` 是默认值，`vdd_min/vdd_max` 是允许范围；单次设计用 `params["VDD"]`、requirements/CLI 或 `.env` 中的 `VDD` 覆盖。若用户希望 BO 搜索 VDD，必须显式把 `VDD` 加入 topology 的 `get_param_space()` 或 `params.json`，范围限制在 profile 允许值内。
+
+> 晶体管类型由 topology 选择 profile 字段：常规拓扑使用 `nmos_model/pmos_model`，folded cascode 当前使用 `nmos_lvt_model/pmos_lvt_model`。不要把 `nch_mac/pch_mac/nch_lvt_mac/pch_lvt_mac` 重新写死到 netlist template。
 
 ### 2.2 匹配拓扑
 
@@ -442,7 +451,7 @@ Agent (Codex)                    Python 脚本
   - `base.py` — 抽象基类
   - `five_t_ota.py` — 5T OTA 实现
   - `__init__.py` — 拓扑注册表 + 选择器
-- **PDK 约束**：[PDKs_info/tsmc28_pdk_constraints.md](Agent_LLM_BO/circuit_agent/PDKs_info/tsmc28_pdk_constraints.md)
+- **PDK 约束**：[PDKs_info/tsmc28_pdk_constraints.md](knowledge_base/PDKs_info/tsmc28_pdk_constraints.md)
 - **拓扑选择**：`topologies/__init__.py:get_topology_for_targets()` 程序化匹配
 - **Spectre 编写规范**：[Agent_LLM_BO/Scs_Scirpts/Spectre.scs脚本编写规范.md](Agent_LLM_BO/Scs_Scirpts/Spectre.scs脚本编写规范.md)
 - **Spectre 示例**：[Agent_LLM_BO/Scs_Scirpts/Examples/5T_OTA.scs](Agent_LLM_BO/Scs_Scirpts/Examples/5T_OTA.scs)

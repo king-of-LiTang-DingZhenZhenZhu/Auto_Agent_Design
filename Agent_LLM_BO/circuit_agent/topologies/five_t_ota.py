@@ -14,6 +14,7 @@ import math
 
 from topologies.base import BaseTopology, TopologyMeta
 from models import CircuitFiles, ParamDef, ParamSpace
+from pdk_profiles import get_pdk_profile, spectre_include_line
 
 
 class FiveTOTA(BaseTopology):
@@ -56,8 +57,12 @@ class FiveTOTA(BaseTopology):
         p = dict(self.DEFAULT_PARAMS)
         if params:
             p.update(params)
+        pdk = get_pdk_profile()
 
         return _CIRCUIT_TEMPLATE.format(
+            spectre_include=spectre_include_line(pdk),
+            pmos_model=pdk.pmos_model,
+            nmos_model=pdk.nmos_model,
             Wtail=_fmt(p["Wtail"]),
             Ltail=_fmt(p["Ltail"]),
             Wdp=_fmt(p["Wdp"]),
@@ -76,7 +81,8 @@ class FiveTOTA(BaseTopology):
     ) -> str:
         """Generate AC, slew-rate, or settling-time Spectre testbench."""
         # Bias / supply defaults
-        vdd = 0.9
+        pdk = get_pdk_profile()
+        vdd = pdk.vdd
         cload = 500e-15
 
         if params:
@@ -139,6 +145,7 @@ class FiveTOTA(BaseTopology):
             GmidTopologySpec,
             TransistorSpec,
         )
+        pdk = get_pdk_profile()
 
         tail_current_low = 1e-6
         tail_current_high = 200e-6
@@ -175,7 +182,7 @@ class FiveTOTA(BaseTopology):
                 TransistorSpec(
                     role="tail_pmos",
                     w_param="Wtail", l_param="Ltail",
-                    model="pch_mac",
+                    model=pdk.pmos_model,
                     current_source="I_tail", current_fraction=1.0,
                     gm_id_low=5, gm_id_high=22, gm_id_default=14,
                     L_low=200e-9, L_high=600e-9, L_default=200e-9,
@@ -185,7 +192,7 @@ class FiveTOTA(BaseTopology):
                 TransistorSpec(
                     role="diff_pair_pmos",
                     w_param="Wdp", l_param="Ldp",
-                    model="pch_mac",
+                    model=pdk.pmos_model,
                     current_source="I_tail", current_fraction=0.5,
                     gm_id_low=10, gm_id_high=24, gm_id_default=18,
                     L_low=120e-9, L_high=500e-9, L_default=120e-9,
@@ -195,7 +202,7 @@ class FiveTOTA(BaseTopology):
                 TransistorSpec(
                     role="mirror_nmos",
                     w_param="Wcm", l_param="Lcm",
-                    model="nch_mac",
+                    model=pdk.nmos_model,
                     current_source="I_tail", current_fraction=0.5,
                     gm_id_low=8, gm_id_high=24, gm_id_default=18,
                     L_low=200e-9, L_high=600e-9, L_default=200e-9,
@@ -206,7 +213,7 @@ class FiveTOTA(BaseTopology):
                 DerivedGateBiasSpec(
                     role="tail_pmos",
                     param_name="VBIAS",
-                    supply_voltage=0.9,
+                    supply_voltage=pdk.vdd,
                     device_type="pmos",
                     low=0.05,
                     high=0.85,
@@ -266,20 +273,20 @@ _CIRCUIT_TEMPLATE = """\
 // 5t_ota.cir -- Five-Transistor OTA (Spectre native syntax)
 simulator lang=spectre insensitive=yes
 
-include "/PDKS/TSMC28nm/models/spectre/toplevel.scs" section=top_tt
+{spectre_include}
 
 parameters Wtail={Wtail} Ltail={Ltail}
 parameters Wdp={Wdp} Ldp={Ldp}
 parameters Wcm={Wcm} Lcm={Lcm}
 subckt ota_5t (vip vin vout vbias vdd vss)
 // Tail current source (PMOS)
-Mtail (tail vbias vdd vdd) pch_mac w=Wtail l=Ltail nf=1
+Mtail (tail vbias vdd vdd) {pmos_model} w=Wtail l=Ltail nf=1
 // Differential pair (PMOS)
-Mdp1 (lout vip tail vdd) pch_mac w=Wdp l=Ldp nf=1
-Mdp2 (vout vin tail vdd) pch_mac w=Wdp l=Ldp nf=1
+Mdp1 (lout vip tail vdd) {pmos_model} w=Wdp l=Ldp nf=1
+Mdp2 (vout vin tail vdd) {pmos_model} w=Wdp l=Ldp nf=1
 // Active load / current mirror (NMOS)
-Mcm1 (lout lout vss vss) nch_mac w=Wcm l=Lcm nf=1
-Mcm2 (vout lout vss vss) nch_mac w=Wcm l=Lcm nf=1
+Mcm1 (lout lout vss vss) {nmos_model} w=Wcm l=Lcm nf=1
+Mcm2 (vout lout vss vss) {nmos_model} w=Wcm l=Lcm nf=1
 ends ota_5t
 """
 
