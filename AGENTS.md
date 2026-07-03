@@ -64,6 +64,14 @@
    默认只生成 SKILL/报告；只有用户显式要求时才加 --run-virtuoso 启动 Cadence 批处理。
 ```
 
+也可以使用上层编排入口：
+
+```bash
+python design_flow_graph.py --project outputs/<project_name> --run-pvt --export-virtuoso
+```
+
+`design_flow_graph.py` 只负责读取状态、调用现有 Review/PVT/Virtuoso 能力并写出 `outputs/<project>/flow/flow_report.md`；不替代 `main.py` 的 BO、不直接修改网表、不默认跑真实 Spectre。真实 PVT 仍需显式加 `--simulate`。
+
 > **文件命名**：根据电路拓扑命名，例如：5T OTA → `5t_ota.cir` + `tb_5t_ota_ac.scs`；两级运放 → `two_stage_ota.cir` + `tb_two_stage_ota_ac.scs`。所有生成的输入文件放在同名文件夹下。
 
 ---
@@ -86,9 +94,11 @@
 1. 调用 `python -c "from topologies import list_topologies; [print(f'{m.name}: {m.display_name} (gain {m.min_gain_db}-{m.max_gain_db} dB, GBW {m.min_gbw_hz}-{m.max_gbw_hz} Hz)') for m in list_topologies()]"` — 查看可用拓扑和各指标能力范围
 2. **[PDKs_info/tsmc28_pdk_constraints.md](knowledge_base/PDKs_info/tsmc28_pdk_constraints.md)** — TSMC N28 工艺约束（W/L 范围、电流密度）
 3. **[PDKs_info/pdk_profiles.md](knowledge_base/PDKs_info/pdk_profiles.md)** — PDK profile 使用说明
-4. **[pdk_profiles.py](Agent_LLM_BO/circuit_agent/pdk_profiles.py)** — 代码实际使用的 PDK 分组：Spectre/HSPICE model 路径、section、NMOS/PMOS/LVT model 名称、默认 VDD、VDD 允许范围、Virtuoso tech library
+4. **[pdk_profiles.py](Agent_LLM_BO/circuit_agent/pdk_profiles.py)** — 代码实际使用的 PDK 分组：Spectre/HSPICE model 路径、section、NMOS/PMOS/LVT model 名称、默认 VDD、VDD 允许范围、gm/Id 表路径、PVT 温度、Spectre options、Virtuoso tech library
 
-> 不要在 topology 文件中硬编码 PDK 路径或 MOS model 名称；需要换工艺时，新增/选择 `PDKProfile`，或用 `.env` 覆盖 `PDK_SPECTRE_PATH`、`NMOS_MODEL`、`PMOS_MODEL`、`NMOS_LVT_MODEL`、`PMOS_LVT_MODEL`、`VIRTUOSO_TECH_LIB` 等字段。
+> 不要在 topology 文件中硬编码 PDK 路径或 MOS model 名称；需要换工艺时，新增/选择 `PDKProfile`，或用 `.env` / `PDK_PROFILE_FILE` 覆盖 `PDK_SPECTRE_PATH`、`NMOS_MODEL`、`PMOS_MODEL`、`NMOS_LVT_MODEL`、`PMOS_LVT_MODEL`、`GMID_TABLE_PATH`、`VIRTUOSO_TECH_LIB` 等字段。
+
+> 换工艺前先运行 `python pdk_profiles.py --validate --require-gmid --require-virtuoso`。在真实 Cadence VM 中可加 `--check-files`。每次优化输出中的 `pdk_profile_used.json` 是复现实验的工艺配置快照，分析结果时优先确认它和当前环境一致。
 
 > VDD 不是只能由 PDK profile 写死。profile 的 `vdd` 是默认值，`vdd_min/vdd_max` 是允许范围；单次设计用 `params["VDD"]`、requirements/CLI 或 `.env` 中的 `VDD` 覆盖。若用户希望 BO 搜索 VDD，必须显式把 `VDD` 加入 topology 的 `get_param_space()` 或 `params.json`，范围限制在 profile 允许值内。
 
@@ -468,5 +478,6 @@ Agent (Codex)                    Python 脚本
 - **Spectre 示例**：[Agent_LLM_BO/Scs_Scirpts/Examples/5T_OTA.scs](Agent_LLM_BO/Scs_Scirpts/Examples/5T_OTA.scs)
 - **代码入口**：[Agent_LLM_BO/circuit_agent/main.py](Agent_LLM_BO/circuit_agent/main.py)
 - **文件流说明**：[Agent_LLM_BO/circuit_agent/FILE_FLOW.md](Agent_LLM_BO/circuit_agent/FILE_FLOW.md)
+- **Sizing 模式说明**：[Agent_LLM_BO/circuit_agent/SIZING_MODES.md](Agent_LLM_BO/circuit_agent/SIZING_MODES.md)
 - **配置文件**：[Agent_LLM_BO/circuit_agent/config.py](Agent_LLM_BO/circuit_agent/config.py)
 - **Virtuoso 导出**：[Agent_LLM_BO/circuit_agent/export_to_virtuoso.py](Agent_LLM_BO/circuit_agent/export_to_virtuoso.py)

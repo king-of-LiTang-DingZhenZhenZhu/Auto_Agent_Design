@@ -27,6 +27,7 @@ from models import (
     SimResult,
 )
 from optimizer import HybridOptimizer
+from pdk_profiles import get_pdk_profile, validate_pdk_profile
 from simulator import Simulator
 from utils import ensure_directories, setup_logging
 
@@ -234,6 +235,15 @@ def run_from_file(
         try:
             from topologies import get_topology
             topo = get_topology(topology_name_val)
+            pdk_errors = validate_pdk_profile(
+                get_pdk_profile(),
+                required_model_roles=topo.required_model_roles(),
+            )
+            if pdk_errors:
+                raise ValueError(
+                    "Active PDK profile is incompatible with "
+                    f"'{topology_name_val}': " + "; ".join(pdk_errors)
+                )
             gmid_spec = topo.get_gmid_spec(targets)
             if gmid_spec is not None:
                 from gmid_lookup import get_lookup, GmidSizer
@@ -444,7 +454,13 @@ def _save_requirements(targets: DesignTarget, original_text: str, config: Settin
     req_data = targets.to_requirements_dict(original_text=original_text)
     if project_name:
         req_data["project_name"] = project_name
+    pdk = get_pdk_profile()
+    req_data["pdk_profile"] = pdk.to_dict()
     req_path.write_text(json.dumps(req_data, indent=2, ensure_ascii=False), encoding="utf-8")
+    (workspace / "pdk_profile_used.json").write_text(
+        json.dumps(pdk.to_dict(), indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
     console.print(f"[green]✓[/green] Requirements saved to {req_path}")
 
 
@@ -567,9 +583,11 @@ def _persist_initial_run(
 def _print_header(config: Settings):
     """Print application header."""
     mode = "[DRY RUN]" if config.dry_run else ""
+    pdk = get_pdk_profile()
     console.print(
         Panel(
-            f"[bold]Circuit Design Agent[/bold] (TSMC N28 | DeepSeek + Optuna) {mode}",
+            f"[bold]Circuit Design Agent[/bold] "
+            f"({pdk.name} | DeepSeek + Optuna) {mode}",
             border_style="bright_blue",
         )
     )
@@ -722,6 +740,12 @@ def _save_final_output(
     netlist_dir = config.get_project_netlist_path(project_name)
     sim_dir = config.get_project_simulation_path(project_name)
     data_dir = config.get_project_data_path(project_name)
+    pdk = get_pdk_profile()
+    pdk_profile_path = project_root / "pdk_profile_used.json"
+    pdk_profile_path.write_text(
+        json.dumps(pdk.to_dict(), indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
 
     # 1. Save final rendered circuit netlist
     final_circuit = template.render(
@@ -835,6 +859,8 @@ def _save_final_output(
     result_data = result.to_result_dict(targets=targets, params=params)
     result_data["netlist_file"] = str(circuit_path)
     result_data["project_name"] = project_name
+    result_data["pdk_profile"] = pdk.to_dict()
+    result_data["pdk_profile_file"] = str(pdk_profile_path)
     if diagnostics_paths:
         result_data["diagnostics"] = diagnostics_paths
     if initial_default_paths:
@@ -883,6 +909,7 @@ def _save_final_output(
         "=" * 60,
         "",
         f"Project: {project_name}",
+        f"PDK Profile: {pdk.name}",
         "",
     ]
     if original_requirement:
@@ -956,6 +983,7 @@ def _save_final_output(
             console.print(f"  • {sim_dir / f'tb_circuit{suffix}.scs'}")
     console.print(f"  • {result_path}")
     console.print(f"  • {report_path}")
+    console.print(f"  • {pdk_profile_path}")
     if virtuoso_report:
         console.print(f"  • {virtuoso_report['skill_file']}")
         console.print(f"  • {project_root / 'virtuoso' / 'export_report.json'}")

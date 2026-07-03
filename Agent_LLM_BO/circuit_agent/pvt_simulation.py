@@ -44,7 +44,7 @@ def default_pvt_corners(profile: PDKProfile | None = None) -> list[PVTCorner]:
         ("vtyp", pdk.vdd),
         ("vmax", pdk.vdd_max),
     ]
-    temps = [-40.0, 27.0, 125.0]
+    temps = list(pdk.pvt_temperatures_c)
     corners: list[PVTCorner] = []
     for process in ("tt", "ss", "ff"):
         section = pdk.process_sections[process]
@@ -171,6 +171,7 @@ def run_pvt_verification(
                 "pvt_pass": summary["pvt_pass"],
                 "source": source,
                 "netlist_file": str(selected_netlist),
+                "pdk_profile": pdk.to_dict(),
                 "targets": targets.to_requirements_dict()["targets"] if targets else {},
                 "summary": summary,
                 "corners": json_corners,

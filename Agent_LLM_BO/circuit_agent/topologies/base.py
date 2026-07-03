@@ -172,6 +172,15 @@ class BaseTopology(ABC):
         """
         return None
 
+    def required_model_roles(self) -> tuple[str, ...]:
+        """Return PDK model roles required by this topology.
+
+        The names correspond to :attr:`pdk_profiles.PDKProfile.model_names`.
+        Subclasses using special devices should override this, e.g. folded
+        cascode currently requires LVT devices.
+        """
+        return ("nmos", "pmos")
+
     # ------------------------------------------------------------------
     # Subclass contract
     # ------------------------------------------------------------------

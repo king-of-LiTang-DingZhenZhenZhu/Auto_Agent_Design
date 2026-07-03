@@ -6,7 +6,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
-from pdk_profiles import get_pdk_profile
+from pdk_profiles import get_pdk_profile, validate_pdk_profile
 
 # Load .env from the circuit_agent directory
 _ENV_PATH = Path(__file__).parent / ".env"
@@ -45,11 +45,8 @@ class Settings(BaseSettings):
     virtuoso_pdk_lib_path: str = _DEFAULT_PDK.virtuoso_pdk_lib_path
 
     # gm/Id lookup table path
-    gmid_table_path: str = str(
-        Path(__file__).resolve().parents[2]
-        / "gmid_lookup_table"
-        / "gm_id_tables_tsmc28.json"
-    )
+    gmid_table_path: str = _DEFAULT_PDK.gmid_table_path
+    spectre_options: tuple[str, ...] = _DEFAULT_PDK.spectre_options
 
     # Spectre
     spectre_timeout: int = 300
@@ -151,6 +148,8 @@ class Settings(BaseSettings):
             errors.append("PDK_HSPICE_PATH is not set")
         if not self.pdk_spectre_path:
             errors.append("PDK_SPECTRE_PATH is not set")
+        pdk_errors = validate_pdk_profile(get_pdk_profile())
+        errors.extend(f"PDK profile: {error}" for error in pdk_errors)
         if errors:
             raise ValueError(
                 "Missing required configuration:\n" + "\n".join(f"  - {e}" for e in errors)

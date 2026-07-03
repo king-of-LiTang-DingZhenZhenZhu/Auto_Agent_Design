@@ -96,6 +96,7 @@ def export_netlist(
         "results_file": str(results_path) if results_path else None,
         "netlist_file": str(netlist_path),
         "export_source": export_source,
+        "pdk_profile": _PDK.to_dict(),
         "target_lib": lib_name,
         "target_cell": cell_name,
         "target_view": "schematic",

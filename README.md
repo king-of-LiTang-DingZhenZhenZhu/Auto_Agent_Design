@@ -23,6 +23,7 @@ Auto_Agent_Design/
     │   ├── psf_results.py             # PSF 结果解析（AC/瞬态）
     │   ├── diagnostics_export.py       # DC/AC 诊断 CSV 与可读摘要
     │   ├── gmid_lookup.py             # gm/Id 查找表与尺寸计算
+    │   ├── SIZING_MODES.md            # 普通 BO 与 gm/Id BO 参数空间说明
     │   ├── utils.py                   # 工具函数
     │   ├── requirements.txt           # Python 依赖
     │   ├── .env.example               # 环境变量模板
@@ -188,6 +189,32 @@ python pvt_simulation.py \
 
 输出位于 `outputs/<project>/pvt/`，包括 `pvt_results.csv`、`pvt_results.json`、`pvt_report.md` 和每个 corner 的 `raw/diagnostics/metrics_summary.txt`。第一版 PVT 只报告 pass/fail 和最差 corner，不自动改电路。
 
+## Design Flow Graph
+
+`design_flow_graph.py` 是 BO → Review → PVT → Virtuoso 的上层编排入口。它不替代底层脚本，只读取当前项目状态并决定下一步，输出统一的 `outputs/<project>/flow/flow_state.json` 和 `flow_report.md`。
+
+```bash
+cd Agent_LLM_BO/circuit_agent
+
+# 只检查当前项目状态，给出 next_action
+python design_flow_graph.py \
+  --project outputs/<project>
+
+# nominal/review 达标后生成 PVT dry-run 文件
+python design_flow_graph.py \
+  --project outputs/<project> \
+  --run-pvt
+
+# 显式允许真实 Spectre PVT，并在 PVT 通过后导出 Virtuoso SKILL
+python design_flow_graph.py \
+  --project outputs/<project> \
+  --run-pvt \
+  --simulate \
+  --export-virtuoso
+```
+
+安装 `langgraph` 后会使用真实 `StateGraph`；若当前环境暂时没有该依赖，脚本会用同样节点顺序的 fallback 执行，便于先验证流程。
+
 ## Virtuoso 导出
 
 `export_to_virtuoso.py --results outputs/<project>/results.json` 会导出最终应采用的 netlist：若 `agent_review/candidate_metrics.csv` 中存在满足原始目标的 review candidate，则优先导出该 candidate；否则导出 BO 最优的 `outputs/<project>/netlist/circuit.cir`。建议在 PVT 也通过后再导出。也可以用 `--netlist` 显式指定要导出的 `.cir`。
@@ -243,6 +270,8 @@ Agent_LLM_BO/virtuoso_runs/<project>/
 3. **电流镜比例** — 镜像输出管使用整数倍率复制参考电流，宽器件先拆 `nf`，`nf>32` 后再用 `m`。
 4. **偏置推导** — 支持由 lookup 的 VGS/VSG 推导 VBIAS；folded cascode 当前固定 internal bias generator，主路径通过电流比例和 gm/Id 推导尺寸。
 
+普通物理参数 BO 与 gm/Id 模式的详细区别见：[SIZING_MODES.md](Agent_LLM_BO/circuit_agent/SIZING_MODES.md)。
+
 无需手动处理单指 W 或 finger 数，系统使用 `2.6μm/finger` guard-band 满足 PDK bin 约束。
 
 ## 优化算法
@@ -255,7 +284,7 @@ Agent_LLM_BO/virtuoso_runs/<project>/
 
 ## PDK Profile 与约束
 
-工艺相关信息集中在 `Agent_LLM_BO/circuit_agent/pdk_profiles.py`，拓扑脚本从当前 profile 读取 Spectre include 路径、section、NMOS/PMOS/LVT model 名称、默认 VDD、VDD 允许范围、尺寸边界和 Virtuoso tech library。默认 profile 是 `tsmc28`。
+工艺相关信息集中在 `Agent_LLM_BO/circuit_agent/pdk_profiles.py`，拓扑脚本从当前 profile 读取 Spectre include 路径、section、NMOS/PMOS/LVT model 名称、默认 VDD、VDD 允许范围、尺寸边界、gm/Id 表路径、PVT 温度列表、Spectre options 和 Virtuoso tech library。默认 profile 是 `tsmc28`。
 
 可通过环境变量切换或覆盖：
 
@@ -270,11 +299,26 @@ export VDD=1.1
 export VIRTUOSO_TECH_LIB=tsmcN28
 ```
 
+也可以用外部 JSON profile：
+
+```bash
+export PDK_PROFILE_FILE=/path/to/my_pdk_profile.json
+python Agent_LLM_BO/circuit_agent/pdk_profiles.py --validate --require-gmid --require-virtuoso
+```
+
 VDD 使用优先级：单次 `params["VDD"]` 最高，其次 `.env`/环境变量 `VDD`，最后才是 profile 默认值。profile 中的 `VDD_MIN/VDD_MAX` 记录该工艺允许范围，例如 TSMC28 当前为 `0.9~1.1V`；如果希望 BO 搜索 VDD，应在 topology 的 `get_param_space()` 或显式 `params.json` 中加入 `VDD`，范围不要超过 profile 允许值。
 
 晶体管类型由 topology 选择 profile 字段：`five_t_ota`、`two_stage_ota`、`nmcf_three_stage` 使用 `nmos_model/pmos_model`；`folded_cascode` 使用 `nmos_lvt_model/pmos_lvt_model`。换 PDK 时改 profile，不要在 topology 模板里硬编码 model 名。
 
-添加新工艺时，在 `pdk_profiles.py` 新增一组 profile，并同步补充 `knowledge_base/PDKs_info/` 下的人类可读约束说明。
+添加新工艺时，优先新增一个 PDK profile，而不是修改 topology。profile 至少需要包含：Spectre/HSPICE model include、process section、PVT corner section、VDD 范围、MOS model role、W/L 限制、gm/Id table path、Virtuoso tech lib 和 OA library path。然后运行：
+
+```bash
+cd Agent_LLM_BO/circuit_agent
+conda activate Auto_Agent_Design
+python pdk_profiles.py --validate --require-gmid --require-virtuoso
+```
+
+真实 Cadence VM 中可以额外加 `--check-files`，确认 PDK 路径实际存在。每次优化输出目录会保存 `pdk_profile_used.json`，用于复现实验。
 
 默认 TSMC N28 约束：
 

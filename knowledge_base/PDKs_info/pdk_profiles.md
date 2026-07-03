@@ -17,6 +17,9 @@
 | LVT NMOS / PMOS | `nch_lvt_mac` / `pch_lvt_mac` |
 | VDD default/range | default `0.9 V`, allowed `0.9 V ~ 1.1 V` |
 | W per finger | `0.2um ~ 2.6um` |
+| gm/Id table | `gmid_lookup_table/gm_id_tables_tsmc28.json` |
+| PVT temperatures | `-40, 27, 125 °C` |
+| Spectre options | `rawfmt=psfascii`, `soft_bin=allmodels` |
 | Virtuoso tech lib | `tsmcN28` |
 | Virtuoso OA lib path | `/PDKS/TSMC28nm/tsmcN28` |
 
@@ -75,6 +78,7 @@ export CIRCUIT_AGENT_PDK=tsmc28
 
 ```bash
 export PDK_SPECTRE_PATH=/my/pdk/models/spectre/toplevel.scs
+export GMID_TABLE_PATH=/my/pdk/gmid/gm_id_tables.json
 export VIRTUOSO_PDK_LIB_PATH=/my/pdk/tsmcN28
 ```
 
@@ -90,8 +94,26 @@ export VIRTUOSO_PDK_LIB_PATH=/my/pdk/tsmcN28
 | `NMOS_LVT_MODEL`, `PMOS_LVT_MODEL` | LVT MOS model |
 | `VDD`, `VDD_MIN`, `VDD_MAX` | 默认电源电压和允许范围 |
 | `PDK_MIN_L`, `PDK_MAX_WIDTH_PER_FINGER`, `PDK_MIN_WIDTH_PER_FINGER` | 尺寸边界 |
+| `GMID_TABLE_PATH` | 当前 PDK 的 gm/Id lookup JSON |
+| `PDK_PVT_TEMPERATURES` | PVT 温度列表，例如 `-40,27,125` |
+| `PDK_SPECTRE_OPTIONS` | testbench options，例如 `rawfmt=psfascii,soft_bin=allmodels` |
 | `VIRTUOSO_TECH_LIB`, `VIRTUOSO_PDK_LIB_PATH` | Virtuoso library 绑定 |
 
 ## 添加新工艺
 
-在 `pdk_profiles.py` 的 `PDK_PROFILES` 中新增一项，例如 `gf22` 或 `sky130`，填写 model include、section、NMOS/PMOS model 名称、VDD、尺寸约束和 Virtuoso tech library。拓扑代码会自动读取这些字段。
+推荐新增一个 profile，而不是改 topology：
+
+1. 在 `pdk_profiles.py` 的 `PDK_PROFILES` 中新增一项，或准备外部 JSON 并设置 `PDK_PROFILE_FILE=/path/to/profile.json`。
+2. 填写 Spectre/HSPICE model include、nominal section、PVT process section、VDD 范围、MOS model role、尺寸约束、gm/Id table path、Virtuoso tech lib 和 OA library path。
+3. 确认 gm/Id 表包含 topology 需要的 model 名。常规拓扑需要 `nmos/pmos`；folded cascode 当前需要 `nmos_lvt/pmos_lvt`。
+4. 运行 profile 验证：
+
+```bash
+cd Agent_LLM_BO/circuit_agent
+conda activate Auto_Agent_Design
+python pdk_profiles.py --validate --require-gmid --require-virtuoso
+```
+
+5. 在真实 Cadence/Spectre 机器上加 `--check-files`，确认模型文件和 Virtuoso OA library 路径可见。
+
+优化完成后，`outputs/<project>/pdk_profile_used.json` 会保存当次使用的 profile 快照，方便之后复现实验或排查 PDK 切换问题。

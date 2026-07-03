@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import unittest
+import json
+import tempfile
+from pathlib import Path
 from unittest.mock import patch
 
 from config import Settings
 from models import DesignTarget
+from pdk_profiles import get_pdk_profile, validate_pdk_profile
 from topologies import get_topology
 
 
@@ -35,6 +39,85 @@ class OptimizerConfigTest(unittest.TestCase):
     def test_gmid_lookup_table_path_can_come_from_env(self):
         with patch.dict("os.environ", {"GMID_TABLE_PATH": "/tmp/custom_gmid.json"}):
             self.assertEqual(Settings().gmid_table_path, "/tmp/custom_gmid.json")
+
+    def test_pdk_profile_validation_checks_gmid_model_coverage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            gmid = root / "gmid.json"
+            gmid.write_text(
+                json.dumps({"unit_n": {}, "unit_p": {}}),
+                encoding="utf-8",
+            )
+            profile_json = root / "unit_pdk.json"
+            profile_json.write_text(
+                json.dumps(
+                    {
+                        "name": "unit_pdk",
+                        "spectre_model_path": "/fake/models.scs",
+                        "spectre_section": "tt",
+                        "hspice_model_path": "/fake/models.l",
+                        "hspice_section": "TT",
+                        "nmos_model": "unit_n",
+                        "pmos_model": "unit_p",
+                        "nmos_lvt_model": "missing_lvt_n",
+                        "pmos_lvt_model": "missing_lvt_p",
+                        "process_sections": {
+                            "tt": "tt",
+                            "ss": "ss",
+                            "ff": "ff",
+                        },
+                        "vdd": 1.0,
+                        "vdd_min": 0.9,
+                        "vdd_max": 1.1,
+                        "pvt_temperatures_c": [-40, 27, 125],
+                        "min_l": 100e-9,
+                        "max_width_per_finger": 1e-6,
+                        "min_width_per_finger": 100e-9,
+                        "gmid_table_path": str(gmid),
+                        "spectre_options": ["rawfmt=psfascii"],
+                        "virtuoso_tech_lib": "unitTech",
+                        "virtuoso_pdk_lib_path": "/fake/unitTech",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            profile = get_pdk_profile(str(profile_json))
+            errors = validate_pdk_profile(
+                profile,
+                require_gmid=True,
+                required_model_roles=("nmos", "pmos"),
+            )
+            self.assertFalse(errors)
+
+            errors = validate_pdk_profile(
+                profile,
+                require_gmid=True,
+                required_model_roles=("nmos_lvt", "pmos_lvt"),
+            )
+            self.assertTrue(any("missing_lvt_n" in error for error in errors))
+
+    def test_topology_generation_uses_env_pdk_profile_overrides(self):
+        with patch.dict(
+            "os.environ",
+            {
+                "PDK_SPECTRE_PATH": "/unit/pdk/spectre.scs",
+                "PDK_SPECTRE_SECTION": "unit_tt",
+                "NMOS_MODEL": "unit_n",
+                "PMOS_MODEL": "unit_p",
+                "NMOS_LVT_MODEL": "unit_n_lvt",
+                "PMOS_LVT_MODEL": "unit_p_lvt",
+                "VDD": "1.05",
+                "PDK_MAX_WIDTH_PER_FINGER": "1e-6",
+            },
+        ):
+            five_t = get_topology("5t_ota").generate_circuit()
+            self.assertIn('include "/unit/pdk/spectre.scs" section=unit_tt', five_t)
+            self.assertIn("unit_p", five_t)
+            self.assertIn("unit_n", five_t)
+
+            folded = get_topology("folded_cascode").generate_circuit()
+            self.assertIn("unit_p_lvt", folded)
+            self.assertIn("unit_n_lvt", folded)
 
     def test_5t_gmid_space_derives_vbias_and_constrains_tail_current(self):
         targets = DesignTarget(

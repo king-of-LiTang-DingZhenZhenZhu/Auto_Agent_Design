@@ -22,6 +22,7 @@ from openai import OpenAI
 
 from config import Settings
 from models import DesignTarget, ParamSpace, SimResult
+from pdk_profiles import get_pdk_profile
 
 logger = logging.getLogger(__name__)
 
@@ -54,14 +55,16 @@ class LLMClient:
         library, not here.
         """
         kb_path = self.config.get_knowledge_base_path()
+        pdk = get_pdk_profile(self.config.pdk_profile)
         sections = [
-            "You are an expert analog circuit designer specializing in TSMC N28 process.",
+            "You are an expert analog circuit designer.",
             "",
             "## Process & PDK",
-            f"- Process: TSMC N28",
+            f"- Active PDK profile: {pdk.name}",
             f"- NMOS model: {self.config.nmos_model}",
             f"- PMOS model: {self.config.pmos_model}",
-            f"- VDD = {self.config.vdd}V (core devices)",
+            f"- VDD = {self.config.vdd}V "
+            f"(allowed {self.config.vdd_min}V - {self.config.vdd_max}V)",
             f"- Minimum channel length L >= {self.config.min_l * 1e9:.0f}nm",
             f"- Maximum width per finger: {self.config.max_width_per_finger * 1e6:.0f}um",
             "- Spectre MOS width semantics: effective width = W * M; "
@@ -214,10 +217,10 @@ Rules:
 
         prompt = f"""Review the following circuit parameters proposed by Bayesian Optimization.{topo_hint}
 {topology_context}
-Check for physical feasibility in TSMC N28 (VDD=0.9 - 1.1V):
-- All transistors should be able to enter saturation (Vds > Vgs - Vth, typical Vth ~ 0.4V for N28)
+Check for physical feasibility under the active PDK profile ({self.config.pdk_profile}, VDD={self.config.vdd:g}V, allowed range {self.config.vdd_min:g}-{self.config.vdd_max:g}V):
+- All transistors should be able to enter saturation using the active PDK's device behavior
 - Current must be reasonable for the given W/L ratios
-- Headroom constraints under VDD=0.9 - 1.1V must be respected
+- Headroom constraints under the active VDD range must be respected
 - Refer to the circuit topology above to understand each transistor's role
 {result_context}
 ## Proposed Parameters

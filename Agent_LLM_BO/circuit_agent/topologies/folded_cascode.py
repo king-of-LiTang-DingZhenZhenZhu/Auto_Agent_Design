@@ -216,6 +216,9 @@ class FoldedCascodeOTA(BaseTopology):
             params.pop(name, None)
         return params
 
+    def required_model_roles(self) -> tuple[str, ...]:
+        return ("nmos_lvt", "pmos_lvt")
+
     def get_param_space(self) -> ParamSpace:
         return ParamSpace(
             params=[

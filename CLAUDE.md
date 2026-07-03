@@ -26,6 +26,8 @@
 7. **PVT 验证** — 若 BO 最优或 Review candidate 已达标，运行 `pvt_simulation.py` 做 27-corner PVT 检查
 8. **导出 Virtuoso 原理图** — nominal 和 PVT 都满足后，运行 `export_to_virtuoso.py` 选择最终 netlist 并生成 Virtuoso 导入脚本/工作区
 
+可选：使用 `design_flow_graph.py --project outputs/<project>` 作为上层编排器，让 LangGraph/fallback 自动读取当前状态并输出 `flow/flow_report.md` 与下一步 `next_action`。它只调度现有 BO/Review/PVT/Virtuoso 脚本，不替代底层实现。
+
 > **文件命名**：根据电路拓扑命名，例如 5T OTA → `5t_ota.cir` + `tb_5t_ota_ac.scs`。所有文件放在同名文件夹下。
 
 ---
@@ -50,7 +52,17 @@ python -c "from topologies import list_topologies; [print(f'{m.name}: {m.display
 - `./knowledge_base/PDKs_info/pdk_profiles.md`
 - `./knowledge_base/PDKs_info/tsmc28_pdk_constraints.md`
 
-PDK 路径、Spectre section、NMOS/PMOS/LVT model 名称、默认 VDD、VDD 允许范围、Virtuoso tech library 的代码入口统一在 `Agent_LLM_BO/circuit_agent/pdk_profiles.py`。不要在 topology 文件里新增硬编码 PDK 路径、MOS model 或电源默认值；换工艺时新增/选择 `PDKProfile`，或用 `.env` 覆盖对应字段。
+PDK 路径、Spectre section、NMOS/PMOS/LVT model 名称、默认 VDD、VDD 允许范围、gm/Id 表路径、PVT 温度、Spectre options、Virtuoso tech library 的代码入口统一在 `Agent_LLM_BO/circuit_agent/pdk_profiles.py`。不要在 topology 文件里新增硬编码 PDK 路径、MOS model 或电源默认值；换工艺时新增/选择 `PDKProfile`，或用 `.env` / `PDK_PROFILE_FILE` 覆盖对应字段。
+
+换工艺前先做 profile 验证：
+
+```bash
+cd Agent_LLM_BO/circuit_agent
+conda activate Auto_Agent_Design
+python pdk_profiles.py --validate --require-gmid --require-virtuoso
+```
+
+如果在真实 Cadence/Spectre 机器上，再加 `--check-files` 检查模型和 OA library 路径是否存在。优化输出会保存 `pdk_profile_used.json`，分析结果时优先确认该文件与当前环境一致。
 
 VDD 使用规则：profile 的 `vdd` 是默认值，`vdd_min/vdd_max` 是允许范围；单次设计需要 1.0V 或 1.1V 时，通过 `params={"VDD": 1.1}`、requirements/CLI 或 `.env` 的 `VDD=1.1` 覆盖。若要让 BO 搜索 VDD，必须在 topology `get_param_space()` 或显式 `params.json` 中加入 `VDD`，并限制在 profile 范围内。
 
@@ -312,6 +324,7 @@ Agent (Claude Code)                      Python 脚本
 - **Review 脚本**：[review_optimization.py](Agent_LLM_BO/circuit_agent/review_optimization.py)
 - **Virtuoso 导出**：[export_to_virtuoso.py](Agent_LLM_BO/circuit_agent/export_to_virtuoso.py)
 - **文件流说明**：[FILE_FLOW.md](Agent_LLM_BO/circuit_agent/FILE_FLOW.md)
+- **Sizing 模式说明**：[SIZING_MODES.md](Agent_LLM_BO/circuit_agent/SIZING_MODES.md)
 - **PDK 约束**：[tsmc28_pdk_constraints.md](knowledge_base/PDKs_info/tsmc28_pdk_constraints.md)
 - **PDK Profile**：[pdk_profiles.py](Agent_LLM_BO/circuit_agent/pdk_profiles.py)
 - **Review 指南**：[optimization_review_guide.md](knowledge_base/Opamp_knowledge_base/optimization_review_guide.md)

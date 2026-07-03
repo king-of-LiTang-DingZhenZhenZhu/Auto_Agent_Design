@@ -96,7 +96,7 @@ class TransistorSpec:
     Vbs: float = 0.0
 
     # Physical constraints
-    max_per_finger: float = 2.6e-6
+    max_per_finger: float | None = None
     multiplicity: int = 1
 
 
