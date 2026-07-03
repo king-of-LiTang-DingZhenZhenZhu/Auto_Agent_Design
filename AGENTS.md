@@ -54,7 +54,12 @@
    → workspace/run_xxx/sim.log
       │
       ▼
-⑥ 若 BO 最优或 Review candidate 已达标，导出 Virtuoso 原理图生成脚本：
+⑥ 若 BO 最优或 Review candidate 已达标，先做 PVT 验证：
+   python pvt_simulation.py --results outputs/<project_name>/results.json --simulate
+   默认 PVT 为 tt/ss/ff × VDD(min/typ/max) × temp(-40/27/125)。Codex 默认不跑真实 Spectre PVT，只给命令并根据用户返回的 pvt_report/diagnostics 分析。
+      │
+      ▼
+⑦ nominal 与 PVT 都达标后，导出 Virtuoso 原理图生成脚本：
    python export_to_virtuoso.py --results outputs/<project_name>/results.json --lib BO_Designs --tech-lib tsmcN28
    默认只生成 SKILL/报告；只有用户显式要求时才加 --run-virtuoso 启动 Cadence 批处理。
 ```
@@ -271,7 +276,13 @@ outputs/<project_name>/
 ├── results.json                 # 结构化结果
 ├── summary_report.txt           # 人类可读报告
 ├── optimization_log.json        # 完整优化历史
-└── optimization_metrics.csv     # 每轮主要指标表
+├── optimization_metrics.csv     # 每轮主要指标表
+├── agent_review/                # 可选：BO 后 Review 候选和结果
+└── pvt/                         # 可选：PVT 验证结果
+    ├── corners/                 # 每个 corner 的网表、raw、diagnostics
+    ├── pvt_results.csv
+    ├── pvt_results.json
+    └── pvt_report.md
 ```
 
 ### 仿真指标提取

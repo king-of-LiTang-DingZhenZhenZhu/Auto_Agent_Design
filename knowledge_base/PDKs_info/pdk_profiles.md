@@ -10,6 +10,7 @@
 |------|--------|
 | Spectre model | `/PDKS/TSMC28nm/models/spectre/toplevel.scs` |
 | Spectre section | `top_tt` |
+| PVT process sections | `tt:top_tt, ss:top_ss, ff:top_ff` |
 | HSPICE model | `/PDKS/TSMC28nm/models/hspice/toplevel.l` |
 | HSPICE section | `TOP_TT` |
 | NMOS / PMOS | `nch_mac` / `pch_mac` |
@@ -83,6 +84,7 @@ export VIRTUOSO_PDK_LIB_PATH=/my/pdk/tsmcN28
 |----------|------|
 | `CIRCUIT_AGENT_PDK` / `PDK_PROFILE` | 选择 profile 名称 |
 | `PDK_SPECTRE_PATH`, `PDK_SPECTRE_SECTION` | Spectre include |
+| `PDK_PROCESS_SECTIONS` | PVT process 到 Spectre section 的映射，例如 `tt:top_tt,ss:top_ss,ff:top_ff` |
 | `PDK_HSPICE_PATH`, `PDK_HSPICE_SECTION` | HSPICE include |
 | `NMOS_MODEL`, `PMOS_MODEL` | 常规 MOS model |
 | `NMOS_LVT_MODEL`, `PMOS_LVT_MODEL` | LVT MOS model |

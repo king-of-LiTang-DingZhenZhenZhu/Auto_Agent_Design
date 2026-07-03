@@ -23,7 +23,8 @@
 4. **运行优化** — `python main.py --netlist ... --testbench ... --requirements ...`
 5. **读取结果** — 查看 `outputs/<project>/results.json`，重点关注 `all_targets_met`、`target_status`、`gap`
 6. **BO 后 Review** — 若结果未完全达标，运行 `review_optimization.py` 分析 Top 迭代，生成候选网表并仿真验证
-7. **导出 Virtuoso 原理图** — 若 BO 最优或 Review candidate 已达标，运行 `export_to_virtuoso.py` 选择最终 netlist 并生成 Virtuoso 导入脚本/工作区
+7. **PVT 验证** — 若 BO 最优或 Review candidate 已达标，运行 `pvt_simulation.py` 做 27-corner PVT 检查
+8. **导出 Virtuoso 原理图** — nominal 和 PVT 都满足后，运行 `export_to_virtuoso.py` 选择最终 netlist 并生成 Virtuoso 导入脚本/工作区
 
 > **文件命名**：根据电路拓扑命名，例如 5T OTA → `5t_ota.cir` + `tb_5t_ota_ac.scs`。所有文件放在同名文件夹下。
 
@@ -190,9 +191,33 @@ python review_optimization.py \
 
 ---
 
-## 第七步：达标后生成 Virtuoso 原理图
+## 第七步：达标后 PVT 验证
 
-优化完成后，如果 `outputs/<project>/results.json` 中 `all_targets_met=true`，或 BO 后 Review 的 `candidate_metrics.csv` 中存在达标 candidate，可以导出最终 netlist 到 Virtuoso。
+优化完成后，如果 `outputs/<project>/results.json` 中 `all_targets_met=true`，或 BO 后 Review 的 `candidate_metrics.csv` 中存在达标 candidate，应先做 PVT 验证。
+
+默认 PVT 矩阵：`tt/ss/ff × VDD(min/typ/max) × temp(-40/27/125)`，共 27 个 corner。process section 来自 `pdk_profiles.py`，必要时用 `.env` 的 `PDK_PROCESS_SECTIONS=tt:top_tt,ss:top_ss,ff:top_ff` 覆盖。
+
+```bash
+cd Agent_LLM_BO/circuit_agent
+conda activate Auto_Agent_Design
+
+# Codex 默认只建议/检查 dry-run；真实 PVT 由用户在 Cadence/Spectre 环境执行
+python pvt_simulation.py \
+  --results outputs/<project>/results.json \
+  --dry-run
+
+python pvt_simulation.py \
+  --results outputs/<project>/results.json \
+  --simulate
+```
+
+输出在 `outputs/<project>/pvt/`：`pvt_results.csv`、`pvt_results.json`、`pvt_report.md` 和每个 corner 的 `diagnostics/metrics_summary.txt`。第一版 PVT 只报告 pass/fail 和最差 corner，不自动改电路。
+
+---
+
+## 第八步：PVT 达标后生成 Virtuoso 原理图
+
+优化完成后，如果 nominal 与 PVT 都满足指标，可以导出最终 netlist 到 Virtuoso。
 
 导出选择规则由 `export_to_virtuoso.py --results` 自动处理：
 

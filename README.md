@@ -166,9 +166,31 @@ python review_optimization.py \
 
 规则参考：[optimization_review_guide.md](knowledge_base/Opamp_knowledge_base/optimization_review_guide.md)
 
+## PVT 验证
+
+BO 最优或 Review candidate 在 nominal 条件下达标后，建议先做 PVT 验证，再导出最终 schematic。`pvt_simulation.py` 会复用最终 netlist 选择逻辑：若 Review candidate 达标则优先验证它，否则验证 BO best。
+
+默认 PVT 矩阵为 `tt/ss/ff × VDD(min/typ/max) × temp(-40/27/125)`，共 27 个 corner。process section 来自 `pdk_profiles.py` 的 `process_sections`，可用 `.env` 中的 `PDK_PROCESS_SECTIONS=tt:top_tt,ss:top_ss,ff:top_ff` 覆盖。
+
+```bash
+cd Agent_LLM_BO/circuit_agent
+
+# 只生成 PVT 目录和 patched netlist/testbench，不跑真实 Spectre
+python pvt_simulation.py \
+  --results outputs/<project>/results.json \
+  --dry-run
+
+# 在本地 Cadence/Spectre 环境中执行真实 PVT
+python pvt_simulation.py \
+  --results outputs/<project>/results.json \
+  --simulate
+```
+
+输出位于 `outputs/<project>/pvt/`，包括 `pvt_results.csv`、`pvt_results.json`、`pvt_report.md` 和每个 corner 的 `raw/diagnostics/metrics_summary.txt`。第一版 PVT 只报告 pass/fail 和最差 corner，不自动改电路。
+
 ## Virtuoso 导出
 
-`export_to_virtuoso.py --results outputs/<project>/results.json` 会导出最终应采用的 netlist：若 `agent_review/candidate_metrics.csv` 中存在满足原始目标的 review candidate，则优先导出该 candidate；否则导出 BO 最优的 `outputs/<project>/netlist/circuit.cir`。也可以用 `--netlist` 显式指定要导出的 `.cir`。
+`export_to_virtuoso.py --results outputs/<project>/results.json` 会导出最终应采用的 netlist：若 `agent_review/candidate_metrics.csv` 中存在满足原始目标的 review candidate，则优先导出该 candidate；否则导出 BO 最优的 `outputs/<project>/netlist/circuit.cir`。建议在 PVT 也通过后再导出。也可以用 `--netlist` 显式指定要导出的 `.cir`。
 
 默认行为只生成 SKILL，不启动 Cadence：
 
@@ -290,6 +312,11 @@ outputs/<project>/
 │   ├── candidates/               # 候选网表
 │   ├── candidate_metrics.csv     # 候选仿真汇总
 │   └── review_report.md          # Review 报告
+├── pvt/ (可选)                   # PVT 验证结果
+│   ├── corners/                  # 每个 PVT corner 的网表/仿真/诊断
+│   ├── pvt_results.csv
+│   ├── pvt_results.json
+│   └── pvt_report.md
 └── virtuoso/ (可选)             # Virtuoso SKILL 导入脚本
 ```
 

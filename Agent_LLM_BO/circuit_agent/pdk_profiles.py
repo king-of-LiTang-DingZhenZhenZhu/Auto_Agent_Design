@@ -25,6 +25,7 @@ class PDKProfile:
     pmos_model: str
     nmos_lvt_model: str
     pmos_lvt_model: str
+    process_sections: dict[str, str]
     vdd: float
     vdd_min: float
     vdd_max: float
@@ -46,6 +47,11 @@ PDK_PROFILES: dict[str, PDKProfile] = {
         pmos_model="pch_mac",
         nmos_lvt_model="nch_lvt_mac",
         pmos_lvt_model="pch_lvt_mac",
+        process_sections={
+            "tt": "top_tt",
+            "ss": "top_ss",
+            "ff": "top_ff",
+        },
         vdd=0.9,
         vdd_min=0.9,
         vdd_max=1.1,
@@ -112,6 +118,20 @@ def _apply_env_overrides(profile: PDKProfile) -> PDKProfile:
         value = os.getenv(env_name)
         if value:
             updates[field_name] = value
+    process_sections = os.getenv("PDK_PROCESS_SECTIONS")
+    if process_sections:
+        parsed_sections: dict[str, str] = {}
+        for item in process_sections.split(","):
+            if not item.strip():
+                continue
+            if ":" not in item:
+                raise ValueError(
+                    "PDK_PROCESS_SECTIONS entries must use name:section format"
+                )
+            name, section = item.split(":", 1)
+            parsed_sections[name.strip()] = section.strip()
+        if parsed_sections:
+            updates["process_sections"] = parsed_sections
     for field_name, env_name in float_overrides.items():
         value = os.getenv(env_name)
         if value:
