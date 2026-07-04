@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from config import Settings
+from main import _prepare_workspace_for_new_optimization
 from models import DesignTarget
 from pdk_profiles import get_pdk_profile, validate_pdk_profile
 from topologies import get_topology
@@ -118,6 +119,29 @@ class OptimizerConfigTest(unittest.TestCase):
             folded = get_topology("folded_cascode").generate_circuit()
             self.assertIn("unit_p_lvt", folded)
             self.assertIn("unit_n_lvt", folded)
+
+    def test_workspace_cleanup_removes_stale_run_outputs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Settings(
+                workspace_dir=tmp,
+                outputs_dir=str(Path(tmp) / "outputs"),
+                dry_run=True,
+            )
+            workspace = cfg.get_workspace_path()
+            stale_run = workspace / "run_003"
+            stale_run.mkdir(parents=True)
+            (stale_run / "raw").mkdir()
+            (stale_run / "raw" / "old.ac").write_text("stale", encoding="utf-8")
+            for name in ("history.json", "optimization_metrics.csv"):
+                (workspace / name).write_text("stale", encoding="utf-8")
+            (workspace / "initial_gmid").mkdir()
+
+            _prepare_workspace_for_new_optimization(cfg)
+
+            self.assertFalse(stale_run.exists())
+            self.assertFalse((workspace / "history.json").exists())
+            self.assertFalse((workspace / "optimization_metrics.csv").exists())
+            self.assertFalse((workspace / "initial_gmid").exists())
 
     def test_5t_gmid_space_derives_vbias_and_constrains_tail_current(self):
         targets = DesignTarget(

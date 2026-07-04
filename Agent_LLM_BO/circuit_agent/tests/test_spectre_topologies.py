@@ -238,6 +238,31 @@ class SpectreTopologyTest(unittest.TestCase):
             self.assertIn("// Diagnostic node saves", ac_testbench)
             self.assertIn("Xdut.tail", ac_testbench)
 
+    def test_render_cleans_stale_run_directory_outputs(self):
+        topo = get_topology("5t_ota")
+        files = topo.get_circuit_files()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            (run_dir / "raw").mkdir()
+            (run_dir / "raw" / "old.ac").write_text("stale", encoding="utf-8")
+            (run_dir / "diagnostics").mkdir()
+            (run_dir / "diagnostics" / "old.csv").write_text("stale", encoding="utf-8")
+            (run_dir / "sim.log").write_text("stale", encoding="utf-8")
+
+            simulator = Simulator(Settings(dry_run=True))
+            simulator.render_circuit_and_testbench(
+                NetlistTemplate.from_netlist(files.circuit_netlist),
+                files.testbenches,
+                {},
+                run_dir,
+            )
+
+            self.assertTrue((run_dir / "circuit.cir").exists())
+            self.assertFalse((run_dir / "raw").exists())
+            self.assertFalse((run_dir / "diagnostics").exists())
+            self.assertFalse((run_dir / "sim.log").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

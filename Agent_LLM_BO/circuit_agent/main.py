@@ -219,6 +219,8 @@ def run_from_file(
     else:
         project_name = settings.sanitize_project_name(netlist_path.stem)
 
+    _prepare_workspace_for_new_optimization(config)
+
     # --- Detect gm/Id mode ---
     gmid_sizer = None
     topo = None
@@ -462,6 +464,36 @@ def _save_requirements(targets: DesignTarget, original_text: str, config: Settin
         encoding="utf-8",
     )
     console.print(f"[green]✓[/green] Requirements saved to {req_path}")
+
+
+def _prepare_workspace_for_new_optimization(config: Settings) -> None:
+    """Remove stale per-run artifacts before starting a new optimization.
+
+    Stable directories such as ``workspace/run_003`` are intentionally reused
+    between invocations.  Cleaning them at startup prevents old raw PSF,
+    diagnostics, and history files from being mistaken for results from the
+    current run when iteration counts differ.
+    """
+    workspace = config.get_workspace_path()
+    for run_dir in workspace.glob("run_[0-9][0-9][0-9]*"):
+        if run_dir.is_dir():
+            shutil.rmtree(run_dir, ignore_errors=True)
+    for dirname in ("initial_default", "initial_gmid"):
+        path = workspace / dirname
+        if path.exists():
+            shutil.rmtree(path, ignore_errors=True)
+    for file_name in (
+        "history.json",
+        "optimization_metrics.csv",
+        "pdk_profile_used.json",
+        "requirements.json",
+        "circuit_template.cir",
+    ):
+        path = workspace / file_name
+        if path.exists():
+            path.unlink(missing_ok=True)
+    for path in workspace.glob("tb_template*.scs"):
+        path.unlink(missing_ok=True)
 
 
 def _run_default_param_baseline(

@@ -6,6 +6,7 @@ import logging
 import math
 import random
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -36,6 +37,7 @@ class Simulator:
         If param_space is provided, wide transistors are automatically split
         into multiple fingers respecting max_per_finger limits.
         """
+        self._prepare_render_dir(output_path.parent)
         content = template.render(
             params,
             param_space=param_space,
@@ -61,7 +63,7 @@ class Simulator:
         tb.scs, tb_1.scs, tb_2.scs, ... (all include "circuit.cir").
         Returns the list of testbench paths as entry points for Spectre.
         """
-        run_dir.mkdir(parents=True, exist_ok=True)
+        self._prepare_render_dir(run_dir)
 
         # Render circuit with parameter values
         circuit_content = circuit_template.render(
@@ -110,6 +112,7 @@ class Simulator:
 
         timeout = timeout or self.config.spectre_timeout
         run_dir.mkdir(parents=True, exist_ok=True)
+        self._clear_previous_spectre_outputs(run_dir)
         raw_dir = run_dir / "raw"
         log_path = run_dir / "sim.log"
 
@@ -433,6 +436,34 @@ class Simulator:
         (run_dir / "sim.log").write_text(log_content, encoding="utf-8")
 
         return True, log_content, ""
+
+    @staticmethod
+    def _prepare_render_dir(run_dir: Path) -> None:
+        """Start a rendered run directory from a clean slate."""
+        if run_dir.exists():
+            shutil.rmtree(run_dir, ignore_errors=True)
+        run_dir.mkdir(parents=True, exist_ok=True)
+
+    @staticmethod
+    def _clear_previous_spectre_outputs(run_dir: Path) -> None:
+        """Remove stale simulator outputs before one Spectre invocation."""
+        raw_dir = run_dir / "raw"
+        if raw_dir.exists():
+            shutil.rmtree(raw_dir, ignore_errors=True)
+
+        for pattern in (
+            "sim.log",
+            "*.measure",
+            "*.mt*",
+            "*.st*",
+            "spectre.out",
+            "psfversion",
+        ):
+            for path in run_dir.glob(pattern):
+                if path.is_file():
+                    path.unlink(missing_ok=True)
+                elif path.is_dir():
+                    shutil.rmtree(path, ignore_errors=True)
 
     def _extract_params_from_netlist(self, content: str) -> dict[str, float]:
         """Extract HSPICE .param or Spectre parameters values."""
