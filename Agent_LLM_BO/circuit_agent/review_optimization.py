@@ -42,8 +42,8 @@ def main() -> None:
     if prepare_agent_review and args.patch_plan:
         raise ValueError("Use either --prepare-agent-review or --patch-plan, not both.")
     settings = Settings(dry_run=args.dry_run)
-    project = args.project
-    workspace = args.workspace
+    project = args.project.resolve()
+    workspace = args.workspace.resolve()
 
     history_path = _find_history(project, workspace)
     history = json.loads(history_path.read_text(encoding="utf-8"))
@@ -51,10 +51,11 @@ def main() -> None:
     param_bounds = {p.name: p for p in topology.get_param_space().params}
     patch_plan = None
     if args.patch_plan:
+        args.patch_plan = args.patch_plan.resolve()
         patch_plan = json.loads(args.patch_plan.read_text(encoding="utf-8"))
 
-    review_root = project / "agent_review"
-    candidates_root = review_root / "candidates"
+    review_root = (project / "agent_review").resolve()
+    candidates_root = (review_root / "candidates").resolve()
     review_root.mkdir(parents=True, exist_ok=True)
     if candidates_root.exists():
         shutil.rmtree(candidates_root)
@@ -122,8 +123,10 @@ def generate_candidate(
     patch_plan: dict[str, Any] | None = None,
 ) -> Candidate:
     iteration = int(record["iteration"])
-    source_run_dir = workspace / f"run_{iteration:03d}"
-    candidate_dir = candidates_root / f"iter_{iteration:03d}_candidate_01"
+    source_run_dir = (workspace / f"run_{iteration:03d}").resolve()
+    candidate_dir = (
+        candidates_root / f"iter_{iteration:03d}_candidate_01"
+    ).resolve()
     candidate_dir.mkdir(parents=True, exist_ok=True)
 
     source_netlist = source_run_dir / "circuit.cir"
@@ -397,7 +400,8 @@ def parse_spice_value(raw: str) -> float:
 
 
 def simulate_candidate(candidate: Candidate, settings: Settings) -> None:
-    tb_paths = sorted(candidate.candidate_dir.glob("tb*.scs"))
+    candidate.candidate_dir = candidate.candidate_dir.resolve()
+    tb_paths = sorted(path.resolve() for path in candidate.candidate_dir.glob("tb*.scs"))
     if not tb_paths:
         candidate.result = SimResult(
             converged=False, error_message="No candidate testbenches found"

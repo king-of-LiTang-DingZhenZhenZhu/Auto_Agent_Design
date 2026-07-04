@@ -21,6 +21,7 @@ from review_optimization import (
     write_local_agent_review_package,
     main as review_main,
 )
+from simulator import Simulator
 from topologies import get_topology
 
 
@@ -339,6 +340,50 @@ ends dut
             self.assertTrue(
                 (review_root / "candidates" / "iter_000_candidate_01" / "circuit.cir").exists()
             )
+            self.assertTrue(review_root.resolve().is_absolute())
+
+    def test_simulate_candidate_uses_absolute_paths_for_spectre(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            candidate_dir = root / "outputs" / "proj" / "agent_review" / "candidates" / "iter_000_candidate_01"
+            candidate_dir.mkdir(parents=True)
+            (candidate_dir / "circuit.cir").write_text(
+                "simulator lang=spectre\nparameters W=1u\n", encoding="utf-8"
+            )
+            (candidate_dir / "tb.scs").write_text(
+                "include \"circuit.cir\"\n", encoding="utf-8"
+            )
+            relative_candidate_dir = candidate_dir.relative_to(root)
+            candidate = Candidate(
+                original_iteration=0,
+                original_reward=1.0,
+                source_run_dir=Path("workspace/run_000"),
+                candidate_dir=relative_candidate_dir,
+            )
+
+            captured = {}
+            test_case = self
+
+            def fake_run_all(_simulator, tb_paths, run_dir, timeout=None):
+                captured["tb_paths"] = tb_paths
+                captured["run_dir"] = run_dir
+                test_case.assertTrue(run_dir.is_absolute())
+                test_case.assertTrue(all(path.is_absolute() for path in tb_paths))
+                return SimResult(converged=True, gain_db=42.0)
+
+            with patch.object(Simulator, "run_all_testbenches", fake_run_all):
+                old_cwd = Path.cwd()
+                try:
+                    import os
+
+                    os.chdir(root)
+                    simulate_candidate(candidate, Settings(dry_run=True))
+                finally:
+                    os.chdir(old_cwd)
+
+            self.assertEqual(captured["run_dir"], candidate_dir.resolve())
+            self.assertEqual(captured["tb_paths"], [(candidate_dir / "tb.scs").resolve()])
+            self.assertTrue((candidate_dir / "metrics_summary.txt").exists())
 
 
 if __name__ == "__main__":
