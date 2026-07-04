@@ -32,7 +32,7 @@ Port order: vip vin vout ibias vdd vss
 from __future__ import annotations
 
 from topologies.base import BaseTopology, TopologyMeta
-from models import CircuitFiles, ParamDef, ParamSpace
+from models import CircuitFiles, ParamDef, ParamSpace, format_spice_value
 from pdk_profiles import get_pdk_profile, spectre_include_line
 
 
@@ -503,15 +503,4 @@ save vinp vout
 
 def _fmt(value: float) -> str:
     """Format a float with SPICE engineering suffix (u, n, p, f, k)."""
-    abs_v = abs(value)
-    if abs_v >= 1e3:
-        return f"{value * 1e-3:.6g}k"
-    if abs_v >= 1e-3:
-        return f"{value:.6g}"
-    if abs_v >= 1e-6:
-        return f"{value * 1e6:.6g}u"
-    if abs_v >= 1e-9:
-        return f"{value * 1e9:.6g}n"
-    if abs_v >= 1e-12:
-        return f"{value * 1e12:.6g}p"
-    return f"{value * 1e15:.6g}f"
+    return format_spice_value(value)

@@ -997,17 +997,28 @@ def _format_spice_value(value: float) -> str:
         return "0"
     abs_val = abs(value)
     suffixes = [
-        (1e-15, "f"), (1e-12, "p"), (1e-9, "n"), (1e-6, "u"),
-        (1e-3, "m"), (1, ""), (1e3, "k"), (1e6, "meg"),
+        (1e6, "meg"), (1e3, "k"), (1, ""), (1e-3, "m"),
+        (1e-6, "u"), (1e-9, "n"), (1e-12, "p"), (1e-15, "f"),
     ]
     for threshold, suffix in suffixes:
-        if abs_val < threshold * 1000:
+        if abs_val >= threshold:
             scaled = value / threshold
-            if scaled == int(scaled):
-                return f"{int(scaled)}{suffix}"
-            # Use up to 3 significant figures
-            return f"{scaled:.3g}{suffix}"
+            return f"{_format_no_exponent(scaled)}{suffix}"
     return f"{value:.3e}"
+
+
+def format_spice_value(value: float) -> str:
+    """Public wrapper for Spectre/SPICE-safe engineering formatting."""
+    return _format_spice_value(value)
+
+
+def _format_no_exponent(value: float, digits: int = 6) -> str:
+    """Format a scaled engineering value without scientific notation."""
+    rounded = round(value, digits)
+    if rounded == int(rounded):
+        return str(int(rounded))
+    text = f"{rounded:.{digits}f}".rstrip("0").rstrip(".")
+    return text if text not in ("-0", "") else "0"
 
 
 def _quantize_wl(name: str, value: float, step: float) -> float:

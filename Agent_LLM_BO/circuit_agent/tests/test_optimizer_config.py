@@ -9,7 +9,7 @@ from unittest.mock import patch
 from config import Settings
 from main import _prepare_workspace_for_new_optimization
 from models import DesignTarget
-from pdk_profiles import get_pdk_profile, validate_pdk_profile
+from pdk_profiles import get_pdk_profile, spectre_include_line, validate_pdk_profile
 from topologies import get_topology
 
 
@@ -96,6 +96,16 @@ class OptimizerConfigTest(unittest.TestCase):
                 required_model_roles=("nmos_lvt", "pmos_lvt"),
             )
             self.assertTrue(any("missing_lvt_n" in error for error in errors))
+
+    def test_spectre_include_normalizes_common_pdk_absolute_path(self):
+        with patch.dict(
+            "os.environ",
+            {"PDK_SPECTRE_PATH": "PDKS/TSMC28nm/models/spectre/toplevel.scs"},
+        ):
+            self.assertIn(
+                'include "/PDKS/TSMC28nm/models/spectre/toplevel.scs"',
+                spectre_include_line(),
+            )
 
     def test_topology_generation_uses_env_pdk_profile_overrides(self):
         with patch.dict(

@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from models import DesignTarget, NetlistTemplate, split_width
+from models import DesignTarget, NetlistTemplate, format_spice_value, split_width
 from config import Settings
 from pdk_profiles import get_pdk_profile
 from simulator import Simulator
@@ -24,6 +24,14 @@ class SpectreTopologyTest(unittest.TestCase):
         self.assertEqual(wide_m, 2)
         self.assertAlmostEqual(wide_w * wide_m, 120e-6)
         self.assertLessEqual(wide_w / wide_nf, 2.6e-6)
+
+    def test_spice_value_format_never_uses_exponent_with_suffix(self):
+        self.assertEqual(format_spice_value(1.0e-6), "1u")
+        self.assertEqual(format_spice_value(1.3e-6), "1.3u")
+        self.assertEqual(format_spice_value(999.999e-9), "999.999n")
+        for value in (1.0e-6, 1.3e-6, 999.999e-9, 1.0e-9):
+            formatted = format_spice_value(value)
+            self.assertNotRegex(formatted, r"e[+-]\d+[munpfk]")
 
     def test_topology_metadata_uses_gbw_capability_names(self):
         for meta in list_topologies():
@@ -139,6 +147,19 @@ class SpectreTopologyTest(unittest.TestCase):
             rendered,
             r"Mload .* w=55u l=200n nf=22 m=2",
         )
+
+    def test_rendered_topology_values_do_not_emit_exponent_suffix(self):
+        topo = get_topology("folded_cascode")
+        circuit = topo.generate_circuit({"Wbp_small": 1.0e-6})
+        self.assertNotRegex(circuit, r"e[+-]\d+[munpfk]")
+
+        rendered = NetlistTemplate.from_netlist(circuit).render(
+            {"Wcs": 1.0e-6, "Lbias": 330e-9},
+            param_space=topo.get_param_space(),
+            w_l_grid_step=10e-9,
+        )
+        self.assertNotRegex(rendered, r"e[+-]\d+[munpfk]")
+        self.assertIn("w=1u", rendered)
 
     def test_folded_cascode_uses_bias_ratio_current_sources(self):
         topo = get_topology("folded_cascode")

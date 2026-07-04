@@ -123,7 +123,10 @@ def spectre_include_line(profile: PDKProfile | None = None) -> str:
     """Render the Spectre model include line for a profile."""
 
     pdk = profile or get_pdk_profile()
-    return f'include "{pdk.spectre_model_path}" section={pdk.spectre_section}'
+    return (
+        f'include "{_normalize_model_path(pdk.spectre_model_path)}" '
+        f"section={pdk.spectre_section}"
+    )
 
 
 def validate_pdk_profile(
@@ -301,6 +304,16 @@ def _load_external_profile(path: str | Path) -> PDKProfile:
                 "set CIRCUIT_AGENT_PDK or PDK_PROFILE to choose one"
             )
     return _coerce_profile(data)
+
+
+def _normalize_model_path(path_value: str) -> str:
+    """Normalize common absolute PDK paths while preserving true relatives."""
+    path_value = str(path_value).strip()
+    if path_value.startswith("PDKS/"):
+        return "/" + path_value
+    if path_value.startswith("~"):
+        return str(Path(path_value).expanduser())
+    return path_value
 
 
 def _coerce_profile(data: dict[str, object]) -> PDKProfile:
