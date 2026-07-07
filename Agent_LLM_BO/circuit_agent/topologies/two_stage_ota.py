@@ -57,6 +57,17 @@ class TwoStageOTA(BaseTopology):
         escalation="folded_cascode",  # future
     )
 
+    def critical_operating_point_instances(self) -> set[str]:
+        return {
+            "Mdiff1",
+            "Mdiff2",
+            "Mmirr1",
+            "Mmirr2",
+            "Mtail",
+            "Mcs",
+            "Mload",
+        }
+
     # ------------------------------------------------------------------
     # Default parameters (SI units)
     # ------------------------------------------------------------------

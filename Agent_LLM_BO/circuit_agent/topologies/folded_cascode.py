@@ -219,6 +219,23 @@ class FoldedCascodeOTA(BaseTopology):
     def required_model_roles(self) -> tuple[str, ...]:
         return ("nmos_lvt", "pmos_lvt")
 
+    def critical_operating_point_instances(self) -> set[str]:
+        return {
+            "Mtailp",
+            "Mdiff1",
+            "Mdiff2",
+            "Mfold1",
+            "Mfold2",
+            "Mcasn1",
+            "Mcasn2",
+            "Mmirr1",
+            "Mmirr2",
+            "Mcasp1",
+            "Mcasp2",
+            "Mcs",
+            "Mload",
+        }
+
     def get_param_space(self) -> ParamSpace:
         return ParamSpace(
             params=[

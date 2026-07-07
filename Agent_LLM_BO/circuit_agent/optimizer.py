@@ -27,6 +27,7 @@ from models import (
 )
 from simulator import Simulator
 from summarize_metrics import build_report_from_sim_result
+from operating_point import OperatingPointStatus, evaluate_dc_operating_points
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +103,7 @@ class HybridOptimizer:
         current_template = template
         current_testbenches = circuit_files.testbenches if circuit_files else []
         topology_changes = 0
+        critical_op_instances = self._critical_op_instances(topology_name)
 
         logger.info(f"Starting optimization loop (max {max_iter} iterations)")
 
@@ -152,15 +154,22 @@ class HybridOptimizer:
 
             # Step 4: Run simulation (no LLM repair — netlists are correct-by-construction)
             sim_result = self._run_simulation(tb_paths, run_dir)
+            op_status = self._evaluate_operating_point(
+                run_dir,
+                critical_op_instances,
+            )
+            if op_status is not None:
+                sim_result.operating_point_status = op_status.to_dict()
 
             # Step 5: Compute reward
-            reward = self.compute_reward(sim_result, targets)
+            reward = self.compute_reward(sim_result, targets, op_status=op_status)
             self._write_iteration_summary(
                 run_dir=run_dir,
                 iteration=iteration,
                 result=sim_result,
                 reward=reward,
                 tb_paths=tb_paths,
+                op_status=op_status,
             )
 
             # Report to Optuna
@@ -189,10 +198,22 @@ class HybridOptimizer:
                 on_iteration(iteration, physical_params, sim_result, reward)
 
             # Step 6: Check termination - all targets met
-            all_met, _ = targets.is_satisfied(sim_result)
-            if all_met and sim_result.converged:
+            if self._can_stop_for_success(sim_result, targets, op_status):
                 logger.info(f"All targets met at iteration {iteration + 1}!")
                 break
+            all_met, _ = targets.is_satisfied(sim_result)
+            if (
+                all_met
+                and sim_result.converged
+                and op_status is not None
+                and op_status.critical_linear_count > 0
+            ):
+                logger.info(
+                    "All performance targets met at iteration %d, but "
+                    "critical MOS are linear (%s); continuing BO",
+                    iteration + 1,
+                    ", ".join(op_status.critical_linear),
+                )
 
             # Step 6b: Stop early when the same topology is repeatedly far
             # from a usable operating point. This catches likely topology,
@@ -223,6 +244,9 @@ class HybridOptimizer:
                         current_testbenches = new_circuit_files.testbenches
                         param_space = new_param_space
                         topology_name = next_name
+                        critical_op_instances = self._critical_op_instances(
+                            topology_name
+                        )
                         state.param_space = new_param_space
                         state.topology_changes += 1
                         topology_changes += 1
@@ -241,7 +265,12 @@ class HybridOptimizer:
         self._save_metrics_csv(state)
         return state
 
-    def compute_reward(self, result: SimResult, targets: DesignTarget) -> float:
+    def compute_reward(
+        self,
+        result: SimResult,
+        targets: DesignTarget,
+        op_status: OperatingPointStatus | None = None,
+    ) -> float:
         """Compute a scalar reward from simulation results vs targets.
 
         Strategy:
@@ -347,11 +376,48 @@ class HybridOptimizer:
             reward -= 50.0
             all_met = False
 
-        # Bonus for meeting all targets
+        if op_status is not None:
+            reward += op_status.penalty
+
+        # Bonus for meeting all targets.  Do not reward a numerically passing
+        # design as "done" when critical signal-path devices are in triode.
         if all_met:
-            reward += 100.0
+            if op_status is None or op_status.critical_linear_count == 0:
+                reward += 50.0 if (
+                    op_status is not None
+                    and op_status.critical_near_edge_count > 0
+                ) else 100.0
 
         return reward
+
+    def _evaluate_operating_point(
+        self,
+        run_dir: Path,
+        critical_instances: set[str],
+    ) -> OperatingPointStatus | None:
+        """Evaluate DC OP diagnostics if this run produced them."""
+        dc_path = run_dir / "diagnostics" / "dc_operating_points.csv"
+        if not dc_path.exists():
+            return None
+        return evaluate_dc_operating_points(
+            dc_path,
+            critical_instances=critical_instances,
+        )
+
+    def _critical_op_instances(self, topology_name: str) -> set[str]:
+        if not topology_name:
+            return set()
+        try:
+            from topologies import get_topology
+
+            return get_topology(topology_name).critical_operating_point_instances()
+        except Exception as exc:
+            logger.debug(
+                "Could not load critical OP instances for %s: %s",
+                topology_name,
+                exc,
+            )
+            return set()
 
     def _run_simulation(
         self,
@@ -398,6 +464,7 @@ class HybridOptimizer:
         result: SimResult,
         reward: float,
         tb_paths: list[Path],
+        op_status: OperatingPointStatus | None = None,
     ) -> None:
         """Write this iteration's parsed metrics into its run directory."""
         report = build_report_from_sim_result(
@@ -411,6 +478,9 @@ class HybridOptimizer:
             f"Iteration: {iteration + 1}",
             f"Reward: {reward:.6g}",
         ]
+        if op_status is not None:
+            lines.append("")
+            lines.extend(op_status.summary_lines())
         (run_dir / "metrics_summary.txt").write_text(
             "\n".join(lines) + "\n", encoding="utf-8"
         )
@@ -448,6 +518,20 @@ class HybridOptimizer:
             self._is_severe_deviation(record.result, targets)
             for record in recent
         )
+
+    def _can_stop_for_success(
+        self,
+        result: SimResult,
+        targets: DesignTarget,
+        op_status: OperatingPointStatus | None = None,
+    ) -> bool:
+        """Only stop when specs pass and no critical MOS is in linear region."""
+        all_met, _ = targets.is_satisfied(result)
+        if not (all_met and result.converged):
+            return False
+        if op_status is not None and op_status.critical_linear_count > 0:
+            return False
+        return True
 
     def _is_severe_deviation(
         self,
@@ -561,7 +645,17 @@ class HybridOptimizer:
                         "settling_time_s": r.result.settling_time_s,
                         "converged": r.result.converged,
                         "error_message": r.result.error_message,
+                        "operating_point_status": r.result.operating_point_status,
                     },
+                    "op_penalty": (
+                        r.result.operating_point_status or {}
+                    ).get("penalty"),
+                    "op_critical_linear": (
+                        r.result.operating_point_status or {}
+                    ).get("critical_linear", []),
+                    "op_critical_near_edge": (
+                        r.result.operating_point_status or {}
+                    ).get("critical_near_edge", []),
                 }
                 for r in state.history
             ],
@@ -584,6 +678,9 @@ class HybridOptimizer:
             "power_w(mW)",
             "slew_rate_v_per_s(V/us)",
             "settling_time_s(ns)",
+            "op_linear_count",
+            "op_near_edge_count",
+            "op_min_margin_mv",
             "error_message",
         ]
         with output_path.open("w", newline="", encoding="utf-8") as f:
@@ -611,6 +708,17 @@ class HybridOptimizer:
                         "settling_time_s(ns)": self._fmt_csv_value(
                             result.settling_time_s, 2, scale=1e9
                         ),
+                        "op_linear_count": self._op_field(
+                            result, "linear_count", ""
+                        ),
+                        "op_near_edge_count": self._op_field(
+                            result, "near_edge_count", ""
+                        ),
+                        "op_min_margin_mv": self._fmt_csv_value(
+                            self._op_field(result, "min_margin_v", None),
+                            2,
+                            scale=1e3,
+                        ),
                         "error_message": result.error_message,
                     }
                 )
@@ -626,3 +734,12 @@ class HybridOptimizer:
         if value is None:
             return ""
         return f"{value * scale:.{digits}f}"
+
+    @staticmethod
+    def _op_field(
+        result: SimResult,
+        name: str,
+        default,
+    ):
+        status = result.operating_point_status or {}
+        return status.get(name, default)

@@ -181,6 +181,15 @@ class BaseTopology(ABC):
         """
         return ("nmos", "pmos")
 
+    def critical_operating_point_instances(self) -> set[str]:
+        """Return MOS instances whose saturation strongly affects reward.
+
+        Diagnostics may include bias generators and diode-connected devices.
+        Those are useful warnings, but the first OP reward pass only strongly
+        constrains the main signal path declared by each topology.
+        """
+        return set()
+
     # ------------------------------------------------------------------
     # Subclass contract
     # ------------------------------------------------------------------

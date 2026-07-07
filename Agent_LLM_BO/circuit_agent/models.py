@@ -653,6 +653,7 @@ class SimResult:
     converged: bool = True
     error_message: str = ""
     raw_metrics: dict[str, float] = field(default_factory=dict)
+    operating_point_status: dict[str, Any] | None = None
 
     @staticmethod
     def merge(primary: "SimResult", extra: "SimResult") -> "SimResult":
@@ -680,6 +681,9 @@ class SimResult:
             converged=primary.converged,
             error_message=primary.error_message,
             raw_metrics={**extra.raw_metrics, **primary.raw_metrics},
+            operating_point_status=(
+                primary.operating_point_status or extra.operating_point_status
+            ),
         )
         return merged
 
@@ -709,6 +713,9 @@ class SimResult:
 
         if not self.converged:
             result["error_message"] = self.error_message
+
+        if self.operating_point_status is not None:
+            result["operating_point_status"] = self.operating_point_status
 
         if params is not None:
             result["params"] = params

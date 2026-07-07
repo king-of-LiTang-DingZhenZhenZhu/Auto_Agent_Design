@@ -59,6 +59,19 @@ class NMCFThreeStageOTA(BaseTopology):
         escalation=None,
     )
 
+    def critical_operating_point_instances(self) -> set[str]:
+        return {
+            "Mtail1",
+            "Mdiff1a",
+            "Mdiff1b",
+            "Mload1a",
+            "Mload1b",
+            "Mgm2",
+            "Mload2",
+            "Mgm3",
+            "Mload3",
+        }
+
     DEFAULT_PARAMS: dict[str, float] = {
         # Stage 1: PMOS input pair + PMOS tail
         "Wtail1": 18e-6,

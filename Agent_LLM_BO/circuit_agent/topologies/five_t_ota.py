@@ -36,6 +36,9 @@ class FiveTOTA(BaseTopology):
         escalation="two_stage_ota",
     )
 
+    def critical_operating_point_instances(self) -> set[str]:
+        return {"Mtail", "Mdp1", "Mdp2", "Mcm1", "Mcm2"}
+
     # ------------------------------------------------------------------
     # Default parameters (SI units, rendered with SPICE suffixes)
     # ------------------------------------------------------------------
