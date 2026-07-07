@@ -5,6 +5,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from models import SimResult
 from pdk_profiles import get_pdk_profile
@@ -45,6 +46,26 @@ ends tiny
 
         self.assertIn('include "/PDKS/TSMC28nm/models/spectre/toplevel.scs" section=top_ss', patched)
         self.assertNotIn("section=top_tt", patched)
+
+    def test_patch_netlist_normalizes_pdk_include_path(self):
+        corner = PVTCorner("ss", "top_ss", "vmin", 0.9, 27)
+        netlist = """
+simulator lang=spectre insensitive=yes
+include "old.scs" section=top_tt
+subckt tiny in out vdd vss
+ends tiny
+"""
+        with patch.dict(
+            "os.environ",
+            {"PDK_SPECTRE_PATH": "PDKS/TSMC28nm/models/spectre/toplevel.scs"},
+        ):
+            patched = patch_netlist_for_corner(netlist, corner)
+
+        self.assertIn(
+            'include "/PDKS/TSMC28nm/models/spectre/toplevel.scs" section=top_ss',
+            patched,
+        )
+        self.assertNotIn('include "PDKS/TSMC28nm', patched)
 
     def test_patch_testbench_replaces_vdd_and_temperature(self):
         corner = PVTCorner("ff", "top_ff", "vmax", 1.1, 125)

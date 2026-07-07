@@ -14,7 +14,7 @@ from typing import Any
 
 from config import Settings, settings
 from models import DesignTarget, SimResult
-from pdk_profiles import PDKProfile, get_pdk_profile
+from pdk_profiles import PDKProfile, get_pdk_profile, spectre_include_line
 from simulator import Simulator
 from summarize_metrics import build_report_from_sim_result
 from virtuoso_export.exporter import select_export_netlist
@@ -61,7 +61,8 @@ def patch_netlist_for_corner(
 ) -> str:
     pdk = profile or get_pdk_profile()
     include_pattern = re.compile(r'(?m)^include\s+"[^"]+"\s+section=\S+')
-    include_line = f'include "{pdk.spectre_model_path}" section={corner.section}'
+    include_line = spectre_include_line(pdk)
+    include_line = re.sub(r"\bsection=\S+", f"section={corner.section}", include_line)
     if include_pattern.search(netlist_text):
         return include_pattern.sub(include_line, netlist_text, count=1)
     return netlist_text.replace(
