@@ -168,8 +168,6 @@ def compute_op_penalty(status: OperatingPointStatus) -> float:
     return -(
         120.0 * status.critical_linear_count
         + 35.0 * status.critical_near_edge_count
-        + 8.0 * len(status.noncritical_linear)
-        + 3.0 * len(status.noncritical_near_edge)
     )
 
 

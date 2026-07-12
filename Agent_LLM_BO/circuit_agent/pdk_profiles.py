@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -41,6 +41,7 @@ class PDKProfile:
     spectre_options: tuple[str, ...]
     virtuoso_tech_lib: str
     virtuoso_pdk_lib_path: str
+    topology_presets: dict[str, dict[str, object]] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, object]:
         """Return a JSON-serializable representation."""
@@ -89,6 +90,107 @@ PDK_PROFILES: dict[str, PDKProfile] = {
         spectre_options=("rawfmt=psfascii", "soft_bin=allmodels"),
         virtuoso_tech_lib="tsmcN28",
         virtuoso_pdk_lib_path="/PDKS/TSMC28nm/tsmcN28",
+        topology_presets={
+            "5t_ota": {
+                "default_params": {
+                    "Wtail": 3e-6,
+                    "Ltail": 200e-9,
+                    "Wdp": 5e-6,
+                    "Ldp": 130e-9,
+                    "Wcm": 8e-6,
+                    "Lcm": 130e-9,
+                    "VBIAS": 0.35,
+                },
+                "testbench_defaults": {
+                    "VCM": 0.15,
+                    "CL": 500e-15,
+                    "VBIAS": 0.35,
+                },
+            },
+            "two_stage_ota": {
+                "default_params": {
+                    "Wtail": 5e-6,
+                    "Ltail": 200e-9,
+                    "Wdiff": 10e-6,
+                    "Ldiff": 60e-9,
+                    "Wmirr": 5e-6,
+                    "Lmirr": 100e-9,
+                    "Wcs": 20e-6,
+                    "Wload": 10e-6,
+                    "Lload": 200e-9,
+                    "Cc": 500e-15,
+                    "Rz": 1000.0,
+                },
+                "testbench_defaults": {
+                    "VCM": 0.7,
+                    "VBIAS": 0.55,
+                    "CL": 2e-12,
+                },
+            },
+            "folded_cascode": {
+                "default_params": {
+                    "Wdiffp": 12e-6,
+                    "Ldiffp": 80e-9,
+                    "Wcs": 30e-6,
+                    "m_half_unit": 2,
+                    "m_load_ratio": 2,
+                    "Lbias": 400e-9,
+                    "Wbp_big": 4.8e-6,
+                    "nf_Wbp_big": 4,
+                    "m_Wbp_big": 1,
+                    "Wbp_small": 1.2e-6,
+                    "nf_Wbp_small": 1,
+                    "m_Wbp_small": 1,
+                    "Wbn_big": 4.8e-6,
+                    "nf_Wbn_big": 4,
+                    "m_Wbn_big": 1,
+                    "Wbn_small": 1.2e-6,
+                    "nf_Wbn_small": 1,
+                    "m_Wbn_small": 1,
+                    "bias_p_scale": 1.0,
+                    "bias_n_scale": 1.0,
+                    "bias_p_small_scale": 1.0,
+                    "bias_n_small_scale": 1.0,
+                    "Cc": 250e-15,
+                    "Rz": 1000.0,
+                },
+                "testbench_defaults": {
+                    "VCM": 0.4,
+                    "IBIAS": 20e-6,
+                    "CL": 1e-12,
+                },
+            },
+            "nmcf_three_stage": {
+                "default_params": {
+                    "Wtail1": 18e-6,
+                    "Ltail1": 200e-9,
+                    "Wdiff1": 10e-6,
+                    "Ldiff1": 80e-9,
+                    "Wload1": 10e-6,
+                    "Lload1": 100e-9,
+                    "Wgm2": 14e-6,
+                    "Lgm2": 80e-9,
+                    "Wload2": 16e-6,
+                    "Lload2": 120e-9,
+                    "Wgm3": 24e-6,
+                    "Lgm3": 100e-9,
+                    "Wload3": 12e-6,
+                    "Lload3": 180e-9,
+                    "Wbiasn": 4e-6,
+                    "Lbiasn": 200e-9,
+                    "Wbiasp": 8e-6,
+                    "Lbiasp": 200e-9,
+                    "Cc1": 800e-15,
+                    "Rz1": 1000.0,
+                    "Cc2": 500e-15,
+                },
+                "testbench_defaults": {
+                    "VCM": 0.3,
+                    "IBIAS": 40e-6,
+                    "CL": 10e-12,
+                },
+            },
+        },
     ),
 }
 
@@ -127,6 +229,57 @@ def spectre_include_line(profile: PDKProfile | None = None) -> str:
         f'include "{_normalize_model_path(pdk.spectre_model_path)}" '
         f"section={pdk.spectre_section}"
     )
+
+
+def get_topology_preset(
+    topology_name: str,
+    profile: PDKProfile | None = None,
+) -> dict[str, object]:
+    """Return the active PDK preset for one topology.
+
+    The returned dict is a shallow copy with normalized section keys:
+    ``default_params``, ``param_space_overrides``, and ``testbench_defaults``.
+    Missing presets return empty sections.
+    """
+    pdk = profile or get_pdk_profile()
+    raw = dict(pdk.topology_presets.get(topology_name, {}) or {})
+    return {
+        "default_params": dict(raw.get("default_params") or {}),
+        "param_space_overrides": dict(raw.get("param_space_overrides") or {}),
+        "testbench_defaults": dict(raw.get("testbench_defaults") or {}),
+    }
+
+
+def apply_topology_preset(
+    topology_name: str,
+    base_defaults: dict[str, float],
+    profile: PDKProfile | None = None,
+) -> dict[str, float]:
+    """Overlay a topology's PDK-specific default params on base defaults."""
+    merged = dict(base_defaults)
+    merged.update(get_topology_preset(topology_name, profile)["default_params"])
+    return merged
+
+
+def get_param_override(
+    topology_name: str,
+    param_name: str,
+    profile: PDKProfile | None = None,
+) -> dict[str, object]:
+    """Return a PDK-specific search-space override for one parameter."""
+    overrides = get_topology_preset(topology_name, profile)["param_space_overrides"]
+    return dict(overrides.get(param_name, {}) or {})
+
+
+def get_testbench_defaults(
+    topology_name: str,
+    base_defaults: dict[str, float],
+    profile: PDKProfile | None = None,
+) -> dict[str, float]:
+    """Overlay PDK-specific testbench defaults on topology defaults."""
+    merged = dict(base_defaults)
+    merged.update(get_topology_preset(topology_name, profile)["testbench_defaults"])
+    return merged
 
 
 def validate_pdk_profile(
@@ -199,6 +352,8 @@ def validate_pdk_profile(
             errors.append("virtuoso_tech_lib is empty")
         if not pdk.virtuoso_pdk_lib_path:
             errors.append("virtuoso_pdk_lib_path is empty")
+
+    errors.extend(_validate_topology_presets(pdk))
 
     if check_files:
         for label, path_value in (
@@ -319,6 +474,7 @@ def _normalize_model_path(path_value: str) -> str:
 def _coerce_profile(data: dict[str, object]) -> PDKProfile:
     values = dict(data)
     values["process_sections"] = dict(values.get("process_sections") or {})
+    values["topology_presets"] = dict(values.get("topology_presets") or {})
     temps = values.get("pvt_temperatures_c", (-40.0, 27.0, 125.0))
     values["pvt_temperatures_c"] = tuple(float(temp) for temp in temps)
     options = values.get("spectre_options", ())
@@ -332,6 +488,63 @@ def _coerce_profile(data: dict[str, object]) -> PDKProfile:
         options = tuple(options)
     values["spectre_options"] = options
     return PDKProfile(**values)
+
+
+def _validate_topology_presets(profile: PDKProfile) -> list[str]:
+    """Validate topology preset names and parameter names when possible."""
+    errors: list[str] = []
+    if not profile.topology_presets:
+        return errors
+    try:
+        from topologies import get_topology
+    except Exception:
+        return errors
+
+    for topology_name, preset in profile.topology_presets.items():
+        try:
+            topology = get_topology(topology_name)
+        except ValueError:
+            errors.append(f"topology_presets contains unknown topology '{topology_name}'")
+            continue
+
+        if not isinstance(preset, dict):
+            errors.append(f"topology preset '{topology_name}' must be an object")
+            continue
+
+        allowed_default = set(getattr(topology, "DEFAULT_PARAMS", {}))
+        default_params = dict(preset.get("default_params") or {})
+        for param_name in default_params:
+            if param_name not in allowed_default:
+                errors.append(
+                    f"topology preset '{topology_name}' default_params has "
+                    f"unknown parameter '{param_name}'"
+                )
+
+        try:
+            allowed_space = {param.name for param in topology.get_param_space().params}
+            gmid_spec = topology.get_gmid_spec()
+            if gmid_spec is not None:
+                allowed_space.update(param.name for param in gmid_spec.build_param_space().params)
+        except Exception:
+            allowed_space = allowed_default
+        overrides = dict(preset.get("param_space_overrides") or {})
+        for param_name in overrides:
+            if param_name not in allowed_space:
+                errors.append(
+                    f"topology preset '{topology_name}' param_space_overrides "
+                    f"has unknown parameter '{param_name}'"
+                )
+
+        allowed_tb = {"VCM", "CL", "IBIAS", "VBIAS", "VLOW", "VHIGH"}
+        tb_defaults = dict(preset.get("testbench_defaults") or {})
+        for param_name in tb_defaults:
+            if param_name not in allowed_tb:
+                errors.append(
+                    f"topology preset '{topology_name}' testbench_defaults has "
+                    f"unknown parameter '{param_name}'"
+                )
+
+    return errors
 
 
 def _validate_gmid_models(

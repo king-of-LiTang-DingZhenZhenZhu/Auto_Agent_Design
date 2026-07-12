@@ -57,9 +57,7 @@ class FiveTOTA(BaseTopology):
     # ------------------------------------------------------------------
     def generate_circuit(self, params: dict[str, float] | None = None) -> str:
         """Generate the DUT .cir subcircuit netlist."""
-        p = dict(self.DEFAULT_PARAMS)
-        if params:
-            p.update(params)
+        p = self._merge_params_with_preset(params)
         pdk = get_pdk_profile()
 
         return _CIRCUIT_TEMPLATE.format(
@@ -85,16 +83,24 @@ class FiveTOTA(BaseTopology):
         """Generate AC, slew-rate, or settling-time Spectre testbench."""
         # Bias / supply defaults
         pdk = get_pdk_profile()
+        p = self._merge_params_with_preset(params)
+        tb_defaults = self._testbench_defaults_with_preset(
+            {
+                "VCM": pdk.vdd - 0.75,
+                "CL": 500e-15,
+                "VBIAS": p["VBIAS"],
+            }
+        )
         vdd = pdk.vdd
-        cload = 500e-15
+        cload = tb_defaults["CL"]
+        vbias = tb_defaults["VBIAS"]
+        vcm = tb_defaults["VCM"]
 
         if params:
             vdd = params.get("VDD", vdd)
             cload = params.get("CL", cload)
-        vbias = (params or {}).get("VBIAS", self.DEFAULT_PARAMS["VBIAS"])
-
-        # PMOS input needs VCM near VSS for adequate Vsg headroom
-        vcm = vdd-0.75  # VDD=0.9V, PMOS input, VCM≈0.15V leaves Vsg≈0.6V
+            vbias = params.get("VBIAS", vbias)
+            vcm = params.get("VCM", vcm)
 
         if analysis_type in ("tran", "sr"):
             return _TB_SR_TEMPLATE.format(
@@ -228,13 +234,13 @@ class FiveTOTA(BaseTopology):
     # get_default_params
     # ------------------------------------------------------------------
     def get_default_params(self) -> dict[str, float]:
-        return dict(self.DEFAULT_PARAMS)
+        return self._default_params_with_preset()
 
     # ------------------------------------------------------------------
     # get_param_space
     # ------------------------------------------------------------------
     def get_param_space(self) -> ParamSpace:
-        return ParamSpace(
+        return self._apply_param_space_overrides(ParamSpace(
             params=[
                 ParamDef(
                     name="Wtail", low=0.5e-6, high=200e-6,
@@ -265,7 +271,7 @@ class FiveTOTA(BaseTopology):
                     log_scale=False, unit="V",
                 ),
             ]
-        )
+        ))
 
 
 # ------------------------------------------------------------------

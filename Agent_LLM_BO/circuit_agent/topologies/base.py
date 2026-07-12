@@ -191,6 +191,63 @@ class BaseTopology(ABC):
         return set()
 
     # ------------------------------------------------------------------
+    # PDK topology presets
+    # ------------------------------------------------------------------
+
+    def _default_params_with_preset(self) -> dict[str, float]:
+        """Return DEFAULT_PARAMS after applying the active PDK preset."""
+        from pdk_profiles import apply_topology_preset
+
+        return apply_topology_preset(
+            self.meta.name,
+            getattr(self, "DEFAULT_PARAMS", {}),
+        )
+
+    def _merge_params_with_preset(
+        self,
+        params: dict[str, float] | None,
+    ) -> dict[str, float]:
+        """Return active PDK defaults overlaid with explicit params."""
+        merged = self._default_params_with_preset()
+        if params:
+            merged.update(params)
+        return merged
+
+    def _testbench_defaults_with_preset(
+        self,
+        base_defaults: dict[str, float],
+    ) -> dict[str, float]:
+        """Return testbench defaults after applying the active PDK preset."""
+        from pdk_profiles import get_testbench_defaults
+
+        return get_testbench_defaults(self.meta.name, base_defaults)
+
+    def _apply_param_space_overrides(self, param_space: ParamSpace) -> ParamSpace:
+        """Apply active PDK search-space overrides to a ParamSpace."""
+        from pdk_profiles import get_param_override
+
+        allowed_fields = {
+            "low",
+            "high",
+            "log_scale",
+            "unit",
+            "max_per_finger",
+            "value_type",
+        }
+        for param in param_space.params:
+            override = get_param_override(self.meta.name, param.name)
+            for field_name, value in override.items():
+                if field_name == "default":
+                    continue
+                if field_name not in allowed_fields:
+                    raise ValueError(
+                        f"Unsupported param_space override field "
+                        f"'{field_name}' for {self.meta.name}.{param.name}"
+                    )
+                setattr(param, field_name, value)
+        return param_space
+
+    # ------------------------------------------------------------------
     # Subclass contract
     # ------------------------------------------------------------------
 

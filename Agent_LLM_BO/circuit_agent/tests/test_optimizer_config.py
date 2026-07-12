@@ -9,13 +9,81 @@ from unittest.mock import patch
 from config import Settings
 from main import _prepare_workspace_for_new_optimization
 from models import DesignTarget
-from pdk_profiles import get_pdk_profile, spectre_include_line, validate_pdk_profile
+from pdk_profiles import (
+    apply_topology_preset,
+    get_pdk_profile,
+    get_topology_preset,
+    spectre_include_line,
+    validate_pdk_profile,
+)
 from topologies import get_topology
 
 
 class OptimizerConfigTest(unittest.TestCase):
+    def _write_unit_profile(
+        self,
+        root: Path,
+        topology_presets: dict | None = None,
+        **overrides,
+    ) -> Path:
+        profile_json = root / "unit_pdk.json"
+        data = {
+            "name": "unit_pdk",
+            "spectre_model_path": "/unit/pdk/spectre.scs",
+            "spectre_section": "unit_tt",
+            "hspice_model_path": "/unit/pdk/hspice.l",
+            "hspice_section": "UNIT_TT",
+            "nmos_model": "unit_n",
+            "pmos_model": "unit_p",
+            "nmos_lvt_model": "unit_n_lvt",
+            "pmos_lvt_model": "unit_p_lvt",
+            "process_sections": {"tt": "unit_tt", "ss": "unit_ss", "ff": "unit_ff"},
+            "vdd": 1.05,
+            "vdd_min": 0.9,
+            "vdd_max": 1.1,
+            "pvt_temperatures_c": [-40, 27, 125],
+            "min_l": 100e-9,
+            "max_width_per_finger": 1e-6,
+            "min_width_per_finger": 100e-9,
+            "gmid_table_path": str(root / "gmid.json"),
+            "spectre_options": ["rawfmt=psfascii"],
+            "virtuoso_tech_lib": "unitTech",
+            "virtuoso_pdk_lib_path": "/unit/pdk/tech",
+            "topology_presets": topology_presets or {},
+        }
+        data.update(overrides)
+        profile_json.write_text(json.dumps(data), encoding="utf-8")
+        return profile_json
+
     def test_topology_escalation_is_disabled_by_default(self):
         self.assertFalse(Settings().enable_topology_escalation)
+
+    def test_bo_uses_twenty_startup_trials_by_default(self):
+        self.assertEqual(Settings().bo_n_startup_trials, 20)
+
+    def test_llm_validation_is_disabled_by_default(self):
+        settings = Settings(deepseek_api_key="", dry_run=False)
+        self.assertFalse(settings.enable_llm_validation)
+        settings.validate_required()
+
+    def test_llm_validation_frequency_is_ignored_when_disabled(self):
+        settings = Settings(
+            enable_llm_validation=False,
+            llm_validation_frequency=5,
+            deepseek_api_key="",
+            dry_run=False,
+        )
+        settings.validate_required()
+
+    def test_llm_validation_requires_api_key_when_enabled(self):
+        settings = Settings(
+            enable_llm_validation=True,
+            llm_validation_frequency=5,
+            deepseek_api_key="",
+            dry_run=False,
+        )
+        with self.assertRaisesRegex(ValueError, "DEEPSEEK_API_KEY"):
+            settings.validate_required()
 
     def test_default_gmid_lookup_table_path_exists(self):
         from pathlib import Path
@@ -96,6 +164,139 @@ class OptimizerConfigTest(unittest.TestCase):
                 required_model_roles=("nmos_lvt", "pmos_lvt"),
             )
             self.assertTrue(any("missing_lvt_n" in error for error in errors))
+
+    def test_external_pdk_profile_loads_topology_presets(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            profile_json = self._write_unit_profile(
+                root,
+                {
+                    "5t_ota": {
+                        "default_params": {"Wtail": 9e-6, "VBIAS": 0.42},
+                        "testbench_defaults": {"VCM": 0.22, "CL": 750e-15},
+                        "param_space_overrides": {
+                            "VBIAS": {"low": 0.25, "high": 0.65},
+                            "Wtail": {"high": 300e-6},
+                        },
+                    }
+                },
+            )
+
+            with patch.dict("os.environ", {"PDK_PROFILE_FILE": str(profile_json)}):
+                preset = get_topology_preset("5t_ota")
+                self.assertEqual(preset["default_params"]["Wtail"], 9e-6)
+                merged = apply_topology_preset("5t_ota", {"Wtail": 3e-6})
+                self.assertEqual(merged["Wtail"], 9e-6)
+
+                topology = get_topology("5t_ota")
+                self.assertEqual(topology.get_default_params()["VBIAS"], 0.42)
+                circuit = topology.generate_circuit()
+                self.assertIn("parameters Wtail=9u", circuit)
+                testbench = topology.generate_testbench()
+                self.assertIn("parameters VDD=1.05 VCM=0.22 VBIAS=0.42", testbench)
+                self.assertIn("CL=750f", testbench)
+
+                params = {param.name: param for param in topology.get_param_space().params}
+                self.assertEqual(params["VBIAS"].low, 0.25)
+                self.assertEqual(params["VBIAS"].high, 0.65)
+                self.assertEqual(params["Wtail"].high, 300e-6)
+
+    def test_missing_topology_preset_falls_back_to_defaults(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            profile_json = self._write_unit_profile(root)
+
+            with patch.dict("os.environ", {"PDK_PROFILE_FILE": str(profile_json)}):
+                topology = get_topology("5t_ota")
+                self.assertEqual(topology.get_default_params()["Wtail"], 3e-6)
+                circuit = topology.generate_circuit()
+                self.assertIn("parameters Wtail=3u", circuit)
+
+    def test_two_stage_profile_preset_controls_testbench_defaults(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            profile_json = self._write_unit_profile(
+                root,
+                {
+                    "two_stage_ota": {
+                        "testbench_defaults": {
+                            "VCM": 0.62,
+                            "VBIAS": 0.73,
+                            "CL": 1e-12,
+                        }
+                    }
+                },
+            )
+
+            with patch.dict("os.environ", {"PDK_PROFILE_FILE": str(profile_json)}):
+                testbench = get_topology("two_stage_ota").generate_testbench()
+                self.assertIn("parameters VDD=1.05 VCM=0.62 VBIAS=0.73", testbench)
+                self.assertIn("CL=1p", testbench)
+
+    def test_folded_profile_preset_reaches_physical_and_gmid_defaults(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            profile_json = self._write_unit_profile(
+                root,
+                {
+                    "folded_cascode": {
+                        "default_params": {
+                            "Lbias": 500e-9,
+                            "Wbp_big": 6e-6,
+                            "m_half_unit": 4,
+                            "m_load_ratio": 3,
+                            "bias_p_scale": 1.15,
+                        },
+                        "param_space_overrides": {
+                            "m_half_unit": {"low": 3, "high": 5},
+                            "bias_p_scale": {"low": 0.9, "high": 1.3},
+                        },
+                    }
+                },
+            )
+
+            with patch.dict("os.environ", {"PDK_PROFILE_FILE": str(profile_json)}):
+                topology = get_topology("folded_cascode")
+                defaults = topology.get_default_params()
+                self.assertEqual(defaults["Lbias"], 500e-9)
+                self.assertEqual(defaults["m_half_unit"], 4)
+                self.assertNotIn("Wbp_big", defaults)
+
+                circuit = topology.generate_circuit()
+                self.assertIn("parameters Lbias=500n", circuit)
+                self.assertIn("parameters Wbp_big=6u*Lbias", circuit)
+                self.assertIn("parameters m_half_unit=4 m_load_ratio=3", circuit)
+                self.assertIn("parameters bias_p_scale=1.15", circuit)
+
+                spec = topology.get_gmid_spec()
+                self.assertEqual(spec.fixed_params["Wbp_big"], 6e-6)
+                params = {param.name: param for param in spec.build_param_space().params}
+                self.assertEqual(params["m_half_unit"].low, 3)
+                self.assertEqual(params["m_half_unit"].high, 5)
+                self.assertEqual(params["bias_p_scale"].low, 0.9)
+                self.assertEqual(params["bias_p_scale"].high, 1.3)
+
+    def test_topology_preset_validation_reports_unknown_entries(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            profile_json = self._write_unit_profile(
+                root,
+                {
+                    "unknown_topology": {"default_params": {"Wfoo": 1e-6}},
+                    "5t_ota": {
+                        "default_params": {"Wdoes_not_exist": 1e-6},
+                        "param_space_overrides": {"Ldoes_not_exist": {"low": 1}},
+                        "testbench_defaults": {"BAD": 1.0},
+                    },
+                },
+            )
+
+            profile = get_pdk_profile(str(profile_json))
+            errors = validate_pdk_profile(profile)
+            self.assertTrue(any("unknown topology" in error for error in errors))
+            self.assertTrue(any("Wdoes_not_exist" in error for error in errors))
+            self.assertTrue(any("Ldoes_not_exist" in error for error in errors))
+            self.assertTrue(any("BAD" in error for error in errors))
 
     def test_spectre_include_normalizes_common_pdk_absolute_path(self):
         with patch.dict(
@@ -290,6 +491,17 @@ class OptimizerConfigTest(unittest.TestCase):
         self.assertIn("Lbias", params)
         self.assertAlmostEqual(params["Lbias"].low, 300e-9)
         self.assertAlmostEqual(params["Lbias"].high, 600e-9)
+        expected_scale_ranges = {
+            "bias_p_scale": (0.7, 1.4),
+            "bias_n_scale": (0.7, 1.4),
+            "bias_p_small_scale": (0.8, 1.25),
+            "bias_n_small_scale": (0.8, 1.25),
+        }
+        for name, (low, high) in expected_scale_ranges.items():
+            self.assertIn(name, params)
+            self.assertEqual(params[name].low, low)
+            self.assertEqual(params[name].high, high)
+            self.assertFalse(params[name].log_scale)
         for name in (
             "Wbp_big", "Wbp_small", "Wbn_big", "Wbn_small",
         ):
@@ -319,6 +531,13 @@ class OptimizerConfigTest(unittest.TestCase):
         self.assertIn("m_half_unit", params)
         self.assertIn("m_load_ratio", params)
         self.assertIn("Lbias", params)
+        for name in (
+            "bias_p_scale",
+            "bias_n_scale",
+            "bias_p_small_scale",
+            "bias_n_small_scale",
+        ):
+            self.assertIn(name, params)
         self.assertNotIn("m_load_extra", params)
         for name in (
             "Wbp_big", "Wbp_small", "Wbn_big", "Wbn_small",

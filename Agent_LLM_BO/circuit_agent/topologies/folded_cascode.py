@@ -43,6 +43,13 @@ _FIXED_BIAS_PARAM_NAMES = {
     "Wbn_small", "nf_Wbn_small", "m_Wbn_small",
 }
 
+_BIAS_SCALE_PARAM_DEFS = [
+    ("bias_p_scale", 0.7, 1.4),
+    ("bias_n_scale", 0.7, 1.4),
+    ("bias_p_small_scale", 0.8, 1.25),
+    ("bias_n_small_scale", 0.8, 1.25),
+]
+
 
 def _bias_w(name: str) -> ParamDef:
     return ParamDef(
@@ -114,6 +121,10 @@ class FoldedCascodeOTA(BaseTopology):
         "Wbn_small": 1.2e-6,
         "nf_Wbn_small": 1,
         "m_Wbn_small": 1,
+        "bias_p_scale": 1.0,
+        "bias_n_scale": 1.0,
+        "bias_p_small_scale": 1.0,
+        "bias_n_small_scale": 1.0,
         # Compensation
         "Cc": 250e-15,
         "Rz": 1000.0,
@@ -121,9 +132,7 @@ class FoldedCascodeOTA(BaseTopology):
 
     def generate_circuit(self, params: dict[str, float] | None = None) -> str:
         """Generate the DUT .cir subcircuit netlist."""
-        p = dict(self.DEFAULT_PARAMS)
-        if params:
-            p.update(params)
+        p = self._merge_params_with_preset(params)
         pdk = get_pdk_profile()
         p["m_tail_unit"] = 2 * int(round(p["m_half_unit"]))
         p["m_load_unit"] = (
@@ -152,6 +161,10 @@ class FoldedCascodeOTA(BaseTopology):
             Wbp_small=_fmt(p["Wbp_small"]),
             Wbn_big=_fmt(p["Wbn_big"]),
             Wbn_small=_fmt(p["Wbn_small"]),
+            bias_p_scale=p["bias_p_scale"],
+            bias_n_scale=p["bias_n_scale"],
+            bias_p_small_scale=p["bias_p_small_scale"],
+            bias_n_small_scale=p["bias_n_small_scale"],
             Cc=_fmt(p["Cc"]),
             Rz=_fmt(p["Rz"]),
         )
@@ -163,10 +176,17 @@ class FoldedCascodeOTA(BaseTopology):
     ) -> str:
         """Generate the Spectre-native testbench .scs file."""
         pdk = get_pdk_profile()
+        tb_defaults = self._testbench_defaults_with_preset(
+            {
+                "VCM": 0.4,
+                "IBIAS": 20e-6,
+                "CL": 1e-12,
+            }
+        )
         vdd = pdk.vdd
-        vcm = 0.4
-        ibias = 20e-6
-        cload = 1e-12
+        vcm = tb_defaults["VCM"]
+        ibias = tb_defaults["IBIAS"]
+        cload = tb_defaults["CL"]
 
         if params:
             vdd = params.get("VDD", vdd)
@@ -211,7 +231,7 @@ class FoldedCascodeOTA(BaseTopology):
         )
 
     def get_default_params(self) -> dict[str, float]:
-        params = dict(self.DEFAULT_PARAMS)
+        params = self._default_params_with_preset()
         for name in _FIXED_BIAS_PARAM_NAMES:
             params.pop(name, None)
         return params
@@ -237,7 +257,7 @@ class FoldedCascodeOTA(BaseTopology):
         }
 
     def get_param_space(self) -> ParamSpace:
-        return ParamSpace(
+        return self._apply_param_space_overrides(ParamSpace(
             params=[
                 ParamDef(
                     name="Wdiffp", low=0.5e-6, high=200e-6,
@@ -263,6 +283,16 @@ class FoldedCascodeOTA(BaseTopology):
                     name="m_load_ratio", low=2, high=8,
                     log_scale=False, unit="x", value_type="int",
                 ),
+                *[
+                    ParamDef(
+                        name=name,
+                        low=low,
+                        high=high,
+                        log_scale=False,
+                        unit="x",
+                    )
+                    for name, low, high in _BIAS_SCALE_PARAM_DEFS
+                ],
                 ParamDef(
                     name="Cc", low=0.1e-12, high=5e-12,
                     log_scale=True, unit="F",
@@ -272,12 +302,45 @@ class FoldedCascodeOTA(BaseTopology):
                     log_scale=True, unit="Ohm",
                 ),
             ]
-        )
+        ))
 
     def get_gmid_spec(self, targets=None):
         """Return gm/Id spec for folded cascode — reduces 26 → 17 params."""
         from models import DerivedBranchCurrentSpec, GmidTopologySpec, TransistorSpec
         pdk = get_pdk_profile()
+        defaults = self._default_params_with_preset()
+        pass_through_space = self._apply_param_space_overrides(ParamSpace(params=[
+            ParamDef(
+                name="m_half_unit", low=2, high=6,
+                log_scale=False, unit="x", value_type="int",
+            ),
+            ParamDef(
+                name="m_load_ratio", low=2, high=8,
+                log_scale=False, unit="x", value_type="int",
+            ),
+            ParamDef(
+                name="Lbias", low=300e-9, high=600e-9,
+                log_scale=True, unit="m",
+            ),
+            *[
+                ParamDef(
+                    name=name,
+                    low=low,
+                    high=high,
+                    log_scale=False,
+                    unit="x",
+                )
+                for name, low, high in _BIAS_SCALE_PARAM_DEFS
+            ],
+            ParamDef(
+                name="Cc", low=0.1e-12, high=5e-12,
+                log_scale=True, unit="F",
+            ),
+            ParamDef(
+                name="Rz", low=100, high=10e3,
+                log_scale=True, unit="Ohm",
+            ),
+        ]))
 
         return GmidTopologySpec(
             derived_branch_currents=[
@@ -324,30 +387,9 @@ class FoldedCascodeOTA(BaseTopology):
                     Vds_estimate=0.6,
                 ),
             ],
-            pass_through_params=[
-                ParamDef(
-                    name="m_half_unit", low=2, high=6,
-                    log_scale=False, unit="x", value_type="int",
-                ),
-                ParamDef(
-                    name="m_load_ratio", low=2, high=8,
-                    log_scale=False, unit="x", value_type="int",
-                ),
-                ParamDef(
-                    name="Lbias", low=300e-9, high=600e-9,
-                    log_scale=True, unit="m",
-                ),
-                ParamDef(
-                    name="Cc", low=0.1e-12, high=5e-12,
-                    log_scale=True, unit="F",
-                ),
-                ParamDef(
-                    name="Rz", low=100, high=10e3,
-                    log_scale=True, unit="Ohm",
-                ),
-            ],
+            pass_through_params=pass_through_space.params,
             fixed_params={
-                name: self.DEFAULT_PARAMS[name]
+                name: defaults[name]
                 for name in (
                     "Wbp_big",
                     "nf_Wbp_big", "m_Wbp_big",
@@ -375,8 +417,10 @@ parameters Lbias={Lbias} Lbias_ref=400n
 
 parameters nf_Wbp_big={nf_Wbp_big} m_Wbp_big={m_Wbp_big} nf_Wbp_small={nf_Wbp_small} m_Wbp_small={m_Wbp_small}
 parameters nf_Wbn_big={nf_Wbn_big} m_Wbn_big={m_Wbn_big} nf_Wbn_small={nf_Wbn_small} m_Wbn_small={m_Wbn_small}
-parameters Wbp_big={Wbp_big}*Lbias/Lbias_ref Wbp_small={Wbp_small}*Lbias/Lbias_ref
-parameters Wbn_big={Wbn_big}*Lbias/Lbias_ref Wbn_small={Wbn_small}*Lbias/Lbias_ref
+parameters bias_p_scale={bias_p_scale} bias_n_scale={bias_n_scale}
+parameters bias_p_small_scale={bias_p_small_scale} bias_n_small_scale={bias_n_small_scale}
+parameters Wbp_big={Wbp_big}*Lbias/Lbias_ref*bias_p_scale Wbp_small={Wbp_small}*Lbias/Lbias_ref*bias_p_scale*bias_p_small_scale
+parameters Wbn_big={Wbn_big}*Lbias/Lbias_ref*bias_n_scale Wbn_small={Wbn_small}*Lbias/Lbias_ref*bias_n_scale*bias_n_small_scale
 parameters m_half_unit={m_half_unit} m_load_ratio={m_load_ratio}
 parameters m_tail_unit=2*m_half_unit m_load_unit=m_half_unit*m_load_ratio
 parameters Cc={Cc} Rz={Rz}

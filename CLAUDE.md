@@ -38,6 +38,7 @@
 gain ≥ 40 dB → two_stage_ota 或 folded_cascode，folded_cascode 
 gain < 40 dB → 5t_ota
 gain ≥ 100 dB → nmcf_three_stage      # 尚未完善
+bandgap/PTAT 系统 → bandgap_ptat，两阶段：先优化内部 folded_cascode 运放，再冻结 macro 做 bandgap 级 BO
 ```
 
 查看可用拓扑及其指标范围：
@@ -52,7 +53,7 @@ python -c "from topologies import list_topologies; [print(f'{m.name}: {m.display
 - `./knowledge_base/PDKs_info/pdk_profiles.md`
 - `./knowledge_base/PDKs_info/tsmc28_pdk_constraints.md`
 
-PDK 路径、Spectre section、NMOS/PMOS/LVT model 名称、默认 VDD、VDD 允许范围、gm/Id 表路径、PVT 温度、Spectre options、Virtuoso tech library 的代码入口统一在 `Agent_LLM_BO/circuit_agent/pdk_profiles.py`。不要在 topology 文件里新增硬编码 PDK 路径、MOS model 或电源默认值；换工艺时新增/选择 `PDKProfile`，或用 `.env` / `PDK_PROFILE_FILE` 覆盖对应字段。
+PDK 路径、Spectre section、NMOS/PMOS/LVT model 名称、默认 VDD、VDD 允许范围、gm/Id 表路径、PVT 温度、Spectre options、Virtuoso tech library，以及每个 topology 的工艺专用初始参数 preset，代码入口统一在 `Agent_LLM_BO/circuit_agent/pdk_profiles.py`。不要在 topology 文件里新增硬编码 PDK 路径、MOS model、电源默认值或某工艺专用初始 W/L；换工艺/型号时新增或选择 `PDKProfile`，必要时在 profile 的 `topology_presets` 中覆盖 `default_params`、`testbench_defaults`、`param_space_overrides`。
 
 换工艺前先做 profile 验证：
 
@@ -67,6 +68,10 @@ python pdk_profiles.py --validate --require-gmid --require-virtuoso
 VDD 使用规则：profile 的 `vdd` 是默认值，`vdd_min/vdd_max` 是允许范围；单次设计需要 1.0V 或 1.1V 时，通过 `params={"VDD": 1.1}`、requirements/CLI 或 `.env` 的 `VDD=1.1` 覆盖。若要让 BO 搜索 VDD，必须在 topology `get_param_space()` 或显式 `params.json` 中加入 `VDD`，并限制在 profile 范围内。
 
 晶体管类型规则：常规拓扑使用 profile 的 `nmos_model/pmos_model`；folded cascode 当前使用 `nmos_lvt_model/pmos_lvt_model`。不要在 netlist template 中直接写死 `nch_mac/pch_mac/nch_lvt_mac/pch_lvt_mac`。
+
+初始参数规则：topology 的 `DEFAULT_PARAMS` 是通用 fallback；当前 PDK profile 的 `topology_presets.<topology>.default_params` 会覆盖初始网表参数，`testbench_defaults` 会覆盖 VCM/IBIAS/CL/VBIAS 等 testbench 默认值，`param_space_overrides` 会微调 BO 搜索范围。`topology_presets` 是可选校准层，不要求每个 PDK 为每个 topology 都填写；只有某个拓扑在新工艺/型号下初始工作点不可靠时才补 preset。若用户换工艺后需要不同初值，优先改 profile preset，不要直接改 topology 源码。
+
+层级系统规则：`bandgap_ptat` 不做全量联合优化。先根据 bandgap/PTAT 指标推导 folded-cascode opamp targets 并单独跑 nominal/PVT；之后把 opamp 的 `circuit.cir` 作为 frozen child macro 传给 `bandgap_ptat`，bandgap BO 只调系统级 resistor/current/ratio/pass-device/compensation 参数。若 bandgap PVT 暴露 opamp 瓶颈，再回到 folded-cascode 阶段提高 opamp 指标。
 
 ---
 
@@ -150,6 +155,8 @@ outputs/<project_name>/
 
 对 BO 结果中 Top 10%（3~10条）迭代做复盘，生成候选网表并仿真验证。推荐优先使用两阶段本地 Agent 流程：Python 只准备上下文，本地 Claude/Codex 根据知识库填写 `patch_plan.json`，Python 再安全执行。
 
+如果不提供 `patch_plan.json`，`review_optimization.py` 会使用内置保守规则。对 folded cascode，它还会读取 `workspace/run_xxx/diagnostics/dc_operating_points.csv`，根据 `|vds|-|vdsat| < 50mV` 的 linear/near-edge 器件生成 OP-guided repair：PMOS bias 相关器件调整 `bias_p_scale`，NMOS bias 相关器件调整 `bias_n_scale`，`Mcs` 调整 `Wcs`，`Mdiff1/2` 调整 `Wdiffp`。这些候选仍需 Spectre 仿真验证。
+
 ```bash
 cd Agent_LLM_BO/circuit_agent
 conda activate Auto_Agent_Design
@@ -175,8 +182,9 @@ outputs/<project>/agent_review/
 
 - `outputs/<project>/agent_review/agent_context.md`
 - `knowledge_base/Opamp_knowledge_base/optimization_review_guide.md`
+- `knowledge_base/Opamp_knowledge_base/topologies/<topology>_optimization.md`
 
-其中 `optimization_review_guide.md` 是调参规则来源；如果 Agent 的判断和指南冲突，需要在 `patch_plan.json` 的 `reason` 中说明原因。
+其中 `optimization_review_guide.md` 是通用调参规则来源，`topologies/<topology>_optimization.md` 是当前拓扑专用知识。`--prepare-agent-review` 会自动把两者写入 `agent_context.md`；如果 Agent 的判断和指南冲突，需要在 `patch_plan.json` 的 `reason` 中说明原因。
 
 本地 Agent 填写 `patch_plan.json` 后执行：
 
@@ -200,6 +208,8 @@ python review_optimization.py \
 ```
 
 无 Spectre 环境加 `--dry-run`。`patch_plan.json` 只允许对已有参数做 `scale` 或 `set`，未知参数会被忽略，所有数值会 clamp 到 topology 的 `get_param_space()` 范围；不要让 Agent 直接改 `.cir` 连接、模型、端口或 testbench。
+
+folded cascode 当前有少量 bias 强度参数进入 BO/gmId pass-through：`bias_p_scale`、`bias_n_scale`、`bias_p_small_scale`、`bias_n_small_scale`。它们用于微调 VB1-4 相关 bias 强度，不等同于重新开放所有 bias W/L。
 
 ---
 

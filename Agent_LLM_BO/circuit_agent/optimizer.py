@@ -1,7 +1,9 @@
-"""Bayesian Optimization engine with optional LLM parameter validation.
+"""Bayesian Optimization engine with optional external LLM validation.
 
 Netlist generation is handled by the hard-constrained topology library.
-LLM is only used for physical-feasibility checks during BO.
+The main loop is driven by BO, Spectre parsing, gm/Id sizing, diagnostics,
+and operating-point penalties.  External LLM validation is disabled by default
+and is intended only as an experimental physical-feasibility check.
 """
 
 from __future__ import annotations
@@ -36,10 +38,10 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 
 class HybridOptimizer:
-    """BO-driven optimization with LLM parameter validation.
+    """BO-driven optimization with optional external LLM parameter validation.
 
-    BO handles continuous parameter search.
-    LLM validates physical feasibility every N iterations.
+    BO handles continuous/integer parameter search.  When explicitly enabled,
+    an external LLM can review BO-proposed parameters every N iterations.
     Topology changes use predefined escalation paths (not LLM).
     Netlist repair is unnecessary — topologies are correct-by-construction.
     """
@@ -74,6 +76,7 @@ class HybridOptimizer:
         on_iteration: callable = None,
         topology_name: str = "",
         gmid_sizer=None,  # GmidSizer | None
+        initial_candidates: list[dict[str, float]] | None = None,
     ) -> OptimizationState:
         """Run the full BO optimization loop.
 
@@ -89,6 +92,8 @@ class HybridOptimizer:
             gmid_sizer: Optional :class:`GmidSizer` instance.  When provided,
                         BO searches over gm/Id-space parameters, and this sizer
                         converts them to physical W/L before netlist rendering.
+            initial_candidates: Known parameter sets evaluated before
+                                sampler-generated startup trials.
 
         Returns:
             OptimizationState with full history and best result
@@ -97,8 +102,16 @@ class HybridOptimizer:
         state = OptimizationState(targets=targets, param_space=param_space)
 
         # Create Optuna study
-        sampler = TPESampler(seed=42, n_startup_trials=5)
+        sampler = TPESampler(
+            seed=42,
+            n_startup_trials=self.config.bo_n_startup_trials,
+        )
         study = optuna.create_study(direction="maximize", sampler=sampler)
+        for candidate in initial_candidates or []:
+            if set(candidate) == set(param_space.get_param_names()):
+                study.enqueue_trial(candidate)
+            else:
+                logger.warning("Skipping incomplete BO initial candidate")
 
         current_template = template
         current_testbenches = circuit_files.testbenches if circuit_files else []
@@ -119,8 +132,14 @@ class HybridOptimizer:
             if gmid_sizer is not None:
                 physical_params = gmid_sizer.size(proposed_params)
 
-            # Step 2b: LLM validates (every N iterations)
-            if (iteration + 1) % self.config.llm_validation_frequency == 0:
+            # Step 2b: Optional external LLM validation. Disabled by default;
+            # local Agent Review after BO is the preferred analysis path.
+            if (
+                self.config.enable_llm_validation
+                and self.config.llm_validation_frequency > 0
+                and self.llm is not None
+                and (iteration + 1) % self.config.llm_validation_frequency == 0
+            ):
                 logger.info(f"[Iter {iteration+1}] LLM parameter validation")
                 last_result = (
                     state.history[-1].result if state.history else None
@@ -152,7 +171,7 @@ class HybridOptimizer:
                     w_l_grid_step=self.config.w_l_grid_step,
                 )
 
-            # Step 4: Run simulation (no LLM repair — netlists are correct-by-construction)
+            # Step 4: Run simulation (no external repair — netlists are correct-by-construction)
             sim_result = self._run_simulation(tb_paths, run_dir)
             op_status = self._evaluate_operating_point(
                 run_dir,
@@ -252,7 +271,11 @@ class HybridOptimizer:
                         topology_changes += 1
                         # Recreate study with new param space
                         study = optuna.create_study(
-                            direction="maximize", sampler=TPESampler(seed=42)
+                            direction="maximize",
+                            sampler=TPESampler(
+                                seed=42,
+                                n_startup_trials=self.config.bo_n_startup_trials,
+                            ),
                         )
                         logger.info("Topology escalated to %s, restarting BO search", next_name)
                 else:
@@ -271,124 +294,87 @@ class HybridOptimizer:
         targets: DesignTarget,
         op_status: OperatingPointStatus | None = None,
     ) -> float:
-        """Compute a scalar reward from simulation results vs targets.
+        """Compute a feasibility-first scalar reward.
 
-        Strategy:
-        - Each satisfied metric: +10
-        - Each unsatisfied metric: penalty proportional to normalized gap
-        - Simulation failure: -1000
-        - All targets met: +100 bonus
+        Feasible designs always outrank infeasible designs. Among infeasible
+        designs, reduce the largest normalized violation first, then the total
+        violation. Feasible designs are ranked by margin quality and OP health.
         """
         if not result.converged:
-            return -1000.0
+            return -1_000_000.0
 
-        reward = 0.0
-        all_met = True
+        violations: list[float] = []
+        utility = 0.0
 
-        # Gain
-        if targets.gain_db is not None and result.gain_db is not None:
-            if result.gain_db >= targets.gain_db:
-                reward += 10.0 * self.weights["gain_db"]
-            elif result.gain_db < 0:
-                # Dead circuit (negative gain): heavy penalty
-                reward -= 200.0 * self.weights["gain_db"]
-                all_met = False
-            else:
-                gap = (targets.gain_db - result.gain_db) / max(abs(targets.gain_db), 1.0)
-                reward -= gap * 50.0 * self.weights["gain_db"]
-                all_met = False
-        elif targets.gain_db is not None:
-            reward -= 200.0  # Missing measurement in dead circuit
-            all_met = False
-
-        # GBW / unity-gain frequency (legacy field name: bandwidth_hz)
-        if targets.bandwidth_hz is not None and result.bandwidth_hz is not None:
-            if result.bandwidth_hz >= targets.bandwidth_hz:
-                reward += 10.0 * self.weights["bandwidth_hz"]
-            else:
-                gap = (targets.bandwidth_hz - result.bandwidth_hz) / max(
-                    targets.bandwidth_hz, 1.0
+        def lower_bound(value, target, weight, missing=1.0):
+            nonlocal utility
+            if target is None:
+                return
+            if value is None:
+                violations.append(missing)
+            elif value < target:
+                violations.append(
+                    (target - value) / max(abs(target), 1e-30) * weight
                 )
-                reward -= gap * 50.0 * self.weights["bandwidth_hz"]
-                all_met = False
-        elif targets.bandwidth_hz is not None:
-            reward -= 50.0
-            all_met = False
-
-        # Phase margin: enough margin is good, but excessive PM often means
-        # over-compensation and wasted GBW/SR. Prefer the target-to-75deg window.
-        if targets.phase_margin_deg is not None and result.phase_margin_deg is not None:
-            if result.phase_margin_deg >= targets.phase_margin_deg:
-                reward += 10.0 * self.weights["phase_margin_deg"]
-                pm_high_limit = 75.0
-                if result.phase_margin_deg > pm_high_limit:
-                    excess = (result.phase_margin_deg - pm_high_limit) / max(
-                        pm_high_limit, 1.0
-                    )
-                    reward -= excess * 30.0 * self.weights["phase_margin_deg"]
             else:
-                gap = (targets.phase_margin_deg - result.phase_margin_deg) / max(
-                    targets.phase_margin_deg, 1.0
+                utility += 10.0 * weight
+
+        def upper_bound(value, target, weight):
+            nonlocal utility
+            if target is None:
+                return
+            if value is None:
+                violations.append(1.0)
+            elif value > target:
+                violations.append(
+                    (value - target) / max(abs(target), 1e-30) * weight
                 )
-                reward -= gap * 50.0 * self.weights["phase_margin_deg"]
-                all_met = False
-        elif targets.phase_margin_deg is not None:
-            reward -= 50.0
-            all_met = False
-
-        # Power (lower is better)
-        if targets.power_w is not None and result.power_w is not None:
-            if result.power_w <= targets.power_w:
-                reward += 10.0 * self.weights["power_w"]
             else:
-                gap = (result.power_w - targets.power_w) / max(targets.power_w, 1e-9)
-                reward -= gap * 50.0 * self.weights["power_w"]
-                all_met = False
-        elif targets.power_w is not None:
-            reward -= 50.0
-            all_met = False
+                utility += 10.0 * weight
 
-        # Slew rate (higher is better)
-        if targets.slew_rate_v_per_s is not None and result.slew_rate_v_per_s is not None:
-            if result.slew_rate_v_per_s >= targets.slew_rate_v_per_s:
-                reward += 10.0 * self.weights["slew_rate_v_per_s"]
-            else:
-                gap = (targets.slew_rate_v_per_s - result.slew_rate_v_per_s) / max(
-                    targets.slew_rate_v_per_s, 1.0
-                )
-                reward -= gap * 50.0 * self.weights["slew_rate_v_per_s"]
-                all_met = False
-        elif targets.slew_rate_v_per_s is not None:
-            reward -= 50.0
-            all_met = False
+        lower_bound(result.gain_db, targets.gain_db, self.weights["gain_db"], 2.0)
+        lower_bound(
+            result.bandwidth_hz,
+            targets.bandwidth_hz,
+            self.weights["bandwidth_hz"],
+        )
+        lower_bound(
+            result.phase_margin_deg,
+            targets.phase_margin_deg,
+            self.weights["phase_margin_deg"],
+        )
+        upper_bound(result.power_w, targets.power_w, self.weights["power_w"])
+        lower_bound(
+            result.slew_rate_v_per_s,
+            targets.slew_rate_v_per_s,
+            self.weights["slew_rate_v_per_s"],
+        )
+        upper_bound(
+            result.settling_time_s,
+            targets.settling_time_s,
+            self.weights["settling_time_s"],
+        )
 
-        # Settling time (lower is better)
-        if targets.settling_time_s is not None and result.settling_time_s is not None:
-            if result.settling_time_s <= targets.settling_time_s:
-                reward += 10.0 * self.weights["settling_time_s"]
-            else:
-                gap = (result.settling_time_s - targets.settling_time_s) / max(
-                    targets.settling_time_s, 1e-12
-                )
-                reward -= gap * 50.0 * self.weights["settling_time_s"]
-                all_met = False
-        elif targets.settling_time_s is not None:
-            reward -= 50.0
-            all_met = False
+        if (
+            targets.phase_margin_deg is not None
+            and result.phase_margin_deg is not None
+            and result.phase_margin_deg > 75.0
+        ):
+            utility -= (
+                (result.phase_margin_deg - 75.0)
+                / 75.0
+                * 30.0
+                * self.weights["phase_margin_deg"]
+            )
 
         if op_status is not None:
-            reward += op_status.penalty
+            utility += op_status.penalty
+            if op_status.critical_linear_count:
+                violations.append(float(op_status.critical_linear_count))
 
-        # Bonus for meeting all targets.  Do not reward a numerically passing
-        # design as "done" when critical signal-path devices are in triode.
-        if all_met:
-            if op_status is None or op_status.critical_linear_count == 0:
-                reward += 50.0 if (
-                    op_status is not None
-                    and op_status.critical_near_edge_count > 0
-                ) else 100.0
-
-        return reward
+        if violations:
+            return -1000.0 - 1000.0 * max(violations) - 100.0 * sum(violations)
+        return 1000.0 + utility
 
     def _evaluate_operating_point(
         self,
@@ -426,7 +412,7 @@ class HybridOptimizer:
     ) -> SimResult:
         """Run primary and extra testbenches, merge results.
 
-        No LLM repair — netlists generated by the topology library are
+        No external repair — netlists generated by the topology library are
         syntactically correct by construction.  Failures are typically
         convergence issues from extreme parameter values.
         """

@@ -1,13 +1,14 @@
-"""Lightweight LLM client for circuit design tasks.
+"""Optional LLM client for circuit design helper tasks.
 
 Responsibilities (narrowly scoped):
   1. parse_user_requirements()  — free-text → structured DesignTarget
-  2. validate_and_adjust_params() — physical-feasibility check during BO
+  2. validate_and_adjust_params() — optional/experimental BO parameter check
   3. select_topology()           — LLM-assisted topology selection (optional)
 
 Netlist generation is handled by the hard-constrained topology library
 (topologies/), NOT by LLM.  Repair and topology-change suggestions are
-handled by predefined escalation rules, also NOT by LLM.
+handled by predefined escalation rules, also NOT by LLM.  The production BO
+loop does not require this client unless enable_llm_validation=True.
 """
 
 from __future__ import annotations
@@ -28,11 +29,12 @@ logger = logging.getLogger(__name__)
 
 
 class LLMClient:
-    """Wraps DeepSeek API (OpenAI-compatible) for circuit parameter validation.
+    """Wraps DeepSeek API (OpenAI-compatible) for optional helper tasks.
 
-    Only two core functions are retained:
+    Retained functions:
     - parse natural-language requirements into DesignTarget
-    - validate BO-proposed parameters for physical feasibility
+    - optionally validate BO-proposed parameters for physical feasibility
+    - optionally assist topology selection when rules are ambiguous
     """
 
     def __init__(self, config: Settings):

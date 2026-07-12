@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -8,7 +9,7 @@ from models import DesignTarget, NetlistTemplate, format_spice_value, split_widt
 from config import Settings
 from pdk_profiles import get_pdk_profile
 from simulator import Simulator
-from topologies import get_topology, list_topologies
+from topologies import get_topology, get_topology_for_targets, list_topologies
 
 
 class SpectreTopologyTest(unittest.TestCase):
@@ -38,6 +39,12 @@ class SpectreTopologyTest(unittest.TestCase):
             self.assertGreaterEqual(meta.max_gbw_hz, meta.min_gbw_hz)
             self.assertEqual(meta.min_bw_hz, meta.min_gbw_hz)
             self.assertEqual(meta.max_bw_hz, meta.max_gbw_hz)
+
+    def test_bandgap_hint_selects_bandgap_topology(self):
+        self.assertEqual(
+            get_topology_for_targets(DesignTarget(topology_hint="bandgap PTAT")),
+            "bandgap_ptat",
+        )
 
     def test_all_topologies_generate_native_spectre_projects(self):
         forbidden = [".lib ", ".options ", ".param ", ".subckt ", ".meas "]
@@ -98,6 +105,94 @@ class SpectreTopologyTest(unittest.TestCase):
         folded = get_topology("folded_cascode").generate_circuit()
         self.assertIn(f") {pdk.pmos_lvt_model} l=Lbias", folded)
         self.assertIn(f") {pdk.nmos_lvt_model} l=Lbias", folded)
+
+    def test_bandgap_ptat_embeds_frozen_folded_cascode_macro(self):
+        topo = get_topology("bandgap_ptat")
+        circuit = topo.generate_circuit()
+        param_names = set(topo.get_param_space().get_param_names())
+
+        self.assertRegex(circuit, r"(?m)^subckt bandgap_ptat \(vref vdd vss\)")
+        self.assertRegex(
+            circuit,
+            r"(?m)^Xopamp \(nsense nfb vctrl opibias vdd vss\) folded_cascode",
+        )
+        self.assertIn("Port order: vip vin vout ibias vdd vss", circuit)
+        self.assertIn("subckt folded_cascode (vip vin vout ibias vdd vss)", circuit)
+
+        self.assertIn("Rptat", param_names)
+        self.assertIn("Rctat", param_names)
+        self.assertIn("BJT_AREA_RATIO", param_names)
+        self.assertNotIn("Wdiffp", param_names)
+        self.assertNotIn("Lbias", param_names)
+        self.assertNotIn("m_half_unit", param_names)
+        self.assertNotIn("bias_p_scale", param_names)
+
+    def test_bandgap_ptat_uses_external_opamp_netlist(self):
+        fake_opamp = """\
+// fake folded opamp
+subckt folded_cascode (vip vin vout ibias vdd vss)
+Rfake (vout vss) resistor r=1G
+ends folded_cascode
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            opamp_path = Path(tmp) / "opamp.cir"
+            opamp_path.write_text(fake_opamp, encoding="utf-8")
+
+            circuit = get_topology("bandgap_ptat").generate_circuit(
+                {"opamp_netlist": str(opamp_path)}
+            )
+
+        self.assertIn("// fake folded opamp", circuit)
+        self.assertIn("Rfake (vout vss) resistor r=1G", circuit)
+        self.assertIn(
+            "Xopamp (nsense nfb vctrl opibias vdd vss) folded_cascode",
+            circuit,
+        )
+
+    def test_bandgap_write_project_records_child_opamp_source(self):
+        fake_opamp = """\
+subckt folded_cascode (vip vin vout ibias vdd vss)
+Rfake (vout vss) resistor r=1G
+ends folded_cascode
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            opamp_path = root / "optimized_opamp.cir"
+            opamp_path.write_text(fake_opamp, encoding="utf-8")
+            targets = DesignTarget(
+                power_w=1e-3,
+                load_cap_f=1e-12,
+                custom_specs={"opamp_gain_db": 75, "vref_v": 1.2},
+            )
+
+            project = get_topology("bandgap_ptat").write_project(
+                root / "bandgap",
+                targets=targets,
+                params={"opamp_netlist": str(opamp_path)},
+                original_requirement="bandgap with optimized folded opamp",
+            )
+            req = json.loads((project / "requirements.json").read_text(encoding="utf-8"))
+            child_circuit = (
+                project / "child_blocks" / "folded_cascode_opamp" / "circuit.cir"
+            )
+            child_results = (
+                project / "child_blocks" / "folded_cascode_opamp" / "source_results.json"
+            )
+
+            self.assertTrue(child_circuit.exists())
+            self.assertTrue(child_results.exists())
+            self.assertEqual(
+                req["hierarchical_blocks"]["opamp"]["ports"],
+                ["vip", "vin", "vout", "ibias", "vdd", "vss"],
+            )
+            self.assertEqual(
+                req["hierarchical_blocks"]["opamp"]["sizing_policy"],
+                "frozen_macro",
+            )
+            self.assertEqual(
+                req["hierarchical_blocks"]["opamp"]["derived_targets"]["gain_db"],
+                75.0,
+            )
 
     def test_spectre_parameter_rendering_and_finger_split(self):
         topo = get_topology("5t_ota")
@@ -161,6 +256,26 @@ class SpectreTopologyTest(unittest.TestCase):
         self.assertNotRegex(rendered, r"e[+-]\d+[munpfk]")
         self.assertIn("w=1u", rendered)
 
+    def test_dimensionless_scale_params_render_without_engineering_suffix(self):
+        topo = get_topology("folded_cascode")
+        rendered = NetlistTemplate.from_netlist(topo.generate_circuit()).render(
+            {
+                "bias_p_scale": 0.85,
+                "bias_n_scale": 0.9,
+                "bias_p_small_scale": 1.1,
+                "bias_n_small_scale": 1.2,
+            },
+            param_space=topo.get_param_space(),
+        )
+
+        self.assertIn("parameters bias_p_scale=0.85 bias_n_scale=0.9", rendered)
+        self.assertIn(
+            "parameters bias_p_small_scale=1.1 bias_n_small_scale=1.2",
+            rendered,
+        )
+        self.assertNotIn("bias_p_scale=850m", rendered)
+        self.assertNotIn("bias_n_scale=900m", rendered)
+
     def test_folded_cascode_uses_bias_ratio_current_sources(self):
         topo = get_topology("folded_cascode")
         circuit = topo.generate_circuit()
@@ -172,7 +287,30 @@ class SpectreTopologyTest(unittest.TestCase):
         self.assertNotIn("Wtailp", rendered)
         self.assertNotIn("Wfoldn", rendered)
         self.assertNotIn("Wload", rendered)
-        self.assertIn("parameters Wbp_big=4.8u*Lbias/Lbias_ref", rendered)
+        self.assertIn(
+            "parameters bias_p_scale=1 bias_n_scale=1",
+            rendered,
+        )
+        self.assertIn(
+            "parameters bias_p_small_scale=1 bias_n_small_scale=1",
+            rendered,
+        )
+        self.assertIn(
+            "parameters Wbp_big=4.8u*Lbias/Lbias_ref*bias_p_scale",
+            rendered,
+        )
+        self.assertIn(
+            "Wbp_small=1.2u*Lbias/Lbias_ref*bias_p_scale*bias_p_small_scale",
+            rendered,
+        )
+        self.assertIn(
+            "parameters Wbn_big=4.8u*Lbias/Lbias_ref*bias_n_scale",
+            rendered,
+        )
+        self.assertIn(
+            "Wbn_small=1.2u*Lbias/Lbias_ref*bias_n_scale*bias_n_small_scale",
+            rendered,
+        )
         self.assertIn("parameters m_half_unit=2 m_load_ratio=2", rendered)
         self.assertIn(
             "Mtailp (ntail VB1 vdd vdd) pch_lvt_mac "
@@ -206,11 +344,28 @@ class SpectreTopologyTest(unittest.TestCase):
         )
 
         lscaled = NetlistTemplate.from_netlist(circuit).render(
-            {"Lbias": 500e-9},
+            {
+                "Lbias": 500e-9,
+                "bias_p_scale": 1.2,
+                "bias_n_scale": 0.85,
+                "bias_p_small_scale": 1.1,
+                "bias_n_small_scale": 0.9,
+            },
             param_space=topo.get_param_space(),
         )
         self.assertIn("parameters Lbias=500n Lbias_ref=400n", lscaled)
-        self.assertIn("parameters Wbp_big=4.8u*Lbias/Lbias_ref", lscaled)
+        self.assertIn(
+            "parameters bias_p_scale=1.2 bias_n_scale=0.85",
+            lscaled,
+        )
+        self.assertIn(
+            "parameters bias_p_small_scale=1.1 bias_n_small_scale=0.9",
+            lscaled,
+        )
+        self.assertIn(
+            "parameters Wbp_big=4.8u*Lbias/Lbias_ref*bias_p_scale",
+            lscaled,
+        )
         self.assertIn(
             "M9 (VB4 VB3 net3 vss) nch_lvt_mac l=500n w=Wbn_big",
             lscaled,

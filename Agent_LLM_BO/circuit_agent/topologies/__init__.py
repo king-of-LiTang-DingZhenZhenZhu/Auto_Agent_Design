@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from topologies.bandgap_ptat import BandgapPTAT
 from topologies.base import BaseTopology, TopologyMeta
 from topologies.five_t_ota import FiveTOTA
 from topologies.folded_cascode import FoldedCascodeOTA
@@ -25,6 +26,7 @@ TOPOLOGY_REGISTRY: dict[str, type[BaseTopology]] = {
     "two_stage_ota": TwoStageOTA,
     "folded_cascode": FoldedCascodeOTA,
     "nmcf_three_stage": NMCFThreeStageOTA,
+    "bandgap_ptat": BandgapPTAT,
 }
 
 
@@ -52,6 +54,10 @@ def get_topology_for_targets(targets: DesignTarget) -> str | None:
 
     Returns None only when no topology can plausibly meet the targets.
     """
+    topology_hint = (targets.topology_hint or "").lower()
+    if "bandgap" in topology_hint or "ptat" in topology_hint:
+        return "bandgap_ptat"
+
     if "nmcf_three_stage" in TOPOLOGY_REGISTRY:
         very_high_gain = (
             targets.gain_db is not None and targets.gain_db >= 85

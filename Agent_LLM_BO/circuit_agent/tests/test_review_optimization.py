@@ -10,6 +10,7 @@ from config import Settings
 from models import ParamDef, SimResult
 from review_optimization import (
     Candidate,
+    apply_operating_point_review_rules,
     apply_patch_plan,
     apply_review_rules,
     generate_candidate,
@@ -84,6 +85,54 @@ class ReviewOptimizationTests(unittest.TestCase):
         self.assertIn("Wload", changes)
         self.assertIn("Cc", changes)
         self.assertIn("Rz", changes)
+
+    def test_apply_operating_point_rules_adjusts_folded_bias_scales(self):
+        params = {
+            "bias_p_scale": 1.0,
+            "bias_n_scale": 1.0,
+            "bias_p_small_scale": 1.0,
+            "bias_n_small_scale": 1.0,
+            "Wcs": 20e-6,
+            "Wdiffp": 10e-6,
+        }
+        bounds = {
+            "bias_p_scale": ParamDef("bias_p_scale", 0.7, 1.4, log_scale=False, unit="x"),
+            "bias_n_scale": ParamDef("bias_n_scale", 0.7, 1.4, log_scale=False, unit="x"),
+            "bias_p_small_scale": ParamDef("bias_p_small_scale", 0.8, 1.25, log_scale=False, unit="x"),
+            "bias_n_small_scale": ParamDef("bias_n_small_scale", 0.8, 1.25, log_scale=False, unit="x"),
+            "Wcs": ParamDef("Wcs", 1e-6, 200e-6, unit="m"),
+            "Wdiffp": ParamDef("Wdiffp", 1e-6, 200e-6, unit="m"),
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            dc_path = Path(tmp) / "dc_operating_points.csv"
+            dc_path.write_text(
+                "\n".join(
+                    [
+                        "instance,model,vd,vg,vs,id,ids,gm,gds,vgs,vds,vth,vdsat,gmoverid",
+                        "Mcasp1,pch,0,0,0,0,0,0,0,0,0.12,0,0.20,0",
+                        "Mcasn1,nch,0,0,0,0,0,0,0,0,0.10,0,0.20,0",
+                        "Mcs,pch,0,0,0,0,0,0,0,0,0.15,0,0.20,0",
+                        "Mdiff1,pch,0,0,0,0,0,0,0,0,0.16,0,0.20,0",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            adjusted, changes, reasons = apply_operating_point_review_rules(
+                params,
+                dc_path,
+                "folded_cascode",
+                bounds,
+            )
+
+        self.assertGreater(adjusted["bias_p_scale"], params["bias_p_scale"])
+        self.assertGreater(adjusted["bias_n_scale"], params["bias_n_scale"])
+        self.assertGreater(adjusted["Wcs"], params["Wcs"])
+        self.assertGreater(adjusted["Wdiffp"], params["Wdiffp"])
+        self.assertIn("bias_p_scale", changes)
+        self.assertTrue(reasons)
 
     def test_apply_patch_plan_scales_sets_clamps_and_ignores_unknowns(self):
         params = {"Wcs": 10e-6, "Cc": 1e-12}
@@ -211,6 +260,62 @@ ends dut
             self.assertEqual(rows[0]["original_reward"], "1.25")
             self.assertEqual(rows[0]["changed_params"], "Cc")
 
+    def test_generate_candidate_uses_folded_op_diagnostics(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            project = root / "outputs" / "proj"
+            run_dir = workspace / "run_002"
+            diagnostics = run_dir / "diagnostics"
+            candidates_root = project / "agent_review" / "candidates"
+            run_dir.mkdir(parents=True)
+            diagnostics.mkdir(parents=True)
+            candidates_root.mkdir(parents=True)
+
+            topology = get_topology("folded_cascode")
+            circuit = topology.generate_circuit()
+            (workspace / "circuit_template.cir").write_text(
+                circuit, encoding="utf-8"
+            )
+            (run_dir / "circuit.cir").write_text(circuit, encoding="utf-8")
+            (diagnostics / "dc_operating_points.csv").write_text(
+                "\n".join(
+                    [
+                        "instance,model,vd,vg,vs,id,ids,gm,gds,vgs,vds,vth,vdsat,gmoverid",
+                        "Mcasp1,pch,0,0,0,0,0,0,0,0,0.12,0,0.20,0",
+                        "Mload,nch,0,0,0,0,0,0,0,0,0.11,0,0.20,0",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            history = {"targets": {"gain_db": 50}}
+            record = {
+                "iteration": 2,
+                "reward": 3.0,
+                "result": {"gain_db": 60},
+            }
+            bounds = {p.name: p for p in topology.get_param_space().params}
+            settings = Settings(dry_run=True, workspace_dir=str(workspace))
+
+            candidate = generate_candidate(
+                record=record,
+                history=history,
+                workspace=workspace,
+                candidates_root=candidates_root,
+                param_bounds=bounds,
+                settings=settings,
+                topology_name="folded_cascode",
+            )
+
+            self.assertIn("bias_p_scale", candidate.changes)
+            self.assertIn("bias_n_scale", candidate.changes)
+            self.assertIn("OP-guided repair", candidate.review_reason)
+            candidate_netlist = (candidate.candidate_dir / "circuit.cir").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("parameters bias_p_scale=1.1 bias_n_scale=1.1", candidate_netlist)
+
     def test_write_local_agent_review_package_outputs_context_and_template(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -254,6 +359,8 @@ ends dut
             context = (review_root / "agent_context.md").read_text(encoding="utf-8")
             plan = (review_root / "patch_plan.json").read_text(encoding="utf-8")
             self.assertIn("Local Agent BO Review Context", context)
+            self.assertIn("Topology-Specific Knowledge Base", context)
+            self.assertIn("5T OTA Optimization Guide", context)
             self.assertIn("Optimization Metrics CSV", context)
             self.assertIn("W1", context)
             self.assertIn('"iteration": 1', plan)

@@ -60,7 +60,7 @@ class OperatingPointEvaluatorTest(unittest.TestCase):
             self.assertFalse(status.passed)
             self.assertLessEqual(status.penalty, -80.0)
 
-    def test_noncritical_linear_is_light_penalty(self):
+    def test_noncritical_linear_is_reported_without_penalty(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = self._write_csv(
                 Path(tmp),
@@ -70,7 +70,8 @@ class OperatingPointEvaluatorTest(unittest.TestCase):
 
             self.assertEqual(status.critical_linear_count, 0)
             self.assertEqual(status.noncritical_linear, ["Mbias"])
-            self.assertGreater(status.penalty, -20.0)
+            self.assertEqual(status.penalty, 0.0)
+            self.assertTrue(status.passed)
 
 
 if __name__ == "__main__":

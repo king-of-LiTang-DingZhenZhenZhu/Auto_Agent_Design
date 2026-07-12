@@ -73,10 +73,10 @@ def main():
     # Display header
     _print_header(config)
 
-    # Initialize components
-    if config.dry_run:
-        config.deepseek_api_key = "dry-run"  # placeholder, LLM won't be called
-    llm = LLMClient(config)
+    # Initialize components.  The BO loop is Python/diagnostics driven by
+    # default; external LLM validation is optional and disabled unless
+    # explicitly requested in settings.
+    llm = LLMClient(config) if config.enable_llm_validation else None
     sim = Simulator(config)
     optimizer = HybridOptimizer(llm, sim, config)
 
@@ -85,7 +85,7 @@ def main():
 
 def run_from_file(
     args: argparse.Namespace,
-    llm: LLMClient,
+    llm: LLMClient | None,
     sim: Simulator,
     optimizer: HybridOptimizer,
     config: Settings,
@@ -317,11 +317,13 @@ def run_from_file(
         # gm/Id mode: initial params are gm_id/L/current, convert to W/L
         netlist_for_init = _combined_parameter_source(netlist_content, circuit_files)
         gmid_init = gmid_sizer.get_initial_gmid_params(netlist_for_init)
+        optimization_initial_params = gmid_init
         initial_params = gmid_sizer.size(gmid_init)
     else:
         initial_params = param_space.get_initial_params(
             _combined_parameter_source(netlist_content, circuit_files)
         )
+        optimization_initial_params = initial_params
 
     run_dir = config.get_run_dir(0)
     if circuit_files and circuit_files.testbenches:
@@ -335,7 +337,7 @@ def run_from_file(
         sim.render_netlist(template, initial_params, tb_paths[0], param_space=param_space,
                            w_l_grid_step=config.w_l_grid_step)
 
-    # Run primary simulation (with LLM repair on failure)
+    # Run primary simulation. Netlists are topology-generated; no external repair.
     success, log_content, error_msg = sim.run_spectre(tb_paths[0], run_dir)
 
     if not success:
@@ -413,6 +415,7 @@ def run_from_file(
         on_iteration=on_iteration,
         topology_name=topology_name_val,
         gmid_sizer=gmid_sizer,
+        initial_candidates=[optimization_initial_params],
     )
 
     # --- Output results ---
@@ -619,7 +622,7 @@ def _print_header(config: Settings):
     console.print(
         Panel(
             f"[bold]Circuit Design Agent[/bold] "
-            f"({pdk.name} | DeepSeek + Optuna) {mode}",
+            f"({pdk.name} | BO + diagnostics) {mode}",
             border_style="bright_blue",
         )
     )

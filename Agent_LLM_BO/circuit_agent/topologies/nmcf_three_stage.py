@@ -103,9 +103,7 @@ class NMCFThreeStageOTA(BaseTopology):
 
     def generate_circuit(self, params: dict[str, float] | None = None) -> str:
         """Generate the DUT .cir subcircuit netlist."""
-        p = dict(self.DEFAULT_PARAMS)
-        if params:
-            p.update(params)
+        p = self._merge_params_with_preset(params)
         pdk = get_pdk_profile()
 
         return _CIRCUIT_TEMPLATE.format(
@@ -142,10 +140,17 @@ class NMCFThreeStageOTA(BaseTopology):
     ) -> str:
         """Generate the Spectre-native testbench .scs file."""
         pdk = get_pdk_profile()
+        tb_defaults = self._testbench_defaults_with_preset(
+            {
+                "VCM": 0.3,
+                "IBIAS": 40e-6,
+                "CL": 10e-12,
+            }
+        )
         vdd = pdk.vdd
-        vcm = 0.3
-        ibias = 40e-6
-        cload = 10e-12
+        vcm = tb_defaults["VCM"]
+        ibias = tb_defaults["IBIAS"]
+        cload = tb_defaults["CL"]
 
         if params:
             vdd = params.get("VDD", vdd)
@@ -207,6 +212,20 @@ class NMCFThreeStageOTA(BaseTopology):
         """
         from models import BranchCurrentSpec, GmidTopologySpec, TransistorSpec
         pdk = get_pdk_profile()
+        pass_through_space = self._apply_param_space_overrides(ParamSpace(params=[
+            ParamDef(
+                name="Cc1", low=0.05e-12, high=10e-12,
+                log_scale=True, unit="F",
+            ),
+            ParamDef(
+                name="Rz1", low=1.0, high=100e3,
+                log_scale=True, unit="Ohm",
+            ),
+            ParamDef(
+                name="Cc2", low=0.05e-12, high=10e-12,
+                log_scale=True, unit="F",
+            ),
+        ]))
 
         return GmidTopologySpec(
             branch_currents=[
@@ -292,27 +311,14 @@ class NMCFThreeStageOTA(BaseTopology):
                     Vds_estimate=0.35,
                 ),
             ],
-            pass_through_params=[
-                ParamDef(
-                    name="Cc1", low=0.05e-12, high=10e-12,
-                    log_scale=True, unit="F",
-                ),
-                ParamDef(
-                    name="Rz1", low=1.0, high=100e3,
-                    log_scale=True, unit="Ohm",
-                ),
-                ParamDef(
-                    name="Cc2", low=0.05e-12, high=10e-12,
-                    log_scale=True, unit="F",
-                ),
-            ],
+            pass_through_params=pass_through_space.params,
         )
 
     def get_default_params(self) -> dict[str, float]:
-        return dict(self.DEFAULT_PARAMS)
+        return self._default_params_with_preset()
 
     def get_param_space(self) -> ParamSpace:
-        return ParamSpace(
+        return self._apply_param_space_overrides(ParamSpace(
             params=[
                 ParamDef(
                     name="Wtail1", low=0.5e-6, high=200e-6,
@@ -399,7 +405,7 @@ class NMCFThreeStageOTA(BaseTopology):
                     log_scale=True, unit="F",
                 ),
             ]
-        )
+        ))
 
 
 _CIRCUIT_TEMPLATE = """\

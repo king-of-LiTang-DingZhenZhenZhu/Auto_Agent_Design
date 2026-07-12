@@ -96,9 +96,7 @@ class TwoStageOTA(BaseTopology):
     # ------------------------------------------------------------------
     def generate_circuit(self, params: dict[str, float] | None = None) -> str:
         """Generate the DUT .cir subcircuit netlist."""
-        p = dict(self.DEFAULT_PARAMS)
-        if params:
-            p.update(params)
+        p = self._merge_params_with_preset(params)
         pdk = get_pdk_profile()
 
         return _CIRCUIT_TEMPLATE.format(
@@ -133,10 +131,18 @@ class TwoStageOTA(BaseTopology):
             analysis_type: "ac", "sr" (or legacy "tran"), or "st".
         """
         pdk = get_pdk_profile()
+        p = self._merge_params_with_preset(params)
+        tb_defaults = self._testbench_defaults_with_preset(
+            {
+                "VCM": 0.7,
+                "VBIAS": 0.55,
+                "CL": 2e-12,
+            }
+        )
         vdd = pdk.vdd
-        vcm = 0.7
-        vbias = 0.55     # shared bias for M5 (tail) and M7 (load)
-        cload = 2e-12   # 2 pF (typical for ADC driver)
+        vcm = tb_defaults["VCM"]
+        vbias = tb_defaults.get("VBIAS", p.get("VBIAS", 0.55))
+        cload = tb_defaults["CL"]
 
         if params:
             vdd = params.get("VDD", vdd)
@@ -219,7 +225,19 @@ class TwoStageOTA(BaseTopology):
             GmidTopologySpec,
             TransistorSpec,
         )
+        from pdk_profiles import get_param_override
         pdk = get_pdk_profile()
+        ratio_override = get_param_override(self.meta.name, "ratio_load_tail")
+        pass_through_space = self._apply_param_space_overrides(ParamSpace(params=[
+            ParamDef(
+                name="Cc", low=0.1e-12, high=10e-12,
+                log_scale=True, unit="F",
+            ),
+            ParamDef(
+                name="Rz", low=100, high=5e3,
+                log_scale=True, unit="Ohm",
+            ),
+        ]))
 
         tail_current_low = 50e-6
         if (
@@ -303,23 +321,14 @@ class TwoStageOTA(BaseTopology):
                     reference_role="tail_nmos",
                     output_role="load_nmos",
                     ratio_param="ratio_load_tail",
-                    ratio_low=1,
-                    ratio_high=3,
-                    ratio_default=2,
+                    ratio_low=int(ratio_override.get("low", 1)),
+                    ratio_high=int(ratio_override.get("high", 3)),
+                    ratio_default=int(ratio_override.get("default", 2)),
                     share_length=True,
                     derived_current_name="I_cs",
                 ),
             ],
-            pass_through_params=[
-                ParamDef(
-                    name="Cc", low=0.1e-12, high=10e-12,
-                    log_scale=True, unit="F",
-                ),
-                ParamDef(
-                    name="Rz", low=100, high=5e3,
-                    log_scale=True, unit="Ohm",
-                ),
-            ],
+            pass_through_params=pass_through_space.params,
             derived_gate_biases=[
                 DerivedGateBiasSpec(
                     role="tail_nmos",
@@ -337,13 +346,13 @@ class TwoStageOTA(BaseTopology):
     # get_default_params
     # ------------------------------------------------------------------
     def get_default_params(self) -> dict[str, float]:
-        return dict(self.DEFAULT_PARAMS)
+        return self._default_params_with_preset()
 
     # ------------------------------------------------------------------
     # get_param_space: 这是 非 gm/Id 普通物理参数模式下的 BO 搜索范围
     # ------------------------------------------------------------------
     def get_param_space(self) -> ParamSpace:
-        return ParamSpace(
+        return self._apply_param_space_overrides(ParamSpace(
             params=[
                 # --- First stage: tail current ---
                 ParamDef(
@@ -401,7 +410,7 @@ class TwoStageOTA(BaseTopology):
                     log_scale=False, unit="V",
                 ),
             ]
-        )
+        ))
 
 
 # ------------------------------------------------------------------

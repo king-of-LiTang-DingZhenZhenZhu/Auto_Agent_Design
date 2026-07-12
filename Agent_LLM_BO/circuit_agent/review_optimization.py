@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from config import Settings
-from models import NetlistTemplate, ParamDef, SimResult
+from models import NetlistTemplate, ParamDef, ParamSpace, SimResult
 from simulator import Simulator
 from summarize_metrics import build_report_from_sim_result
 from topologies import get_topology
@@ -92,6 +92,7 @@ def main() -> None:
             candidates_root=candidates_root,
             param_bounds=param_bounds,
             settings=settings,
+            topology_name=args.topology,
             patch_plan=patch_plan,
         )
         if args.simulate:
@@ -120,6 +121,7 @@ def generate_candidate(
     candidates_root: Path,
     param_bounds: dict[str, ParamDef],
     settings: Settings,
+    topology_name: str = "",
     patch_plan: dict[str, Any] | None = None,
 ) -> Candidate:
     iteration = int(record["iteration"])
@@ -136,6 +138,15 @@ def generate_candidate(
     source_text = source_netlist.read_text(encoding="utf-8")
     params = parse_parameter_values(source_text)
     params = inflate_width_params_from_instances(source_text, params)
+    template_path = workspace / "circuit_template.cir"
+    template_text = (
+        template_path.read_text(encoding="utf-8")
+        if template_path.exists()
+        else source_netlist.read_text(encoding="utf-8")
+    )
+    for name, value in parse_parameter_values(template_text).items():
+        params.setdefault(name, value)
+
     plan_entry = _plan_entry_for_iteration(patch_plan, iteration)
     if plan_entry is not None:
         adjusted, changes = apply_patch_plan(
@@ -151,17 +162,20 @@ def generate_candidate(
             targets=history.get("targets", {}),
             param_bounds=param_bounds,
         )
+        adjusted, _, op_reasons = apply_operating_point_review_rules(
+            params=adjusted,
+            diagnostics_csv=source_run_dir / "diagnostics" / "dc_operating_points.csv",
+            topology_name=topology_name,
+            param_bounds=param_bounds,
+        )
+        changes = _diff_params(params, adjusted)
         review_reason = "Rule-based fallback"
+        if op_reasons:
+            review_reason += "; OP-guided repair: " + "; ".join(op_reasons)
 
-    template_path = workspace / "circuit_template.cir"
-    template_text = (
-        template_path.read_text(encoding="utf-8")
-        if template_path.exists()
-        else source_netlist.read_text(encoding="utf-8")
-    )
     rendered = NetlistTemplate.from_netlist(template_text).render(
         adjusted,
-        param_space=_param_space_from_template(template_text, settings),
+        param_space=ParamSpace(params=list(param_bounds.values())),
         w_l_grid_step=settings.w_l_grid_step,
     )
     (candidate_dir / "circuit.cir").write_text(rendered, encoding="utf-8")
@@ -199,6 +213,12 @@ def write_local_agent_review_package(
         if guide_path.exists()
         else "No optimization review guide found."
     )
+    topology_guide_path = _topology_review_guide_path(topology_name)
+    topology_guide = (
+        topology_guide_path.read_text(encoding="utf-8")
+        if topology_guide_path.exists()
+        else f"No topology-specific guide found for {topology_name}."
+    )
     metrics_path = project / "optimization_metrics.csv"
     metrics_csv = (
         metrics_path.read_text(encoding="utf-8")
@@ -210,6 +230,7 @@ def write_local_agent_review_package(
     context = _build_local_agent_context(
         topology_name=topology_name,
         review_guide=review_guide,
+        topology_guide=topology_guide,
         metrics_csv=metrics_csv,
         history_summary=history_summary,
         candidate_context=candidate_context,
@@ -318,6 +339,84 @@ def apply_review_rules(
     return adjusted, changes
 
 
+def apply_operating_point_review_rules(
+    params: dict[str, float],
+    diagnostics_csv: Path,
+    topology_name: str,
+    param_bounds: dict[str, ParamDef],
+) -> tuple[dict[str, float], dict[str, tuple[float, float]], list[str]]:
+    """Apply folded-cascode OP-guided bias repairs from DC diagnostics."""
+    adjusted = dict(params)
+    changes: dict[str, tuple[float, float]] = {}
+    reasons: list[str] = []
+    if topology_name != "folded_cascode":
+        return adjusted, changes, reasons
+    if not diagnostics_csv.exists():
+        return adjusted, changes, reasons
+
+    problem_devices = _read_problem_op_devices(diagnostics_csv)
+    if not problem_devices:
+        return adjusted, changes, reasons
+
+    def scale(name: str, factor: float, reason: str) -> None:
+        if name not in adjusted:
+            return
+        old = adjusted[name]
+        new = _clamp_param(name, old * factor, param_bounds)
+        if math.isclose(old, new, rel_tol=1e-12, abs_tol=0.0):
+            return
+        adjusted[name] = new
+        changes[name] = (old, new)
+        if reason not in reasons:
+            reasons.append(reason)
+
+    devices = set(problem_devices)
+    p_bias_devices = {
+        "Mtailp", "Mmirr1", "Mmirr2", "Mcasp1", "Mcasp2",
+    }
+    n_bias_devices = {
+        "Mfold1", "Mfold2", "Mcasn1", "Mcasn2", "Mload",
+    }
+    if devices & p_bias_devices:
+        scale(
+            "bias_p_scale",
+            1.10,
+            "PMOS bias-controlled devices near/inside linear; increase bias_p_scale",
+        )
+    if devices & n_bias_devices:
+        scale(
+            "bias_n_scale",
+            1.10,
+            "NMOS bias-controlled devices near/inside linear; increase bias_n_scale",
+        )
+    if devices & {"M6"}:
+        scale(
+            "bias_p_small_scale",
+            1.08,
+            "PMOS small bias device near/inside linear; increase bias_p_small_scale",
+        )
+    if devices & {"M25"}:
+        scale(
+            "bias_n_small_scale",
+            1.08,
+            "NMOS small bias device near/inside linear; increase bias_n_small_scale",
+        )
+    if devices & {"Mcs"}:
+        scale(
+            "Wcs",
+            1.15,
+            "second-stage Mcs near/inside linear; increase Wcs to reduce VOD",
+        )
+    if devices & {"Mdiff1", "Mdiff2"}:
+        scale(
+            "Wdiffp",
+            1.10,
+            "input pair near/inside linear; increase Wdiffp to reduce VOD",
+        )
+
+    return adjusted, changes, reasons
+
+
 def parse_parameter_values(netlist_text: str) -> dict[str, float]:
     """Parse Spectre/HSPICE parameter declaration values from a netlist."""
     params: dict[str, float] = {}
@@ -397,6 +496,41 @@ def parse_spice_value(raw: str) -> float:
     if suffix not in scales:
         raise ValueError(f"Unknown SPICE suffix: {suffix}")
     return number * scales[suffix]
+
+
+def _read_problem_op_devices(diagnostics_csv: Path) -> list[str]:
+    """Return devices with |vds|-|vdsat| below the 50 mV guard band."""
+    devices: list[str] = []
+    with diagnostics_csv.open(newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            instance = (row.get("instance") or "").strip()
+            if not instance:
+                continue
+            try:
+                vds = abs(float(row.get("vds") or "nan"))
+                vdsat = abs(float(row.get("vdsat") or "nan"))
+            except ValueError:
+                continue
+            if not math.isfinite(vds) or not math.isfinite(vdsat):
+                continue
+            if vds - vdsat < 0.05:
+                devices.append(instance)
+    return devices
+
+
+def _diff_params(
+    before: dict[str, float],
+    after: dict[str, float],
+) -> dict[str, tuple[float, float]]:
+    changes: dict[str, tuple[float, float]] = {}
+    for name, old in before.items():
+        if name not in after:
+            continue
+        new = after[name]
+        if not math.isclose(old, new, rel_tol=1e-12, abs_tol=0.0):
+            changes[name] = (old, new)
+    return changes
 
 
 def simulate_candidate(candidate: Candidate, settings: Settings) -> None:
@@ -581,6 +715,7 @@ def _build_candidate_context(
 def _build_local_agent_context(
     topology_name: str,
     review_guide: str,
+    topology_guide: str,
     metrics_csv: str,
     history_summary: str,
     candidate_context: str,
@@ -652,12 +787,28 @@ Safety rules:
 {candidate_context.strip()}
 ```
 
-## Review Knowledge Base
+## Topology-Specific Knowledge Base
+
+```text
+{topology_guide.strip()}
+```
+
+## General Review Knowledge Base
 
 ```text
 {review_guide.strip()}
 ```
 """
+
+
+def _topology_review_guide_path(topology_name: str) -> Path:
+    return (
+        Path(__file__).resolve().parents[2]
+        / "knowledge_base"
+        / "Opamp_knowledge_base"
+        / "topologies"
+        / f"{topology_name}_optimization.md"
+    )
 
 
 def _patch_plan_template(records: list[dict[str, Any]]) -> dict[str, Any]:

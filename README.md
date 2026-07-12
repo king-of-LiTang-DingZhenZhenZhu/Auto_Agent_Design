@@ -16,10 +16,10 @@ Auto_Agent_Design/
     │   ├── config.py                  # 全局配置
     │   ├── pdk_profiles.py            # PDK profile：模型路径、器件名、VDD、尺寸约束
     │   ├── models.py                  # 数据模型
-    │   ├── optimizer.py               # HybridOptimizer：LLM + BO 协同优化
+    │   ├── optimizer.py               # HybridOptimizer：BO + diagnostics reward 优化
     │   ├── review_optimization.py     # BO 后 Review：指标缺口分析 + 候选网表生成
     │   ├── simulator.py               # Spectre 仿真调用
-    │   ├── llm_client.py              # DeepSeek LLM 客户端
+    │   ├── llm_client.py              # 可选 LLM 客户端：需求解析/实验性参数校验
     │   ├── psf_results.py             # PSF 结果解析（AC/瞬态）
     │   ├── diagnostics_export.py       # DC/AC 诊断 CSV 与可读摘要
     │   ├── gmid_lookup.py             # gm/Id 查找表与尺寸计算
@@ -34,7 +34,8 @@ Auto_Agent_Design/
     │   │   ├── five_t_ota.py          # 5T OTA
     │   │   ├── two_stage_ota.py       # 两级 Miller OTA
     │   │   ├── folded_cascode.py      # 折叠 Cascode OTA
-    │   │   └── nmcf_three_stage.py    # NMCF 三级 OTA
+    │   │   ├── nmcf_three_stage.py    # NMCF 三级 OTA
+    │   │   └── bandgap_ptat.py        # Bandgap/PTAT 层级系统拓扑
     │   │
     │   ├── virtuoso_export/           # Virtuoso SKILL 导出
     │   │   ├── exporter.py
@@ -94,10 +95,10 @@ Auto_Agent_Design/
 # 1. 激活环境
 conda activate Auto_Agent_Design
 
-# 2. 配置 LLM API
+# 2. 准备本地配置（PDK/.env；LLM API 仅在显式启用时需要）
 cd Agent_LLM_BO/circuit_agent
 cp .env.example .env
-# 编辑 .env，填入 DEEPSEEK_API_KEY
+# 按需编辑 .env；默认 BO 优化不需要 DEEPSEEK_API_KEY
 
 # 3. 一行生成网表项目
 python -c "
@@ -260,6 +261,9 @@ Agent_LLM_BO/virtuoso_runs/<project>/
 | Two-Stage Miller OTA | 45–80 dB | 10 MHz – 500 MHz | 2 |
 | Folded Cascode OTA | 60–85 dB | 1 MHz – 1 GHz | 3 |
 | NMCF Three-Stage OTA | 75–115 dB | 500 kHz – 600 MHz | 4 |
+| Bandgap/PTAT Reference | 系统级 | 系统级 | 5 |
+
+`bandgap_ptat` 使用两阶段层级流程：先把内部 folded-cascode 运放作为 child block 单独优化并验证，再把达标运放作为 frozen macro/subckt 嵌入 bandgap 顶层。bandgap 级 BO 只搜索 resistor ratio、PTAT/CTAT bias、BJT 面积比、pass device、compensation/load 等系统参数，不展开 folded-cascode 内部 W/L。相关规则见 `knowledge_base/Opamp_knowledge_base/topologies/bandgap_ptat_optimization.md`。
 
 ## gm/Id 设计方法
 
@@ -280,11 +284,12 @@ Agent_LLM_BO/virtuoso_runs/<project>/
 |------|------|
 | **BO（贝叶斯优化）** | Optuna TPE 采样，在物理参数或 gm/Id 参数空间中搜索 |
 | **Spectre + parser** | 执行 AC/SR/ST 仿真，解析 gain/GBW/PM/power/SR/ST 与诊断数据 |
-| **LLM（可选）** | 解析自然语言需求、周期性检查参数物理可行性；不负责修改拓扑网表 |
+| **Local Agent Review（可选）** | BO 后读取指标、DC OP 和拓扑知识库，生成候选 patch plan 与候选网表 |
+| **LLM（可选）** | 仅用于自然语言需求解析或实验性参数校验；BO 迭代默认不调用外部 LLM |
 
 ## PDK Profile 与约束
 
-工艺相关信息集中在 `Agent_LLM_BO/circuit_agent/pdk_profiles.py`，拓扑脚本从当前 profile 读取 Spectre include 路径、section、NMOS/PMOS/LVT model 名称、默认 VDD、VDD 允许范围、尺寸边界、gm/Id 表路径、PVT 温度列表、Spectre options 和 Virtuoso tech library。默认 profile 是 `tsmc28`。
+工艺相关信息集中在 `Agent_LLM_BO/circuit_agent/pdk_profiles.py`，拓扑脚本从当前 profile 读取 Spectre include 路径、section、NMOS/PMOS/LVT model 名称、默认 VDD、VDD 允许范围、尺寸边界、gm/Id 表路径、PVT 温度列表、Spectre options、Virtuoso tech library，以及每个 topology 的 PDK 专用初始参数 preset。默认 profile 是 `tsmc28`。
 
 可通过环境变量切换或覆盖：
 
@@ -310,7 +315,25 @@ VDD 使用优先级：单次 `params["VDD"]` 最高，其次 `.env`/环境变量
 
 晶体管类型由 topology 选择 profile 字段：`five_t_ota`、`two_stage_ota`、`nmcf_three_stage` 使用 `nmos_model/pmos_model`；`folded_cascode` 使用 `nmos_lvt_model/pmos_lvt_model`。换 PDK 时改 profile，不要在 topology 模板里硬编码 model 名。
 
-添加新工艺时，优先新增一个 PDK profile，而不是修改 topology。profile 至少需要包含：Spectre/HSPICE model include、process section、PVT corner section、VDD 范围、MOS model role、W/L 限制、gm/Id table path、Virtuoso tech lib 和 OA library path。然后运行：
+初始参数使用规则：每个 topology 仍保留通用 `DEFAULT_PARAMS` 作为 fallback；如果当前 profile 的 `topology_presets` 中提供了该 topology 的 `default_params`、`testbench_defaults` 或 `param_space_overrides`，生成网表、初始仿真、普通 BO 和 gm/Id pass-through 都优先使用 profile preset。`topology_presets` 是可选校准层，不是新增 PDK 时必须为所有拓扑填写的表；只有某个拓扑在新工艺/型号下初始工作点明显不可用或搜索范围需要微调时，才为该拓扑补 preset。换工艺或换器件型号时，应优先在 PDK profile 里新增/修改 topology preset，不要直接改 topology 源码默认值。
+
+外部 JSON profile 中可以这样写：
+
+```json
+{
+  "name": "my28_lvt",
+  "...": "...",
+  "topology_presets": {
+    "folded_cascode": {
+      "default_params": {"Lbias": 5e-7, "m_half_unit": 4, "bias_p_scale": 1.15},
+      "testbench_defaults": {"VCM": 0.35, "IBIAS": 2e-5, "CL": 1e-12},
+      "param_space_overrides": {"m_half_unit": {"low": 3, "high": 6}}
+    }
+  }
+}
+```
+
+添加新工艺时，优先新增一个 PDK profile，而不是修改 topology。profile 至少需要包含：Spectre/HSPICE model include、process section、PVT corner section、VDD 范围、MOS model role、W/L 限制、gm/Id table path、Virtuoso tech lib、OA library path，以及必要的 topology preset。然后运行：
 
 ```bash
 cd Agent_LLM_BO/circuit_agent

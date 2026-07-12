@@ -66,6 +66,56 @@ profile 同时提供常规 MOS 和 LVT MOS model 名称：
 
 当前 `five_t_ota`、`two_stage_ota`、`nmcf_three_stage` 使用常规 MOS；`folded_cascode` 使用 LVT MOS。换 PDK 时，只需要改 profile 中这些 model 名称，topology 会把对应 model 写入生成的 Spectre netlist 和 gm/Id sizing spec。
 
+## Topology 初始参数 preset
+
+不同 PDK 或同一 PDK 的不同器件型号，可能需要不同初始 W/L、bias、VCM 和搜索范围。项目通过 `PDKProfile.topology_presets` 表达这些差异，而不是把工艺专用初值写回 topology 源码。
+
+`topology_presets` 是**可选校准层**，不是“每个拓扑 × 每个工艺”都必须填写的矩阵。新增 PDK 时，先只配置模型路径、model 名、VDD、尺寸限制和 gm/Id 表；如果某个 topology 的默认初始仿真明显不工作，或者某个型号需要特定 VCM/bias/search range，再只为这个 topology 增加 preset。简单拓扑可以长期只使用通用 `DEFAULT_PARAMS`。
+
+每个 topology preset 支持三类字段：
+
+| 字段 | 作用 |
+|------|------|
+| `default_params` | 覆盖 topology 的通用 `DEFAULT_PARAMS`，影响初始网表、`initial_default/`、普通 BO 初始点和 gm/Id pass-through/fixed 参数 |
+| `testbench_defaults` | 覆盖 testbench 默认值，例如 `VCM`、`IBIAS`、`VBIAS`、`CL`；`VDD` 仍优先使用 profile 顶层 `vdd` |
+| `param_space_overrides` | 覆盖指定 BO 参数的 `low/high/log_scale/unit/max_per_finger/value_type`；`default` 可写在 JSON 中作记录，但当前初始值主要由 `default_params` 决定 |
+
+外部 JSON profile 示例：
+
+```json
+{
+  "name": "my28_lvt",
+  "spectre_model_path": "/PDKS/MY28/models/spectre/top.scs",
+  "spectre_section": "tt",
+  "...": "...",
+  "topology_presets": {
+    "folded_cascode": {
+      "default_params": {
+        "Lbias": 5e-7,
+        "m_half_unit": 4,
+        "m_load_ratio": 3,
+        "bias_p_scale": 1.15
+      },
+      "testbench_defaults": {
+        "VCM": 0.35,
+        "IBIAS": 2e-5,
+        "CL": 1e-12
+      },
+      "param_space_overrides": {
+        "m_half_unit": {"low": 3, "high": 6},
+        "bias_p_scale": {"low": 0.9, "high": 1.3}
+      }
+    }
+  }
+}
+```
+
+如果某个 profile 没有给 topology preset，系统会回退到 topology 自带的 `DEFAULT_PARAMS` 和默认搜索空间，保证旧 profile 兼容。推荐维护策略是：
+
+1. 新 PDK 先跑无 preset 的 topology dry-run/初始仿真。
+2. 只有出现初始工作点明显不可用、偏置节点不合理、搜索范围不适合该型号时，才补 `topology_presets.<topology>`。
+3. folded cascode、NMCF 这类偏置复杂拓扑优先准备 preset；5T OTA、two-stage OTA 可以先不写或只覆盖少量 `VCM/VBIAS/CL`。
+
 ## 切换或覆盖
 
 优先推荐用 profile 分组：
@@ -104,7 +154,7 @@ export VIRTUOSO_PDK_LIB_PATH=/my/pdk/tsmcN28
 推荐新增一个 profile，而不是改 topology：
 
 1. 在 `pdk_profiles.py` 的 `PDK_PROFILES` 中新增一项，或准备外部 JSON 并设置 `PDK_PROFILE_FILE=/path/to/profile.json`。
-2. 填写 Spectre/HSPICE model include、nominal section、PVT process section、VDD 范围、MOS model role、尺寸约束、gm/Id table path、Virtuoso tech lib 和 OA library path。
+2. 填写 Spectre/HSPICE model include、nominal section、PVT process section、VDD 范围、MOS model role、尺寸约束、gm/Id table path、Virtuoso tech lib、OA library path，以及必要 topology 的 `topology_presets`。
 3. 确认 gm/Id 表包含 topology 需要的 model 名。常规拓扑需要 `nmos/pmos`；folded cascode 当前需要 `nmos_lvt/pmos_lvt`。
 4. 运行 profile 验证：
 

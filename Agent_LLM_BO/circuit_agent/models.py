@@ -782,8 +782,12 @@ class NetlistTemplate:
         # Start with all params (so gm/Id-mode params not in param_space survive),
         # then overlay finger-split versions for params that ARE in param_space.
         resolved = dict(params)
+        unitless_param_names: set[str] = set()
         if param_space:
             resolved.update(param_space.resolve_params(params, max_width_per_finger))
+            unitless_param_names = {
+                p.name for p in param_space.params if p.unit == "x"
+            }
 
         content = self.template_content
 
@@ -803,7 +807,12 @@ class NetlistTemplate:
                 if w_l_grid_step:
                     value = _quantize_wl(name, value, w_l_grid_step)
                 pattern = rf"(\b{re.escape(name)}\s*=\s*)\S+"
-                replacement = rf"\g<1>{_format_spice_value(value)}"
+                formatted = (
+                    _format_plain_number(value)
+                    if name in unitless_param_names
+                    else _format_spice_value(value)
+                )
+                replacement = rf"\g<1>{formatted}"
                 line = re.sub(pattern, replacement, line, flags=re.IGNORECASE)
             lines[i] = line
         content = "\n".join(lines)
@@ -1012,6 +1021,11 @@ def _format_spice_value(value: float) -> str:
             scaled = value / threshold
             return f"{_format_no_exponent(scaled)}{suffix}"
     return f"{value:.3e}"
+
+
+def _format_plain_number(value: float) -> str:
+    """Format a dimensionless parameter without engineering suffixes."""
+    return _format_no_exponent(value)
 
 
 def format_spice_value(value: float) -> str:

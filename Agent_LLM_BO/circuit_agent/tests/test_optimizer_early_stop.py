@@ -74,6 +74,21 @@ class OptimizerEarlyStopTest(unittest.TestCase):
 
         self.assertLess(excessive_pm, moderate_pm)
 
+    def test_feasible_reward_always_beats_infeasible_reward(self):
+        targets = DesignTarget(gain_db=60, bandwidth_hz=100e6, power_w=1e-3)
+        optimizer = self._optimizer()
+
+        feasible = optimizer.compute_reward(
+            SimResult(gain_db=60, bandwidth_hz=100e6, power_w=1e-3),
+            targets,
+        )
+        almost_feasible = optimizer.compute_reward(
+            SimResult(gain_db=59.99, bandwidth_hz=1e9, power_w=1e-6),
+            targets,
+        )
+
+        self.assertGreater(feasible, almost_feasible)
+
     def test_reward_penalizes_critical_linear_operating_point(self):
         targets = DesignTarget(gain_db=40, bandwidth_hz=100e6)
         result = SimResult(gain_db=45, bandwidth_hz=120e6)

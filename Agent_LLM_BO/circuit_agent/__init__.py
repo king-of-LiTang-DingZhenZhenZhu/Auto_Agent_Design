@@ -1,1 +1,1 @@
-"""Circuit Agent - LLM + BO Automated Circuit Optimization."""
+"""Circuit Agent - topology-constrained BO for automated circuit optimization."""
