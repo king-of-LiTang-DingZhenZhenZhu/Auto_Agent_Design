@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -133,6 +134,10 @@ def evaluate_dc_operating_points(
             vdsat = _safe_float(row.get("vdsat"))
             margin = None if vds is None or vdsat is None else abs(vds) - abs(vdsat)
             region = _region_from_margin(margin, near_edge_margin_v)
+            is_critical = (
+                instance in critical
+                or _leaf_instance_name(instance) in critical
+            )
             device = OperatingPointDevice(
                 instance=instance,
                 model=(row.get("model") or "").strip(),
@@ -143,7 +148,7 @@ def evaluate_dc_operating_points(
                 gmoverid=_safe_float(row.get("gmoverid")),
                 margin_v=margin,
                 region=region,
-                critical=instance in critical,
+                critical=is_critical,
             )
             status.devices.append(device)
             if margin is not None:
@@ -169,6 +174,12 @@ def compute_op_penalty(status: OperatingPointStatus) -> float:
         120.0 * status.critical_linear_count
         + 35.0 * status.critical_near_edge_count
     )
+
+
+def _leaf_instance_name(instance: str) -> str:
+    """Return the device name below Spectre hierarchy prefixes."""
+
+    return re.split(r"[./:]", instance)[-1]
 
 
 def _region_from_margin(

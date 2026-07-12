@@ -60,6 +60,19 @@ class OperatingPointEvaluatorTest(unittest.TestCase):
             self.assertFalse(status.passed)
             self.assertLessEqual(status.penalty, -80.0)
 
+    def test_hierarchical_instance_matches_leaf_critical_name(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write_csv(
+                Path(tmp),
+                "Xdut.Mmirr2,pch,0,0,0,0,0,1e-3,1e-5,0.6,0.12,0.4,0.20,10",
+            )
+            status = evaluate_dc_operating_points(path, {"Mmirr2"})
+
+            self.assertEqual(status.critical_linear, ["Xdut.Mmirr2"])
+            self.assertEqual(status.noncritical_linear, [])
+            self.assertFalse(status.passed)
+            self.assertEqual(status.penalty, -120.0)
+
     def test_noncritical_linear_is_reported_without_penalty(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = self._write_csv(
