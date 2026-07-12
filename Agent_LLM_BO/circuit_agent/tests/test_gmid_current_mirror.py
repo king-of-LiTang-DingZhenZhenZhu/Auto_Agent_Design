@@ -54,7 +54,7 @@ class GmidCurrentMirrorTest(unittest.TestCase):
         self.assertAlmostEqual(physical["VBIAS"], 0.55)
 
     def test_folded_cascode_uses_bias_ratio_derived_currents(self):
-        spec = get_topology("folded_cascode").get_gmid_spec()
+        spec = get_topology("folded_cascode_two_stage").get_gmid_spec()
         params = {
             "m_half_unit": 3,
             "m_load_ratio": 5,
@@ -62,10 +62,6 @@ class GmidCurrentMirrorTest(unittest.TestCase):
             "gm_id_diff_pair_pmos": 14,
             "L_diff_pair_pmos": 120e-9,
             "gm_id_cs_pmos": 12,
-            "bias_p_scale": 1.2,
-            "bias_n_scale": 0.85,
-            "bias_p_small_scale": 1.1,
-            "bias_n_small_scale": 0.9,
             # Attempts to override fixed bias params should be ignored.
             "Wbp_big": 99e-6,
             "Wbn_big": 99e-6,
@@ -86,26 +82,18 @@ class GmidCurrentMirrorTest(unittest.TestCase):
             6.0e-6,
         )
         self.assertAlmostEqual(
-            physical["Wbp_small"] * physical["m_Wbp_small"],
-            1.5e-6,
-        )
-        self.assertAlmostEqual(
             physical["Wbn_big"] * physical["m_Wbn_big"],
             6.0e-6,
-        )
-        self.assertAlmostEqual(
-            physical["Wbn_small"] * physical["m_Wbn_small"],
-            1.5e-6,
         )
         self.assertAlmostEqual(physical["Lbias"], 500e-9)
         self.assertAlmostEqual(physical["Wbp_big"] / physical["nf_Wbp_big"], 1.5e-6)
         self.assertAlmostEqual(physical["Wbn_big"] / physical["nf_Wbn_big"], 1.5e-6)
         self.assertEqual(physical["m_half_unit"], 3)
         self.assertEqual(physical["m_load_ratio"], 5)
-        self.assertEqual(physical["bias_p_scale"], 1.2)
-        self.assertEqual(physical["bias_n_scale"], 0.85)
-        self.assertEqual(physical["bias_p_small_scale"], 1.1)
-        self.assertEqual(physical["bias_n_small_scale"], 0.9)
+        self.assertNotIn("Wbp_small", physical)
+        self.assertNotIn("Wbn_small", physical)
+        self.assertNotIn("bias_p_scale", physical)
+        self.assertNotIn("bias_n_scale", physical)
 
 
 if __name__ == "__main__":

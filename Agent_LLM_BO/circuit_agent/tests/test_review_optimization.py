@@ -86,20 +86,12 @@ class ReviewOptimizationTests(unittest.TestCase):
         self.assertIn("Cc", changes)
         self.assertIn("Rz", changes)
 
-    def test_apply_operating_point_rules_adjusts_folded_bias_scales(self):
+    def test_apply_operating_point_rules_adjusts_folded_device_sizes(self):
         params = {
-            "bias_p_scale": 1.0,
-            "bias_n_scale": 1.0,
-            "bias_p_small_scale": 1.0,
-            "bias_n_small_scale": 1.0,
             "Wcs": 20e-6,
             "Wdiffp": 10e-6,
         }
         bounds = {
-            "bias_p_scale": ParamDef("bias_p_scale", 0.7, 1.4, log_scale=False, unit="x"),
-            "bias_n_scale": ParamDef("bias_n_scale", 0.7, 1.4, log_scale=False, unit="x"),
-            "bias_p_small_scale": ParamDef("bias_p_small_scale", 0.8, 1.25, log_scale=False, unit="x"),
-            "bias_n_small_scale": ParamDef("bias_n_small_scale", 0.8, 1.25, log_scale=False, unit="x"),
             "Wcs": ParamDef("Wcs", 1e-6, 200e-6, unit="m"),
             "Wdiffp": ParamDef("Wdiffp", 1e-6, 200e-6, unit="m"),
         }
@@ -127,11 +119,9 @@ class ReviewOptimizationTests(unittest.TestCase):
                 bounds,
             )
 
-        self.assertGreater(adjusted["bias_p_scale"], params["bias_p_scale"])
-        self.assertGreater(adjusted["bias_n_scale"], params["bias_n_scale"])
         self.assertGreater(adjusted["Wcs"], params["Wcs"])
         self.assertGreater(adjusted["Wdiffp"], params["Wdiffp"])
-        self.assertIn("bias_p_scale", changes)
+        self.assertNotIn("bias_p_scale", changes)
         self.assertTrue(reasons)
 
     def test_apply_patch_plan_scales_sets_clamps_and_ignores_unknowns(self):
@@ -308,13 +298,14 @@ ends dut
                 topology_name="folded_cascode",
             )
 
-            self.assertIn("bias_p_scale", candidate.changes)
-            self.assertIn("bias_n_scale", candidate.changes)
-            self.assertIn("OP-guided repair", candidate.review_reason)
+            self.assertNotIn("bias_p_scale", candidate.changes)
+            self.assertNotIn("bias_n_scale", candidate.changes)
+            self.assertNotIn("OP-guided repair", candidate.review_reason)
             candidate_netlist = (candidate.candidate_dir / "circuit.cir").read_text(
                 encoding="utf-8"
             )
-            self.assertIn("parameters bias_p_scale=1.1 bias_n_scale=1.1", candidate_netlist)
+            self.assertNotIn("bias_p_scale", candidate_netlist)
+            self.assertNotIn("bias_n_scale", candidate_netlist)
 
     def test_write_local_agent_review_package_outputs_context_and_template(self):
         with tempfile.TemporaryDirectory() as tmp:

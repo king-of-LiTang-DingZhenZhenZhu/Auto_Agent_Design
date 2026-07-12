@@ -64,7 +64,7 @@ profile 同时提供常规 MOS 和 LVT MOS model 名称：
 | LVT NMOS | `nmos_lvt_model` | `nch_lvt_mac` |
 | LVT PMOS | `pmos_lvt_model` | `pch_lvt_mac` |
 
-当前 `five_t_ota`、`two_stage_ota`、`nmcf_three_stage` 使用常规 MOS；`folded_cascode` 使用 LVT MOS。换 PDK 时，只需要改 profile 中这些 model 名称，topology 会把对应 model 写入生成的 Spectre netlist 和 gm/Id sizing spec。
+当前 `five_t_ota`、`two_stage_ota`、`nmcf_three_stage` 使用常规 MOS；`folded_cascode` 与 `folded_cascode_two_stage` 使用 LVT MOS。换 PDK 时，只需要改 profile 中这些 model 名称，topology 会把对应 model 写入生成的 Spectre netlist 和 gm/Id sizing spec。
 
 ## Topology 初始参数 preset
 
@@ -89,12 +89,12 @@ profile 同时提供常规 MOS 和 LVT MOS model 名称：
   "spectre_section": "tt",
   "...": "...",
   "topology_presets": {
-    "folded_cascode": {
+    "folded_cascode_two_stage": {
       "default_params": {
         "Lbias": 5e-7,
+        "Wbp_big": 6e-6,
         "m_half_unit": 4,
-        "m_load_ratio": 3,
-        "bias_p_scale": 1.15
+        "m_load_ratio": 3
       },
       "testbench_defaults": {
         "VCM": 0.35,
@@ -102,8 +102,7 @@ profile 同时提供常规 MOS 和 LVT MOS model 名称：
         "CL": 1e-12
       },
       "param_space_overrides": {
-        "m_half_unit": {"low": 3, "high": 6},
-        "bias_p_scale": {"low": 0.9, "high": 1.3}
+        "m_half_unit": {"low": 3, "high": 6}
       }
     }
   }

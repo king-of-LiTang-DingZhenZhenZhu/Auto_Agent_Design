@@ -92,6 +92,7 @@ W = Id_target / id_w(gm_id, L, Vds, Vbs)
 five_t_ota
 two_stage_ota
 folded_cascode
+folded_cascode_two_stage
 nmcf_three_stage
 ```
 
@@ -157,4 +158,3 @@ BO 给出 L = 350nm
 - `auto`：保持当前行为，有 gm/Id spec 就启用。
 - `gmid`：强制 gm/Id，不可用就报错。
 - `physical`：强制使用普通物理参数 BO，不调用 gm/Id lookup。
-

@@ -38,8 +38,15 @@
 - **功耗**: 高于普通 two_stage_ota（折叠支路额外消耗电流）
 - **适用场景**: 高增益 + 高带宽；普通 two_stage_ota 增益或带宽不足；需要更高第一级输出阻抗/更大第一级增益
 - **复杂度**: 3
-- **升级路径**: nmcf_three_stage（当 folded_cascode 增益/负载驱动仍不足时）
-- **偏置设计**: `folded_cascode` 拓扑端口顺序为 `vip vin vout ibias vdd vss`。外部输入一个参考电流 `ibias`，子电路内部偏置网络生成 PMOS 尾电流偏置、PMOS cascode 偏置和 NMOS cascode 偏置；折叠支路与第二级 NMOS 负载共用内部生成的 NMOS 偏置。
+- **升级路径**: `folded_cascode_two_stage`（需要更高增益或负载驱动时）
+- **偏置设计**: `folded_cascode` 是单级结构，端口顺序为 `vip vin vout ibias vdd vss`，折叠高阻节点直接作为 `vout`。
+
+### Folded-Cascode Two-Stage OTA
+
+- **结构**: 单级 folded cascode 后接 PMOS common-source 第二级，并使用 Cc/Rz Miller 补偿
+- **拓扑名**: `folded_cascode_two_stage`
+- **适用场景**: 单级 folded cascode 增益或负载驱动不足，但尚不需要三级 NMCF
+- **升级路径**: `nmcf_three_stage`
 
 ### NMCF Three-Stage OTA
 
@@ -64,7 +71,8 @@
 ├─ gain ≥ 60 dB → 两级架构
 │  ├─ BW > 500 MHz → folded_cascode
 │  ├─ 普通 two_stage_ota 优化后带宽不足/第一级增益不足 → folded_cascode
-│  ├─ folded_cascode 优化后增益/负载驱动不足 → nmcf_three_stage
+│  ├─ folded_cascode 增益/驱动不足 → folded_cascode_two_stage
+│  ├─ folded_cascode_two_stage 仍不足 → nmcf_three_stage
 │  └─ BW ≤ 500 MHz 且功耗敏感 → two_stage_ota
 │
 ├─ gain < 60 dB → 5t_ota
@@ -78,7 +86,7 @@
 
 1. **简单优先**: 在满足指标的前提下，优先选择复杂度最低的拓扑
 2. **升级路径**: 如果当前拓扑经过 BO 优化仍不达标，按升级路径自动切换
-3. **指标平衡**: 高增益和高带宽通常冲突；普通 two_stage_ota 用五管第一级，复杂度和功耗较低；folded_cascode 用折叠 Cascode 第一级，换取更高第一级输出阻抗和更强增益/带宽潜力；nmcf_three_stage 用三级增益和 nested Miller 补偿换取极高增益/负载能力
+3. **指标平衡**: `folded_cascode` 是高速单级结构；`folded_cascode_two_stage` 用额外 CS 级和 Miller 补偿换取更高增益与驱动；`nmcf_three_stage` 面向极高增益/负载能力。
 4. **PDK 约束**: 所有拓扑严格遵循 TSMC N28 PDK 约束（L≥30nm, W/nf≤2.6um；有效宽度为 W*m）
 
 ## 什么时候使用 folded_cascode

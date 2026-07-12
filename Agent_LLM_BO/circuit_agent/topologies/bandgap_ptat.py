@@ -21,7 +21,7 @@ from typing import Any
 from models import CircuitFiles, DesignTarget, ParamDef, ParamSpace, format_spice_value
 from pdk_profiles import get_pdk_profile, spectre_include_line
 from topologies.base import BaseTopology, TopologyMeta
-from topologies.folded_cascode import FoldedCascodeOTA
+from topologies.folded_cascode_two_stage import FoldedCascodeTwoStageOTA
 
 
 class BandgapPTAT(BaseTopology):
@@ -213,7 +213,7 @@ class BandgapPTAT(BaseTopology):
             if power_budget
             else float(custom.get("opamp_power_w", 1e-3)),
             load_cap_f=float(custom.get("opamp_load_cap_f", load_cap or 1e-12)),
-            topology_hint="folded_cascode",
+            topology_hint="folded_cascode_two_stage",
             custom_specs={
                 "derived_from": "bandgap_ptat",
                 "error_amplifier_role": "frozen_macro",
@@ -224,7 +224,7 @@ class BandgapPTAT(BaseTopology):
         source = _get_optional_path(params, "opamp_netlist", "OPAMP_NETLIST")
         if source is not None and source.exists():
             return _sanitize_child_netlist(source.read_text(encoding="utf-8"))
-        return _sanitize_child_netlist(FoldedCascodeOTA().generate_circuit())
+        return _sanitize_child_netlist(FoldedCascodeTwoStageOTA().generate_circuit())
 
     def _write_child_block_metadata(
         self,
@@ -241,7 +241,7 @@ class BandgapPTAT(BaseTopology):
             opamp_source = str(opamp_netlist_path)
         else:
             (child_dir / "circuit.cir").write_text(
-                FoldedCascodeOTA().generate_circuit(),
+                FoldedCascodeTwoStageOTA().generate_circuit(),
                 encoding="utf-8",
             )
             opamp_source = "fallback:folded_cascode_default"
@@ -279,7 +279,7 @@ class BandgapPTAT(BaseTopology):
         req = json.loads(req_path.read_text(encoding="utf-8"))
         req["hierarchical_blocks"] = {
             "opamp": {
-                "topology": "folded_cascode",
+                "topology": "folded_cascode_two_stage",
                 "ports": ["vip", "vin", "vout", "ibias", "vdd", "vss"],
                 "netlist_source": opamp_source,
                 "results_source": results_source,
@@ -320,7 +320,20 @@ def _sanitize_child_netlist(netlist: str) -> str:
         if stripped.startswith("include "):
             continue
         kept.append(line)
-    return "\n".join(kept).strip()
+    sanitized = "\n".join(kept).strip()
+    sanitized = sanitized.replace(
+        "subckt folded_cascode (",
+        "subckt folded_cascode_two_stage (",
+    )
+    sanitized = sanitized.replace(
+        "ends folded_cascode\n",
+        "ends folded_cascode_two_stage\n",
+    )
+    if sanitized.endswith("ends folded_cascode"):
+        sanitized = sanitized[: -len("ends folded_cascode")] + (
+            "ends folded_cascode_two_stage"
+        )
+    return sanitized
 
 
 def _fmt(value: float) -> str:
@@ -351,7 +364,7 @@ RtopDev (vref nfb) resistor r=Rtop
 RbotDev (nfb vss) resistor r=Rbot
 
 // Folded-cascode error amplifier macro. Port order: vip vin vout ibias vdd vss
-Xopamp (nsense nfb vctrl opibias vdd vss) folded_cascode
+Xopamp (nsense nfb vctrl opibias vdd vss) folded_cascode_two_stage
 
 // PMOS pass device controlled by the error amplifier.
 Mpass (vref vctrl vdd vdd) {pmos_model} w=Wpass l=Lpass nf=1

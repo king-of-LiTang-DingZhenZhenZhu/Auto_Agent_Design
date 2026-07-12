@@ -33,7 +33,8 @@ Auto_Agent_Design/
     │   │   ├── base.py                # 抽象基类
     │   │   ├── five_t_ota.py          # 5T OTA
     │   │   ├── two_stage_ota.py       # 两级 Miller OTA
-    │   │   ├── folded_cascode.py      # 折叠 Cascode OTA
+    │   │   ├── folded_cascode.py      # 单级折叠 Cascode OTA
+    │   │   ├── folded_cascode_two_stage.py # 折叠 Cascode + CS 二级 OTA
     │   │   ├── nmcf_three_stage.py    # NMCF 三级 OTA
     │   │   └── bandgap_ptat.py        # Bandgap/PTAT 层级系统拓扑
     │   │
@@ -313,7 +314,7 @@ python Agent_LLM_BO/circuit_agent/pdk_profiles.py --validate --require-gmid --re
 
 VDD 使用优先级：单次 `params["VDD"]` 最高，其次 `.env`/环境变量 `VDD`，最后才是 profile 默认值。profile 中的 `VDD_MIN/VDD_MAX` 记录该工艺允许范围，例如 TSMC28 当前为 `0.9~1.1V`；如果希望 BO 搜索 VDD，应在 topology 的 `get_param_space()` 或显式 `params.json` 中加入 `VDD`，范围不要超过 profile 允许值。
 
-晶体管类型由 topology 选择 profile 字段：`five_t_ota`、`two_stage_ota`、`nmcf_three_stage` 使用 `nmos_model/pmos_model`；`folded_cascode` 使用 `nmos_lvt_model/pmos_lvt_model`。换 PDK 时改 profile，不要在 topology 模板里硬编码 model 名。
+晶体管类型由 topology 选择 profile 字段：`five_t_ota`、`two_stage_ota`、`nmcf_three_stage` 使用 `nmos_model/pmos_model`；`folded_cascode` 与 `folded_cascode_two_stage` 使用 `nmos_lvt_model/pmos_lvt_model`。换 PDK 时改 profile，不要在 topology 模板里硬编码 model 名。
 
 初始参数使用规则：每个 topology 仍保留通用 `DEFAULT_PARAMS` 作为 fallback；如果当前 profile 的 `topology_presets` 中提供了该 topology 的 `default_params`、`testbench_defaults` 或 `param_space_overrides`，生成网表、初始仿真、普通 BO 和 gm/Id pass-through 都优先使用 profile preset。`topology_presets` 是可选校准层，不是新增 PDK 时必须为所有拓扑填写的表；只有某个拓扑在新工艺/型号下初始工作点明显不可用或搜索范围需要微调时，才为该拓扑补 preset。换工艺或换器件型号时，应优先在 PDK profile 里新增/修改 topology preset，不要直接改 topology 源码默认值。
 
@@ -324,8 +325,8 @@ VDD 使用优先级：单次 `params["VDD"]` 最高，其次 `.env`/环境变量
   "name": "my28_lvt",
   "...": "...",
   "topology_presets": {
-    "folded_cascode": {
-      "default_params": {"Lbias": 5e-7, "m_half_unit": 4, "bias_p_scale": 1.15},
+    "folded_cascode_two_stage": {
+      "default_params": {"Lbias": 5e-7, "m_half_unit": 4},
       "testbench_defaults": {"VCM": 0.35, "IBIAS": 2e-5, "CL": 1e-12},
       "param_space_overrides": {"m_half_unit": {"low": 3, "high": 6}}
     }

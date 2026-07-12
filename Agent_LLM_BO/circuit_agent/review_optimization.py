@@ -349,7 +349,7 @@ def apply_operating_point_review_rules(
     adjusted = dict(params)
     changes: dict[str, tuple[float, float]] = {}
     reasons: list[str] = []
-    if topology_name != "folded_cascode":
+    if topology_name not in {"folded_cascode", "folded_cascode_two_stage"}:
         return adjusted, changes, reasons
     if not diagnostics_csv.exists():
         return adjusted, changes, reasons
@@ -371,36 +371,6 @@ def apply_operating_point_review_rules(
             reasons.append(reason)
 
     devices = set(problem_devices)
-    p_bias_devices = {
-        "Mtailp", "Mmirr1", "Mmirr2", "Mcasp1", "Mcasp2",
-    }
-    n_bias_devices = {
-        "Mfold1", "Mfold2", "Mcasn1", "Mcasn2", "Mload",
-    }
-    if devices & p_bias_devices:
-        scale(
-            "bias_p_scale",
-            1.10,
-            "PMOS bias-controlled devices near/inside linear; increase bias_p_scale",
-        )
-    if devices & n_bias_devices:
-        scale(
-            "bias_n_scale",
-            1.10,
-            "NMOS bias-controlled devices near/inside linear; increase bias_n_scale",
-        )
-    if devices & {"M6"}:
-        scale(
-            "bias_p_small_scale",
-            1.08,
-            "PMOS small bias device near/inside linear; increase bias_p_small_scale",
-        )
-    if devices & {"M25"}:
-        scale(
-            "bias_n_small_scale",
-            1.08,
-            "NMOS small bias device near/inside linear; increase bias_n_small_scale",
-        )
     if devices & {"Mcs"}:
         scale(
             "Wcs",

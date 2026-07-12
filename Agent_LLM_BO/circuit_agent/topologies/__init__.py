@@ -12,6 +12,7 @@ from topologies.bandgap_ptat import BandgapPTAT
 from topologies.base import BaseTopology, TopologyMeta
 from topologies.five_t_ota import FiveTOTA
 from topologies.folded_cascode import FoldedCascodeOTA
+from topologies.folded_cascode_two_stage import FoldedCascodeTwoStageOTA
 from topologies.nmcf_three_stage import NMCFThreeStageOTA
 from topologies.two_stage_ota import TwoStageOTA
 
@@ -25,6 +26,7 @@ TOPOLOGY_REGISTRY: dict[str, type[BaseTopology]] = {
     "5t_ota": FiveTOTA,
     "two_stage_ota": TwoStageOTA,
     "folded_cascode": FoldedCascodeOTA,
+    "folded_cascode_two_stage": FoldedCascodeTwoStageOTA,
     "nmcf_three_stage": NMCFThreeStageOTA,
     "bandgap_ptat": BandgapPTAT,
 }

@@ -239,24 +239,22 @@ class OptimizerConfigTest(unittest.TestCase):
             profile_json = self._write_unit_profile(
                 root,
                 {
-                    "folded_cascode": {
+                    "folded_cascode_two_stage": {
                         "default_params": {
                             "Lbias": 500e-9,
                             "Wbp_big": 6e-6,
                             "m_half_unit": 4,
                             "m_load_ratio": 3,
-                            "bias_p_scale": 1.15,
                         },
                         "param_space_overrides": {
                             "m_half_unit": {"low": 3, "high": 5},
-                            "bias_p_scale": {"low": 0.9, "high": 1.3},
                         },
                     }
                 },
             )
 
             with patch.dict("os.environ", {"PDK_PROFILE_FILE": str(profile_json)}):
-                topology = get_topology("folded_cascode")
+                topology = get_topology("folded_cascode_two_stage")
                 defaults = topology.get_default_params()
                 self.assertEqual(defaults["Lbias"], 500e-9)
                 self.assertEqual(defaults["m_half_unit"], 4)
@@ -266,15 +264,12 @@ class OptimizerConfigTest(unittest.TestCase):
                 self.assertIn("parameters Lbias=500n", circuit)
                 self.assertIn("parameters Wbp_big=6u*Lbias", circuit)
                 self.assertIn("parameters m_half_unit=4 m_load_ratio=3", circuit)
-                self.assertIn("parameters bias_p_scale=1.15", circuit)
 
                 spec = topology.get_gmid_spec()
                 self.assertEqual(spec.fixed_params["Wbp_big"], 6e-6)
                 params = {param.name: param for param in spec.build_param_space().params}
                 self.assertEqual(params["m_half_unit"].low, 3)
                 self.assertEqual(params["m_half_unit"].high, 5)
-                self.assertEqual(params["bias_p_scale"].low, 0.9)
-                self.assertEqual(params["bias_p_scale"].high, 1.3)
 
     def test_topology_preset_validation_reports_unknown_entries(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -467,7 +462,7 @@ class OptimizerConfigTest(unittest.TestCase):
             self.assertNotIn("L_cs_pmos", gmid_params)
 
     def test_folded_bias_ratio_param_space_replaces_current_source_sizes(self):
-        topology = get_topology("folded_cascode")
+        topology = get_topology("folded_cascode_two_stage")
         params = {param.name: param for param in topology.get_param_space().params}
 
         removed = {
@@ -491,24 +486,15 @@ class OptimizerConfigTest(unittest.TestCase):
         self.assertIn("Lbias", params)
         self.assertAlmostEqual(params["Lbias"].low, 300e-9)
         self.assertAlmostEqual(params["Lbias"].high, 600e-9)
-        expected_scale_ranges = {
-            "bias_p_scale": (0.7, 1.4),
-            "bias_n_scale": (0.7, 1.4),
-            "bias_p_small_scale": (0.8, 1.25),
-            "bias_n_small_scale": (0.8, 1.25),
-        }
-        for name, (low, high) in expected_scale_ranges.items():
-            self.assertIn(name, params)
-            self.assertEqual(params[name].low, low)
-            self.assertEqual(params[name].high, high)
-            self.assertFalse(params[name].log_scale)
         for name in (
             "Wbp_big", "Wbp_small", "Wbn_big", "Wbn_small",
+            "bias_p_scale", "bias_n_scale",
+            "bias_p_small_scale", "bias_n_small_scale",
         ):
             self.assertNotIn(name, params)
 
     def test_folded_gmid_space_uses_bias_ratio_currents(self):
-        spec = get_topology("folded_cascode").get_gmid_spec()
+        spec = get_topology("folded_cascode_two_stage").get_gmid_spec()
         params = {param.name: param for param in spec.build_param_space().params}
         transistor_roles = {transistor.role for transistor in spec.transistors}
 
@@ -532,12 +518,10 @@ class OptimizerConfigTest(unittest.TestCase):
         self.assertIn("m_load_ratio", params)
         self.assertIn("Lbias", params)
         for name in (
-            "bias_p_scale",
-            "bias_n_scale",
-            "bias_p_small_scale",
-            "bias_n_small_scale",
+            "bias_p_scale", "bias_n_scale",
+            "bias_p_small_scale", "bias_n_small_scale",
         ):
-            self.assertIn(name, params)
+            self.assertNotIn(name, params)
         self.assertNotIn("m_load_extra", params)
         for name in (
             "Wbp_big", "Wbp_small", "Wbn_big", "Wbn_small",
@@ -554,15 +538,9 @@ class OptimizerConfigTest(unittest.TestCase):
         self.assertEqual(spec.fixed_params["Wbp_big"], 4.8e-6)
         self.assertEqual(spec.fixed_params["nf_Wbp_big"], 4)
         self.assertEqual(spec.fixed_params["m_Wbp_big"], 1)
-        self.assertEqual(spec.fixed_params["Wbp_small"], 1.2e-6)
-        self.assertEqual(spec.fixed_params["nf_Wbp_small"], 1)
-        self.assertEqual(spec.fixed_params["m_Wbp_small"], 1)
         self.assertEqual(spec.fixed_params["Wbn_big"], 4.8e-6)
         self.assertEqual(spec.fixed_params["nf_Wbn_big"], 4)
         self.assertEqual(spec.fixed_params["m_Wbn_big"], 1)
-        self.assertEqual(spec.fixed_params["Wbn_small"], 1.2e-6)
-        self.assertEqual(spec.fixed_params["nf_Wbn_small"], 1)
-        self.assertEqual(spec.fixed_params["m_Wbn_small"], 1)
         self.assertEqual(spec.fixed_width_scale_param, "Lbias")
         self.assertEqual(spec.fixed_width_scale_reference, 400e-9)
 
@@ -609,7 +587,7 @@ class OptimizerConfigTest(unittest.TestCase):
                 )
 
     def test_folded_cascode_uses_lvt_gmid_models(self):
-        spec = get_topology("folded_cascode").get_gmid_spec()
+        spec = get_topology("folded_cascode_two_stage").get_gmid_spec()
         transistors = {transistor.role: transistor for transistor in spec.transistors}
 
         self.assertEqual(transistors["diff_pair_pmos"].model, "pch_lvt_mac")
@@ -631,7 +609,7 @@ class OptimizerConfigTest(unittest.TestCase):
         self.assertEqual(two_stage_params["VBIAS"].high, 0.85)
 
     def test_folded_derived_currents_follow_bias_ratios(self):
-        spec = get_topology("folded_cascode").get_gmid_spec()
+        spec = get_topology("folded_cascode_two_stage").get_gmid_spec()
         currents = {
             current.name: current.resolve(
                 {"m_half_unit": 3, "m_load_ratio": 5}

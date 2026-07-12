@@ -127,7 +127,7 @@ PDK_PROFILES: dict[str, PDKProfile] = {
                     "CL": 2e-12,
                 },
             },
-            "folded_cascode": {
+            "folded_cascode_two_stage": {
                 "default_params": {
                     "Wdiffp": 12e-6,
                     "Ldiffp": 80e-9,
@@ -138,19 +138,9 @@ PDK_PROFILES: dict[str, PDKProfile] = {
                     "Wbp_big": 4.8e-6,
                     "nf_Wbp_big": 4,
                     "m_Wbp_big": 1,
-                    "Wbp_small": 1.2e-6,
-                    "nf_Wbp_small": 1,
-                    "m_Wbp_small": 1,
                     "Wbn_big": 4.8e-6,
                     "nf_Wbn_big": 4,
                     "m_Wbn_big": 1,
-                    "Wbn_small": 1.2e-6,
-                    "nf_Wbn_small": 1,
-                    "m_Wbn_small": 1,
-                    "bias_p_scale": 1.0,
-                    "bias_n_scale": 1.0,
-                    "bias_p_small_scale": 1.0,
-                    "bias_n_small_scale": 1.0,
                     "Cc": 250e-15,
                     "Rz": 1000.0,
                 },

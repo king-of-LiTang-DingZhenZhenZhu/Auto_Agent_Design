@@ -43,15 +43,24 @@ _FOLDED_CASCODE_PLACEMENT: dict[str, Placement] = {
     "M1": Placement(-700, 650, "R0"),
     "M2": Placement(-500, 650, "R0"),
     "M4": Placement(-300, 650, "R0"),
-    "M5": Placement(-100, -450, "R0"),
-    "M6": Placement(-100, 650, "R0"),
+    "M3_1": Placement(-400, 850, "R0"),
+    "M3_2": Placement(-200, 850, "R0"),
+    "M3_3": Placement(0, 850, "R0"),
+    "M3_4": Placement(200, 850, "R0"),
+    "M3_5": Placement(400, 850, "R0"),
+    "M3_6": Placement(600, 850, "R0"),
     "M7": Placement(100, 650, "R0"),
     "M8": Placement(100, -450, "R0"),
     "M9": Placement(300, -450, "R0"),
     "M10": Placement(500, -450, "R0"),
     "M11": Placement(700, -450, "R0"),
     "M12": Placement(900, -450, "R0"),
-    "M13": Placement(1100, -450, "R0"),
+    "M13_1": Placement(100, -650, "R0"),
+    "M13_2": Placement(300, -650, "R0"),
+    "M13_3": Placement(500, -650, "R0"),
+    "M13_4": Placement(700, -650, "R0"),
+    "M13_5": Placement(900, -650, "R0"),
+    "M13_6": Placement(1100, -650, "R0"),
     "Mtailp": Placement(0, 350, "R0"),
     "Mdiff1": Placement(-300, 100, "R0"),
     "Mdiff2": Placement(300, 100, "R0"),
@@ -92,7 +101,7 @@ def _template_for(subckt_name: str) -> dict[str, Placement]:
         return _FIVE_T_PLACEMENT
     if normalized in {"two_stage_ota", "twostage_ota"}:
         return _TWO_STAGE_PLACEMENT
-    if normalized == "folded_cascode":
+    if normalized in {"folded_cascode", "folded_cascode_two_stage"}:
         return _FOLDED_CASCODE_PLACEMENT
     return {}
 

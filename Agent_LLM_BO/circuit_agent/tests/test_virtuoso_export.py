@@ -16,15 +16,24 @@ from virtuoso_export.skill_writer import write_skill
 
 class VirtuosoExportTest(unittest.TestCase):
     def test_parse_folded_cascode_instances_and_ports(self):
-        netlist = get_topology("folded_cascode").generate_circuit()
+        netlist = get_topology("folded_cascode_two_stage").generate_circuit()
 
         ir = parse_netlist(netlist)
 
-        self.assertEqual(ir.subckt_name, "folded_cascode")
+        self.assertEqual(ir.subckt_name, "folded_cascode_two_stage")
         self.assertEqual(ir.ports, ["vip", "vin", "vout", "ibias", "vdd", "vss"])
 
         mos_instances = [inst for inst in ir.instances if inst.kind == "mos"]
-        self.assertEqual(len(mos_instances), 28)
+        self.assertEqual(len(mos_instances), 36)
+
+        m3_1 = next(inst for inst in ir.instances if inst.name == "M3_1")
+        m3_6 = next(inst for inst in ir.instances if inst.name == "M3_6")
+        m13_1 = next(inst for inst in ir.instances if inst.name == "M13_1")
+        m13_6 = next(inst for inst in ir.instances if inst.name == "M13_6")
+        self.assertEqual(m3_1.nodes, ["VB2", "VB2", "net5_1", "vdd"])
+        self.assertEqual(m3_6.nodes, ["net5_5", "VB2", "vdd", "vdd"])
+        self.assertEqual(m13_1.nodes, ["VB3", "VB3", "net2_1", "vss"])
+        self.assertEqual(m13_6.nodes, ["net2_5", "VB3", "vss", "vss"])
 
         mtailp = next(inst for inst in ir.instances if inst.name == "Mtailp")
         self.assertEqual(mtailp.model, "pch_lvt_mac")
@@ -35,7 +44,7 @@ class VirtuosoExportTest(unittest.TestCase):
         self.assertEqual(mtailp.params["m"], "4")
 
     def test_parse_resistor_and_capacitor(self):
-        netlist = get_topology("folded_cascode").generate_circuit()
+        netlist = get_topology("folded_cascode_two_stage").generate_circuit()
 
         ir = parse_netlist(netlist)
 

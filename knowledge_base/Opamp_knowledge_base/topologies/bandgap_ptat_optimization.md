@@ -22,7 +22,7 @@ vip vin vout ibias vdd vss
 The bandgap topology instantiates it as:
 
 ```text
-Xopamp (nsense nfb vctrl opibias vdd vss) folded_cascode
+Xopamp (nsense nfb vctrl opibias vdd vss) folded_cascode_two_stage
 ```
 
 ## First-Pass Opamp Targets
@@ -45,7 +45,7 @@ Optimize only system parameters in the first version:
 - `Wpass`, `Lpass`
 - `Ccomp`, `Cload`
 
-Folded-cascode internal parameters such as `Wdiffp`, `Lbias`, `m_half_unit`, `bias_p_scale`, `Wcs`, `Cc`, and `Rz` belong to the child opamp optimization stage, not the bandgap stage.
+Folded-cascode internal parameters such as `Wdiffp`, `Lbias`, `m_half_unit`, `Wcs`, `Cc`, and `Rz` belong to the child opamp optimization stage, not the bandgap stage.
 
 ## Failure Feedback
 
@@ -55,4 +55,3 @@ If bandgap nominal or PVT fails:
 - Startup too slow: increase startup/bias current or reduce excessive compensation.
 - Line regulation poor: increase opamp gain/GBW requirement and rerun the child opamp stage.
 - PVT corner collapse caused by opamp headroom: inspect child folded-cascode diagnostics and rerun opamp Review/BO before changing bandgap-level parameters.
-

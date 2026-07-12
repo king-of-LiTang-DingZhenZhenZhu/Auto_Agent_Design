@@ -1,4 +1,4 @@
-"""Single-stage PMOS-input folded-cascode OTA.
+"""Folded-Cascode Miller OTA -- PMOS-input folded cascode + PMOS second stage.
 
 Reference: /Desktop/Knowleage_Base/01-电路拓扑/两级密勒补偿运放.md
 
@@ -12,10 +12,19 @@ Topology:
       Mmirr1/2   -- PMOS current-mirror devices
       Mcasp1/2   -- PMOS cascode devices
 
+  Second Stage:
+      Mcs        -- PMOS common-source amplifier (gate <- stage1_out)
+      Mload      -- NMOS current-source load
+
+  Compensation:
+      Cc         -- Miller capacitor between stage1_out and vout
+      Rz         -- Nulling resistor in series with Cc
+
 Bias simplification:
   The external ibias pin accepts a reference current.  The subcircuit contains
   a compact MOS bias generator that creates the PMOS tail bias, PMOS cascode
-  bias and NMOS cascode bias for the folded branches.
+  bias, NMOS cascode bias, and the shared NMOS current-source gate bias for the
+  folded branches and second-stage load.
 
 Port order: vip vin vout ibias vdd vss
 """
@@ -54,34 +63,41 @@ def _bias_l(name: str) -> ParamDef:
     )
 
 
-class FoldedCascodeOTA(BaseTopology):
-    """Single-stage folded-cascode OTA.
+class FoldedCascodeTwoStageOTA(BaseTopology):
+    """Folded-cascode plus common-source two-stage OTA.
 
-    The folded-cascode high-impedance node is exposed directly as ``vout``.
+    PMOS input pair -> folded NMOS cascodes -> PMOS cascode mirror ->
+    PMOS common-source second stage.  Compared with the 5T first stage used by
+    TwoStageOTA, the folded-cascode first stage has higher output resistance
+    and is intended for high-gain, high-GBW targets.
     """
 
     meta = TopologyMeta(
-        name="folded_cascode",
-        display_name="Folded-Cascode OTA",
+        name="folded_cascode_two_stage",
+        display_name="Folded-Cascode Two-Stage OTA",
         description=(
-            "Single-stage PMOS-input folded-cascode OTA with its "
-            "high-impedance first-stage node exposed as the output."
+            "Two-stage OTA with a PMOS-input folded-cascode first stage, "
+            "PMOS common-source second stage, and Miller compensation. "
+            "High gain (60-85 dB), higher GBW than a basic two-stage OTA."
         ),
-        min_gain_db=45,
-        max_gain_db=75,
+        min_gain_db=50,
+        max_gain_db=85,
         min_gbw_hz=10e6,
         max_gbw_hz=1e9,
-        typical_power_w=1.5e-3,
-        complexity=2,
-        escalation="folded_cascode_two_stage",
+        typical_power_w=3e-3,
+        complexity=3,
+        escalation="nmcf_three_stage",
     )
 
     DEFAULT_PARAMS: dict[str, float] = {
         # PMOS input differential pair
         "Wdiffp": 12e-6,
         "Ldiffp": 80e-9,
+        # Second-stage PMOS common-source amplifier
+        "Wcs": 30e-6,
         # Bias-ratio current mirrors
         "m_half_unit": 2,
+        "m_load_ratio": 2,
         # Internal reference-bias generator
         "Lbias": 400e-9,
         "Wbp_big": 4.8e-6,
@@ -90,6 +106,9 @@ class FoldedCascodeOTA(BaseTopology):
         "Wbn_big": 4.8e-6,
         "nf_Wbn_big": 4,
         "m_Wbn_big": 1,
+        # Compensation
+        "Cc": 250e-15,
+        "Rz": 1000.0,
     }
 
     def generate_circuit(self, params: dict[str, float] | None = None) -> str:
@@ -97,6 +116,9 @@ class FoldedCascodeOTA(BaseTopology):
         p = self._merge_params_with_preset(params)
         pdk = get_pdk_profile()
         p["m_tail_unit"] = 2 * int(round(p["m_half_unit"]))
+        p["m_load_unit"] = (
+            int(round(p["m_half_unit"])) * int(round(p["m_load_ratio"]))
+        )
 
         return _CIRCUIT_TEMPLATE.format(
             spectre_include=spectre_include_line(pdk),
@@ -104,14 +126,18 @@ class FoldedCascodeOTA(BaseTopology):
             nmos_lvt_model=pdk.nmos_lvt_model,
             Wdiffp=_fmt(p["Wdiffp"]),
             Ldiffp=_fmt(p["Ldiffp"]),
+            Wcs=_fmt(p["Wcs"]),
             Lbias=_fmt(p["Lbias"]),
             nf_Wbp_big=int(round(p.get("nf_Wbp_big", 1))),
             m_Wbp_big=int(round(p.get("m_Wbp_big", 1))),
             nf_Wbn_big=int(round(p.get("nf_Wbn_big", 1))),
             m_Wbn_big=int(round(p.get("m_Wbn_big", 1))),
             m_half_unit=int(round(p["m_half_unit"])),
+            m_load_ratio=int(round(p["m_load_ratio"])),
             Wbp_big=_fmt(p["Wbp_big"]),
             Wbn_big=_fmt(p["Wbn_big"]),
+            Cc=_fmt(p["Cc"]),
+            Rz=_fmt(p["Rz"]),
         )
 
     def generate_testbench(
@@ -197,6 +223,8 @@ class FoldedCascodeOTA(BaseTopology):
             "Mmirr2",
             "Mcasp1",
             "Mcasp2",
+            "Mcs",
+            "Mload",
         }
 
     def get_param_space(self) -> ParamSpace:
@@ -211,6 +239,10 @@ class FoldedCascodeOTA(BaseTopology):
                     log_scale=True, unit="m",
                 ),
                 ParamDef(
+                    name="Wcs", low=0.5e-6, high=200e-6,
+                    log_scale=True, unit="m", max_per_finger=2.6e-6,
+                ),
+                ParamDef(
                     name="Lbias", low=300e-9, high=600e-9,
                     log_scale=True, unit="m",
                 ),
@@ -218,11 +250,23 @@ class FoldedCascodeOTA(BaseTopology):
                     name="m_half_unit", low=2, high=6,
                     log_scale=False, unit="x", value_type="int",
                 ),
+                ParamDef(
+                    name="m_load_ratio", low=2, high=8,
+                    log_scale=False, unit="x", value_type="int",
+                ),
+                ParamDef(
+                    name="Cc", low=0.1e-12, high=5e-12,
+                    log_scale=True, unit="F",
+                ),
+                ParamDef(
+                    name="Rz", low=1.0, high=100e3,
+                    log_scale=True, unit="Ohm",
+                ),
             ]
         ))
 
     def get_gmid_spec(self, targets=None):
-        """Return the gm/Id search definition for the single-stage OTA."""
+        """Return gm/Id spec for folded cascode — reduces 26 → 17 params."""
         from models import DerivedBranchCurrentSpec, GmidTopologySpec, TransistorSpec
         pdk = get_pdk_profile()
         defaults = self._default_params_with_preset()
@@ -232,8 +276,20 @@ class FoldedCascodeOTA(BaseTopology):
                 log_scale=False, unit="x", value_type="int",
             ),
             ParamDef(
+                name="m_load_ratio", low=2, high=8,
+                log_scale=False, unit="x", value_type="int",
+            ),
+            ParamDef(
                 name="Lbias", low=300e-9, high=600e-9,
                 log_scale=True, unit="m",
+            ),
+            ParamDef(
+                name="Cc", low=0.1e-12, high=5e-12,
+                log_scale=True, unit="F",
+            ),
+            ParamDef(
+                name="Rz", low=100, high=10e3,
+                log_scale=True, unit="Ohm",
             ),
         ]))
 
@@ -251,6 +307,14 @@ class FoldedCascodeOTA(BaseTopology):
                     multiplier_param="m_half_unit",
                     multiplier_scale=2.0,
                 ),
+                DerivedBranchCurrentSpec(
+                    name="I_cs",
+                    unit_current=20e-6,
+                    multiplier_param="m_half_unit",
+                    multiplier_scale=1.0,
+                    extra_param="m_load_ratio",
+                    extra_mode="multiply",
+                ),
             ],
             transistors=[
                 # -- PMOS diff pair (each side carries I_tail / 2) --
@@ -262,6 +326,16 @@ class FoldedCascodeOTA(BaseTopology):
                     gm_id_low=10, gm_id_high=15, gm_id_default=12,
                     L_low=60e-9, L_high=500e-9, L_default=80e-9,
                     Vds_estimate=0.25, Vbs=-0.2, multiplicity=2,
+                ),
+                # -- Second-stage PMOS common-source amplifier --
+                TransistorSpec(
+                    role="cs_pmos",
+                    w_param="Wcs", l_param="Lbias",
+                    model=pdk.pmos_lvt_model,
+                    current_source="I_cs", current_fraction=1.0,
+                    gm_id_low=8, gm_id_high=15, gm_id_default=12,
+                    L_low=300e-9, L_high=600e-9, L_default=400e-9,
+                    Vds_estimate=0.6,
                 ),
             ],
             pass_through_params=pass_through_space.params,
@@ -280,22 +354,23 @@ class FoldedCascodeOTA(BaseTopology):
 
 
 _CIRCUIT_TEMPLATE = """\
-// folded_cascode.cir -- Single-Stage Folded-Cascode OTA (Spectre native syntax)
+// folded_cascode_two_stage.cir -- Folded-Cascode Miller OTA (Spectre native syntax)
 simulator lang=spectre insensitive=yes
 
 {spectre_include}
 
-parameters Wdiffp={Wdiffp} Ldiffp={Ldiffp}
+parameters Wdiffp={Wdiffp} Ldiffp={Ldiffp} Wcs={Wcs}
 parameters Lbias={Lbias} Lbias_ref=400n
 
 parameters nf_Wbp_big={nf_Wbp_big} m_Wbp_big={m_Wbp_big}
 parameters nf_Wbn_big={nf_Wbn_big} m_Wbn_big={m_Wbn_big}
 parameters Wbp_big={Wbp_big}*Lbias/Lbias_ref
 parameters Wbn_big={Wbn_big}*Lbias/Lbias_ref
-parameters m_half_unit={m_half_unit}
-parameters m_tail_unit=2*m_half_unit
+parameters m_half_unit={m_half_unit} m_load_ratio={m_load_ratio}
+parameters m_tail_unit=2*m_half_unit m_load_unit=m_half_unit*m_load_ratio
+parameters Cc={Cc} Rz={Rz}
 
-subckt folded_cascode (vip vin vout ibias vdd vss)
+subckt folded_cascode_two_stage (vip vin vout ibias vdd vss)
 // Internal bias generator
 M2 (ibias ibias vdd vdd) {pmos_lvt_model} l=Lbias w=Wbp_big m=m_Wbp_big nf=nf_Wbp_big 
 
@@ -335,25 +410,31 @@ M4 (net4 VB4 vss vss) {nmos_lvt_model} l=Lbias w=Wbn_big m=m_Wbn_big nf=nf_Wbn_b
 
 // PMOS input differential pair
 Mtailp (ntail VB1 vdd vdd) {pmos_lvt_model} w=Wbp_big l=Lbias nf=nf_Wbp_big m=m_tail_unit*m_Wbp_big
-Mdiff1 (nfold_l vip ntail vdd) {pmos_lvt_model} w=Wdiffp l=Ldiffp nf=1
-Mdiff2 (nfold_r vin ntail vdd) {pmos_lvt_model} w=Wdiffp l=Ldiffp nf=1
+Mdiff1 (nfold_l vin ntail vdd) {pmos_lvt_model} w=Wdiffp l=Ldiffp nf=1
+Mdiff2 (nfold_r vip ntail vdd) {pmos_lvt_model} w=Wdiffp l=Ldiffp nf=1
 
 // NMOS folded branches and common-gate cascodes
 Mfold1 (nfold_l VB4 vss vss) {nmos_lvt_model} w=Wbn_big l=Lbias nf=nf_Wbn_big m=m_tail_unit*m_Wbn_big
 Mfold2 (nfold_r VB4 vss vss) {nmos_lvt_model} w=Wbn_big l=Lbias nf=nf_Wbn_big m=m_tail_unit*m_Wbn_big
 Mcasn1 (pmirr VB3 nfold_l vss) {nmos_lvt_model} w=Wbn_big l=Lbias nf=nf_Wbn_big m=m_half_unit*m_Wbn_big
-Mcasn2 (vout VB3 nfold_r vss) {nmos_lvt_model} w=Wbn_big l=Lbias nf=nf_Wbn_big m=m_half_unit*m_Wbn_big
+Mcasn2 (nstage1 VB3 nfold_r vss) {nmos_lvt_model} w=Wbn_big l=Lbias nf=nf_Wbn_big m=m_half_unit*m_Wbn_big
 
 // PMOS low-voltage cascode current-mirror load
 Mmirr1 (npm_l pmirr vdd vdd) {pmos_lvt_model} w=Wbp_big l=Lbias nf=nf_Wbp_big m=m_half_unit*m_Wbp_big
 Mmirr2 (npm_r pmirr vdd vdd) {pmos_lvt_model} w=Wbp_big l=Lbias nf=nf_Wbp_big m=m_half_unit*m_Wbp_big
 Mcasp1 (pmirr VB2 npm_l vdd) {pmos_lvt_model} w=Wbp_big l=Lbias nf=nf_Wbp_big m=m_half_unit*m_Wbp_big
-Mcasp2 (vout VB2 npm_r vdd) {pmos_lvt_model} w=Wbp_big l=Lbias nf=nf_Wbp_big m=m_half_unit*m_Wbp_big
-ends folded_cascode
+Mcasp2 (nstage1 VB2 npm_r vdd) {pmos_lvt_model} w=Wbp_big l=Lbias nf=nf_Wbp_big m=m_half_unit*m_Wbp_big
+
+// Second stage and Miller compensation
+Mcs (vout nstage1 vdd vdd) {pmos_lvt_model} w=Wcs l=Lbias nf=1
+Mload (vout VB4 vss vss) {nmos_lvt_model} w=Wbn_big l=Lbias nf=nf_Wbn_big m=m_load_unit*m_Wbn_big
+Rz (nstage1 n_rz) resistor r=Rz
+Cc (n_rz vout) capacitor c=Cc
+ends folded_cascode_two_stage
 """
 
 _TB_AC_TEMPLATE = """\
-// tb_folded_cascode_ac.scs -- Folded-Cascode OTA differential AC analysis
+// tb_folded_cascode_two_stage_ac.scs -- Folded-Cascode OTA differential AC analysis
 simulator lang=spectre insensitive=yes
 
 include "circuit.cir"
@@ -368,7 +449,7 @@ VIPsrc (vinp vcm) vsource type=dc dc=0 mag=1
 Rfb (vout vinn) resistor r=1G
 Cfb (vinn 0) capacitor c=1
 
-Xdut (vinp vinn vout ibias vdd vss) folded_cascode
+Xdut (vinp vinn vout ibias vdd vss) folded_cascode_two_stage
 CLload (vout 0) capacitor c=CL
 
 tempOption options temp=27
@@ -382,7 +463,7 @@ save VDDsrc:p
 """
 
 _TB_SR_TEMPLATE = """\
-// tb_folded_cascode_sr.scs -- Unity-gain large-signal slew-rate analysis
+// tb_folded_cascode_two_stage_sr.scs -- Unity-gain large-signal slew-rate analysis
 simulator lang=spectre insensitive=yes
 
 include "circuit.cir"
@@ -396,7 +477,7 @@ IBIASsrc (ibias vss) isource type=dc dc=IBIAS
 VIPsrc (vinp 0) vsource type=pulse val0=VLOW val1=VHIGH delay=2n rise=100p fall=100p width=50n period=100n
 VFBsrc (vin vout) vsource type=dc dc=0
 
-Xdut (vinp vin vout ibias vdd vss) folded_cascode
+Xdut (vinp vin vout ibias vdd vss) folded_cascode_two_stage
 CLload (vout 0) capacitor c=CL
 
 tempOption options temp=27
@@ -407,7 +488,7 @@ save vinp vout
 """
 
 _TB_ST_TEMPLATE = """\
-// tb_folded_cascode_st.scs -- Unity-gain 0.1% settling-time analysis
+// tb_folded_cascode_two_stage_st.scs -- Unity-gain 0.1% settling-time analysis
 simulator lang=spectre insensitive=yes
 
 include "circuit.cir"
@@ -421,7 +502,7 @@ IBIASsrc (ibias vss) isource type=dc dc=IBIAS
 VIPsrc (vinp 0) vsource type=pulse val0=VLOW val1=VHIGH delay=5n rise=100p fall=100p width=50n period=100n
 VFBsrc (vin vout) vsource type=dc dc=0
 
-Xdut (vinp vin vout ibias vdd vss) folded_cascode
+Xdut (vinp vin vout ibias vdd vss) folded_cascode_two_stage
 CLload (vout 0) capacitor c=CL
 
 tempOption options temp=27
