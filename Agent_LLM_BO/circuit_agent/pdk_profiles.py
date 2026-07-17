@@ -17,6 +17,44 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 @dataclass(frozen=True)
+class VoltageDomainProfile:
+    """One voltage domain and its available NMOS/PMOS threshold flavors."""
+
+    name: str
+    vdd: float
+    vdd_min: float
+    vdd_max: float
+    model_flavors: dict[str, dict[str, str]]
+    max_device_voltage: float | None = None
+    spectre_model_path: str = ""
+    spectre_section: str = ""
+    hspice_model_path: str = ""
+    hspice_section: str = ""
+    process_sections: dict[str, str] = field(default_factory=dict)
+    gmid_table_path: str = ""
+    pvt_temperatures_c: tuple[float, ...] = ()
+    min_l: float | None = None
+    max_width_per_finger: float | None = None
+    min_width_per_finger: float | None = None
+
+    def model_for(self, polarity: str, flavor: str = "svt") -> str:
+        """Return one model by polarity and threshold flavor."""
+
+        normalized_polarity = polarity.lower().replace("mos", "mos")
+        normalized_flavor = flavor.lower()
+        try:
+            return self.model_flavors[normalized_polarity][normalized_flavor]
+        except KeyError as exc:
+            available = ", ".join(
+                sorted(self.model_flavors.get(normalized_polarity, {}))
+            ) or "none"
+            raise ValueError(
+                f"Voltage domain '{self.name}' has no {normalized_polarity} "
+                f"model with flavor '{normalized_flavor}' (available: {available})"
+            ) from exc
+
+
+@dataclass(frozen=True)
 class PDKProfile:
     """Process-specific paths, model names, and basic design limits."""
 
@@ -42,23 +80,47 @@ class PDKProfile:
     virtuoso_tech_lib: str
     virtuoso_pdk_lib_path: str
     topology_presets: dict[str, dict[str, object]] = field(default_factory=dict)
+    voltage_domains: dict[str, VoltageDomainProfile] = field(default_factory=dict)
+    active_voltage_domain: str = ""
 
     def to_dict(self) -> dict[str, object]:
         """Return a JSON-serializable representation."""
         data = asdict(self)
         data["spectre_options"] = list(self.spectre_options)
         data["pvt_temperatures_c"] = list(self.pvt_temperatures_c)
+        for domain in data["voltage_domains"].values():
+            domain["pvt_temperatures_c"] = list(domain["pvt_temperatures_c"])
         return data
 
     @property
     def model_names(self) -> dict[str, str]:
         """Return the standard model-role mapping for this profile."""
-        return {
+        models = {
             "nmos": self.nmos_model,
             "pmos": self.pmos_model,
             "nmos_lvt": self.nmos_lvt_model,
             "pmos_lvt": self.pmos_lvt_model,
         }
+        if self.active_voltage_domain and self.active_voltage_domain in self.voltage_domains:
+            domain = self.voltage_domains[self.active_voltage_domain]
+            for polarity, flavors in domain.model_flavors.items():
+                for flavor, model in flavors.items():
+                    models[f"{polarity}_{flavor}"] = model
+        return models
+
+    def resolve_model(self, role: str) -> str:
+        """Resolve ``nmos:lvt`` or legacy ``nmos_lvt`` model-role syntax."""
+
+        normalized = role.lower().replace(":", "_")
+        try:
+            return self.model_names[normalized]
+        except KeyError as exc:
+            available = ", ".join(sorted(self.model_names))
+            raise ValueError(
+                f"Unknown model role '{role}' for PDK '{self.name}' "
+                f"domain '{self.active_voltage_domain or 'default'}'. "
+                f"Available: {available}"
+            ) from exc
 
 
 PDK_PROFILES: dict[str, PDKProfile] = {
@@ -90,6 +152,20 @@ PDK_PROFILES: dict[str, PDKProfile] = {
         spectre_options=("rawfmt=psfascii", "soft_bin=allmodels"),
         virtuoso_tech_lib="tsmcN28",
         virtuoso_pdk_lib_path="/PDKS/TSMC28nm/tsmcN28",
+        voltage_domains={
+            "core_0p9": VoltageDomainProfile(
+                name="core_0p9",
+                vdd=0.9,
+                vdd_min=0.9,
+                vdd_max=1.1,
+                max_device_voltage=1.1,
+                model_flavors={
+                    "nmos": {"svt": "nch_mac", "lvt": "nch_lvt_mac"},
+                    "pmos": {"svt": "pch_mac", "lvt": "pch_lvt_mac"},
+                },
+            ),
+        },
+        active_voltage_domain="core_0p9",
         topology_presets={
             "5t_ota": {
                 "default_params": {
@@ -109,21 +185,22 @@ PDK_PROFILES: dict[str, PDKProfile] = {
             },
             "two_stage_ota": {
                 "default_params": {
-                    "Wtail": 5e-6,
-                    "Ltail": 200e-9,
+                    "Wbias": 5e-6,
+                    "Lbias": 200e-9,
+                    "m_tail_unit": 2,
+                    "ratio_load_tail": 2,
                     "Wdiff": 10e-6,
                     "Ldiff": 60e-9,
                     "Wmirr": 5e-6,
                     "Lmirr": 100e-9,
                     "Wcs": 20e-6,
-                    "Wload": 10e-6,
-                    "Lload": 200e-9,
                     "Cc": 500e-15,
                     "Rz": 1000.0,
+                    "IBIAS": 20e-6,
                 },
                 "testbench_defaults": {
                     "VCM": 0.7,
-                    "VBIAS": 0.55,
+                    "IBIAS": 20e-6,
                     "CL": 2e-12,
                 },
             },
@@ -185,7 +262,10 @@ PDK_PROFILES: dict[str, PDKProfile] = {
 }
 
 
-def get_pdk_profile(name: str | None = None) -> PDKProfile:
+def get_pdk_profile(
+    name: str | None = None,
+    voltage_domain: str | None = None,
+) -> PDKProfile:
     """Return a configured PDK profile.
 
     Selection order:
@@ -197,18 +277,109 @@ def get_pdk_profile(name: str | None = None) -> PDKProfile:
 
     external_file = os.getenv("PDK_PROFILE_FILE")
     if external_file and not name:
-        return _apply_env_overrides(_load_external_profile(external_file))
+        profile = _load_external_profile(external_file)
+        return _select_profile_domain(profile, voltage_domain)
 
     selected = name or os.getenv("CIRCUIT_AGENT_PDK") or os.getenv("PDK_PROFILE")
     selected = (selected or "tsmc28").strip()
     selected_path = Path(selected).expanduser()
     if selected_path.suffix.lower() in {".json"} and selected_path.exists():
-        return _apply_env_overrides(_load_external_profile(selected_path))
+        profile = _load_external_profile(selected_path)
+        return _select_profile_domain(profile, voltage_domain)
     try:
-        return _apply_env_overrides(PDK_PROFILES[selected])
+        return _select_profile_domain(PDK_PROFILES[selected], voltage_domain)
     except KeyError as exc:
         known = ", ".join(sorted(PDK_PROFILES))
         raise ValueError(f"Unknown PDK profile '{selected}'. Known profiles: {known}") from exc
+
+
+def get_pdk_profile_for_params(
+    params: dict[str, object] | None = None,
+) -> PDKProfile:
+    """Resolve the PDK domain selected by project/topology parameters.
+
+    ``VOLTAGE_DOMAIN`` is preferred; ``voltage_domain`` is accepted for JSON
+    and Python callers. An explicit parameter overrides ``PDK_VOLTAGE_DOMAIN``.
+    """
+
+    values = params or {}
+    domain = values.get("VOLTAGE_DOMAIN", values.get("voltage_domain"))
+    return get_pdk_profile(voltage_domain=str(domain) if domain else None)
+
+
+def _select_profile_domain(
+    profile: PDKProfile,
+    requested_domain: str | None,
+) -> PDKProfile:
+    """Apply legacy env overrides without splitting an explicit domain bundle."""
+
+    explicit_domain = requested_domain or os.getenv("PDK_VOLTAGE_DOMAIN")
+    if explicit_domain:
+        return _resolve_voltage_domain(_apply_env_overrides(profile), explicit_domain)
+    return _apply_env_overrides(_resolve_voltage_domain(profile, None))
+
+
+def _resolve_voltage_domain(
+    profile: PDKProfile,
+    requested_domain: str | None,
+) -> PDKProfile:
+    """Return a profile projected onto one named voltage domain."""
+
+    selected = (
+        requested_domain or profile.active_voltage_domain
+    )
+    if not selected:
+        return profile
+    if not profile.voltage_domains:
+        if requested_domain or os.getenv("PDK_VOLTAGE_DOMAIN"):
+            raise ValueError(
+                f"PDK profile '{profile.name}' has no voltage_domains; "
+                f"cannot select '{selected}'"
+            )
+        return profile
+    try:
+        domain = profile.voltage_domains[selected]
+    except KeyError as exc:
+        available = ", ".join(sorted(profile.voltage_domains))
+        raise ValueError(
+            f"Unknown voltage domain '{selected}' for PDK '{profile.name}'. "
+            f"Available: {available}"
+        ) from exc
+
+    def model(polarity: str, flavor: str, fallback: str) -> str:
+        return domain.model_flavors.get(polarity, {}).get(flavor, fallback)
+
+    return replace(
+        profile,
+        spectre_model_path=domain.spectre_model_path or profile.spectre_model_path,
+        spectre_section=domain.spectre_section or profile.spectre_section,
+        hspice_model_path=domain.hspice_model_path or profile.hspice_model_path,
+        hspice_section=domain.hspice_section or profile.hspice_section,
+        process_sections=domain.process_sections or profile.process_sections,
+        nmos_model=model("nmos", "svt", profile.nmos_model),
+        pmos_model=model("pmos", "svt", profile.pmos_model),
+        nmos_lvt_model=model("nmos", "lvt", profile.nmos_lvt_model),
+        pmos_lvt_model=model("pmos", "lvt", profile.pmos_lvt_model),
+        vdd=domain.vdd,
+        vdd_min=domain.vdd_min,
+        vdd_max=domain.vdd_max,
+        pvt_temperatures_c=(
+            domain.pvt_temperatures_c or profile.pvt_temperatures_c
+        ),
+        min_l=domain.min_l if domain.min_l is not None else profile.min_l,
+        max_width_per_finger=(
+            domain.max_width_per_finger
+            if domain.max_width_per_finger is not None
+            else profile.max_width_per_finger
+        ),
+        min_width_per_finger=(
+            domain.min_width_per_finger
+            if domain.min_width_per_finger is not None
+            else profile.min_width_per_finger
+        ),
+        gmid_table_path=domain.gmid_table_path or profile.gmid_table_path,
+        active_voltage_domain=selected,
+    )
 
 
 def spectre_include_line(profile: PDKProfile | None = None) -> str:
@@ -314,6 +485,33 @@ def validate_pdk_profile(
         errors.append("finger width limits must be positive")
     if pdk.min_width_per_finger > pdk.max_width_per_finger:
         errors.append("min_width_per_finger exceeds max_width_per_finger")
+
+    for domain_name, domain in pdk.voltage_domains.items():
+        if domain.name != domain_name:
+            errors.append(
+                f"voltage domain key '{domain_name}' does not match name "
+                f"'{domain.name}'"
+            )
+        if domain.vdd <= 0 or domain.vdd_min <= 0 or domain.vdd_max <= 0:
+            errors.append(f"voltage domain '{domain_name}' VDD values must be positive")
+        elif not domain.vdd_min <= domain.vdd <= domain.vdd_max:
+            errors.append(
+                f"voltage domain '{domain_name}' vdd={domain.vdd:g} is outside "
+                f"[{domain.vdd_min:g}, {domain.vdd_max:g}]"
+            )
+        if (
+            domain.max_device_voltage is not None
+            and domain.vdd_max > domain.max_device_voltage
+        ):
+            errors.append(
+                f"voltage domain '{domain_name}' vdd_max={domain.vdd_max:g} "
+                f"exceeds max_device_voltage={domain.max_device_voltage:g}"
+            )
+        for polarity in ("nmos", "pmos"):
+            if not domain.model_flavors.get(polarity):
+                errors.append(
+                    f"voltage domain '{domain_name}' has no {polarity} flavors"
+                )
 
     model_roles = pdk.model_names
     for role in required_model_roles or ():
@@ -477,7 +675,34 @@ def _coerce_profile(data: dict[str, object]) -> PDKProfile:
     else:
         options = tuple(options)
     values["spectre_options"] = options
+    raw_domains = dict(values.get("voltage_domains") or {})
+    values["voltage_domains"] = {
+        name: _coerce_voltage_domain(name, domain)
+        for name, domain in raw_domains.items()
+    }
     return PDKProfile(**values)
+
+
+def _coerce_voltage_domain(
+    name: str,
+    raw: object,
+) -> VoltageDomainProfile:
+    if not isinstance(raw, dict):
+        raise ValueError(f"voltage_domains.{name} must be an object")
+    values = dict(raw)
+    values.setdefault("name", name)
+    values["model_flavors"] = {
+        str(polarity): {
+            str(flavor): str(model)
+            for flavor, model in dict(flavors).items()
+        }
+        for polarity, flavors in dict(values.get("model_flavors") or {}).items()
+    }
+    values["process_sections"] = dict(values.get("process_sections") or {})
+    values["pvt_temperatures_c"] = tuple(
+        float(temp) for temp in values.get("pvt_temperatures_c", ())
+    )
+    return VoltageDomainProfile(**values)
 
 
 def _validate_topology_presets(profile: PDKProfile) -> list[str]:

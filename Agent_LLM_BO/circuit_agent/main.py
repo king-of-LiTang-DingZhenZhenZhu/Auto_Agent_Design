@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -27,6 +28,7 @@ from models import (
     SimResult,
 )
 from optimizer import HybridOptimizer
+from parameter_effects import analyze_optimization_history
 from pdk_profiles import get_pdk_profile, validate_pdk_profile
 from simulator import Simulator
 from utils import ensure_directories, setup_logging
@@ -175,6 +177,28 @@ def run_from_file(
             settling_time_s=t.get("settling_time_s"),
             topology_hint=req_data.get("topology_hint", ""),
         )
+        voltage_domain = req_data.get("voltage_domain")
+        if voltage_domain:
+            os.environ["PDK_VOLTAGE_DOMAIN"] = str(voltage_domain)
+            active_pdk = get_pdk_profile()
+            config.vdd = active_pdk.vdd
+            config.vdd_min = active_pdk.vdd_min
+            config.vdd_max = active_pdk.vdd_max
+            config.pdk_spectre_path = active_pdk.spectre_model_path
+            config.pdk_spectre_section = active_pdk.spectre_section
+            config.pdk_hspice_path = active_pdk.hspice_model_path
+            config.pdk_hspice_section = active_pdk.hspice_section
+            config.nmos_model = active_pdk.nmos_model
+            config.pmos_model = active_pdk.pmos_model
+            config.nmos_lvt_model = active_pdk.nmos_lvt_model
+            config.pmos_lvt_model = active_pdk.pmos_lvt_model
+            config.gmid_table_path = active_pdk.gmid_table_path
+            config.max_width_per_finger = active_pdk.max_width_per_finger
+            config.min_width_per_finger = active_pdk.min_width_per_finger
+            console.print(
+                f"[green]✓[/green] Activated PDK voltage domain: {voltage_domain} "
+                f"(VDD={active_pdk.vdd:g} V)"
+            )
     elif args.targets_json:
         targets_path = Path(args.targets_json)
         if not targets_path.exists():
@@ -377,7 +401,8 @@ def run_from_file(
             _save_final_output(template, initial_params, initial_result, config,
                               circuit_files=circuit_files, param_space=param_space,
                               targets=targets, project_name=project_name,
-                              original_requirement=original_requirement_text)
+                              original_requirement=original_requirement_text,
+                              topology_name=topology_name_val)
             return
 
     # --- Optimization loop ---
@@ -444,7 +469,8 @@ def run_from_file(
         _save_final_output(template, best_physical_params, best.result, config,
                           circuit_files=circuit_files, param_space=param_space,
                           targets=targets, project_name=project_name,
-                          original_requirement=original_requirement_text)
+                          original_requirement=original_requirement_text,
+                          topology_name=topology_name_val)
     else:
         console.print("[red]Optimization produced no valid results.[/red]")
 
@@ -756,6 +782,7 @@ def _save_final_output(
     targets: DesignTarget | None = None,
     project_name: str = "",
     original_requirement: str = "",
+    topology_name: str = "",
 ):
     """Save final netlist, report, and structured JSON to project directory.
 
@@ -894,6 +921,8 @@ def _save_final_output(
     result_data = result.to_result_dict(targets=targets, params=params)
     result_data["netlist_file"] = str(circuit_path)
     result_data["project_name"] = project_name
+    if topology_name:
+        result_data["topology_name"] = topology_name
     result_data["pdk_profile"] = pdk.to_dict()
     result_data["pdk_profile_file"] = str(pdk_profile_path)
     if diagnostics_paths:
@@ -1000,6 +1029,15 @@ def _save_final_output(
     # 7. Copy optimization history
     if history_file.exists():
         shutil.copy2(history_file, project_root / "optimization_log.json")
+        try:
+            analyze_optimization_history(
+                project_root / "optimization_log.json",
+                project_root / "parameter_analysis",
+            )
+        except Exception as error:
+            console.print(
+                f"[yellow]Parameter effect analysis skipped:[/yellow] {error}"
+            )
     metrics_csv = workspace / "optimization_metrics.csv"
     if metrics_csv.exists():
         shutil.copy2(metrics_csv, project_root / "optimization_metrics.csv")
@@ -1024,6 +1062,10 @@ def _save_final_output(
         console.print(f"  • {project_root / 'virtuoso' / 'export_report.json'}")
     if history_file.exists():
         console.print(f"  • {project_root / 'optimization_log.json'}")
+        if (project_root / "parameter_analysis" / "parameter_effects.md").exists():
+            console.print(
+                f"  • {project_root / 'parameter_analysis' / 'parameter_effects.md'}"
+            )
     if metrics_csv.exists():
         console.print(f"  • {project_root / 'optimization_metrics.csv'}")
     if diagnostics_paths:

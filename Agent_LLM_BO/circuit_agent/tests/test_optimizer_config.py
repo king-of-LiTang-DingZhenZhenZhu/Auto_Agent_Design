@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 import json
+import math
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
@@ -12,6 +13,7 @@ from models import DesignTarget
 from pdk_profiles import (
     apply_topology_preset,
     get_pdk_profile,
+    get_pdk_profile_for_params,
     get_topology_preset,
     spectre_include_line,
     validate_pdk_profile,
@@ -108,6 +110,60 @@ class OptimizerConfigTest(unittest.TestCase):
     def test_gmid_lookup_table_path_can_come_from_env(self):
         with patch.dict("os.environ", {"GMID_TABLE_PATH": "/tmp/custom_gmid.json"}):
             self.assertEqual(Settings().gmid_table_path, "/tmp/custom_gmid.json")
+
+    def test_voltage_domain_switches_models_and_supply_together(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            profile_json = self._write_unit_profile(
+                root,
+                voltage_domains={
+                    "core_1p0": {
+                        "vdd": 1.0,
+                        "vdd_min": 0.9,
+                        "vdd_max": 1.1,
+                        "model_flavors": {
+                            "nmos": {"svt": "core_n", "lvt": "core_n_lvt"},
+                            "pmos": {"svt": "core_p", "lvt": "core_p_lvt"},
+                        },
+                    },
+                    "io_1p8": {
+                        "vdd": 1.8,
+                        "vdd_min": 1.62,
+                        "vdd_max": 1.98,
+                        "spectre_section": "io_tt",
+                        "model_flavors": {
+                            "nmos": {
+                                "svt": "io_n", "lvt": "io_n_lvt", "hvt": "io_n_hvt",
+                            },
+                            "pmos": {
+                                "svt": "io_p", "lvt": "io_p_lvt", "hvt": "io_p_hvt",
+                            },
+                        },
+                    },
+                },
+            )
+
+            profile = get_pdk_profile(str(profile_json), "io_1p8")
+            self.assertEqual(profile.active_voltage_domain, "io_1p8")
+            self.assertEqual(profile.vdd, 1.8)
+            self.assertEqual(profile.vdd_min, 1.62)
+            self.assertEqual(profile.nmos_model, "io_n")
+            self.assertEqual(profile.resolve_model("pmos:hvt"), "io_p_hvt")
+
+            with patch.dict("os.environ", {"PDK_PROFILE_FILE": str(profile_json)}):
+                resolved = get_pdk_profile_for_params({"VOLTAGE_DOMAIN": "io_1p8"})
+                self.assertEqual(resolved.pmos_lvt_model, "io_p_lvt")
+                circuit = get_topology("folded_cascode").generate_circuit(
+                    {"VOLTAGE_DOMAIN": "io_1p8"}
+                )
+                testbench = get_topology("folded_cascode").generate_testbench(
+                    {"VOLTAGE_DOMAIN": "io_1p8"}
+                )
+
+            self.assertIn(") io_p_lvt l=Lbias", circuit)
+            self.assertIn(") io_n_lvt l=Lbias", circuit)
+            self.assertIn("parameters VDD=1.8", testbench)
+            self.assertIn("section=io_tt", circuit)
 
     def test_pdk_profile_validation_checks_gmid_model_coverage(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -221,7 +277,7 @@ class OptimizerConfigTest(unittest.TestCase):
                     "two_stage_ota": {
                         "testbench_defaults": {
                             "VCM": 0.62,
-                            "VBIAS": 0.73,
+                            "IBIAS": 33e-6,
                             "CL": 1e-12,
                         }
                     }
@@ -230,7 +286,7 @@ class OptimizerConfigTest(unittest.TestCase):
 
             with patch.dict("os.environ", {"PDK_PROFILE_FILE": str(profile_json)}):
                 testbench = get_topology("two_stage_ota").generate_testbench()
-                self.assertIn("parameters VDD=1.05 VCM=0.62 VBIAS=0.73", testbench)
+                self.assertIn("parameters VDD=1.05 VCM=0.62 IBIAS=33u", testbench)
                 self.assertIn("CL=1p", testbench)
 
     def test_folded_profile_preset_reaches_physical_and_gmid_defaults(self):
@@ -370,20 +426,16 @@ class OptimizerConfigTest(unittest.TestCase):
         self.assertGreaterEqual(tail.default, tail.low)
 
     def test_all_tail_devices_use_point_two_volt_vds_estimate(self):
-        for name in (
-            "5t_ota",
-            "two_stage_ota",
-            "nmcf_three_stage",
-        ):
+        roles_by_topology = {
+            "5t_ota": ("tail_pmos",),
+            "two_stage_ota": ("bias_nmos",),
+            "nmcf_three_stage": ("stage1_tail_pmos",),
+        }
+        for name, roles in roles_by_topology.items():
             spec = get_topology(name).get_gmid_spec()
-            tail_devices = [
-                transistor
-                for transistor in spec.transistors
-                if "tail" in transistor.role
-            ]
-            self.assertTrue(tail_devices)
-            for transistor in tail_devices:
-                self.assertEqual(transistor.Vds_estimate, 0.2)
+            transistors = {transistor.role: transistor for transistor in spec.transistors}
+            for role in roles:
+                self.assertEqual(transistors[role].Vds_estimate, 0.2)
 
     def test_two_stage_current_bounds_follow_gbw_cl_estimate(self):
         targets = DesignTarget(
@@ -391,36 +443,40 @@ class OptimizerConfigTest(unittest.TestCase):
             load_cap_f=1e-12,
         )
         spec = get_topology("two_stage_ota").get_gmid_spec(targets)
-        currents = {branch.name: branch for branch in spec.branch_currents}
+        params = {param.name: param for param in spec.build_param_space().params}
         x = 2.0 * 3.141592653589793 * 100e6 * (0.5e-12) / 15.0
-        self.assertAlmostEqual(currents["I_tail"].low, max(50e-6, 2.0 * x))
-        self.assertAlmostEqual(currents["I_tail"].high, 10.0 * currents["I_tail"].low)
-        self.assertNotIn("I_cs", currents)
+        expected_min_multiplier = math.ceil(max(50e-6, 2.0 * x) / 20e-6)
+        self.assertEqual(params["m_tail_unit"].low, expected_min_multiplier)
+        self.assertGreaterEqual(params["m_tail_unit"].high, 4 * expected_min_multiplier)
+        self.assertNotIn("I_cs", params)
 
     def test_two_stage_gmid_space_uses_integer_mirror_ratio(self):
         spec = get_topology("two_stage_ota").get_gmid_spec()
         param_space = spec.build_param_space()
         params = {param.name: param for param in param_space.params}
-        self.assertIn("I_tail", params)
+        self.assertIn("m_tail_unit", params)
         self.assertIn("ratio_load_tail", params)
         self.assertNotIn("I_cs", params)
         self.assertNotIn("gm_id_load_nmos", params)
         self.assertNotIn("L_load_nmos", params)
         self.assertNotIn("L_cs_pmos", params)
+        multiplier = params["m_tail_unit"]
         ratio = params["ratio_load_tail"]
+        self.assertEqual(multiplier.value_type, "int")
+        self.assertGreaterEqual(multiplier.low, 1)
         self.assertEqual(ratio.value_type, "int")
         self.assertEqual(ratio.low, 1)
-        self.assertEqual(ratio.high, 3)
+        self.assertEqual(ratio.high, 4)
 
     def test_current_source_and_load_lengths_are_constrained(self):
         physical_roles = {
             "5t_ota": ("Ltail", "Lcm"),
-            "two_stage_ota": ("Ltail", "Lload"),
+            "two_stage_ota": ("Lbias",),
             "nmcf_three_stage": ("Ltail1", "Lload1", "Lload2", "Lload3"),
         }
         gmid_roles = {
             "5t_ota": ("tail_pmos", "mirror_nmos"),
-            "two_stage_ota": ("tail_nmos", "load_nmos"),
+            "two_stage_ota": ("bias_nmos",),
             "nmcf_three_stage": (
                 "stage1_tail_pmos",
                 "stage1_load_nmos",
@@ -447,7 +503,7 @@ class OptimizerConfigTest(unittest.TestCase):
                 self.assertAlmostEqual(transistors[role].L_low, 200e-9)
                 self.assertAlmostEqual(transistors[role].L_high, 600e-9)
 
-    def test_second_stage_cs_length_is_bound_to_load_length(self):
+    def test_second_stage_cs_length_is_bound_to_bias_length(self):
         for topology_name in ("two_stage_ota",):
             topology = get_topology(topology_name)
             param_names = [param.name for param in topology.get_param_space().params]
@@ -458,7 +514,7 @@ class OptimizerConfigTest(unittest.TestCase):
             self.assertNotIn("Lcs", param_names)
             self.assertNotIn("Lcs=", circuit)
             self.assertIn("Mcs", circuit)
-            self.assertRegex(circuit, r"Mcs .* l=Lload\b")
+            self.assertRegex(circuit, r"Mcs .* l=Lbias\b")
             self.assertNotIn("L_cs_pmos", gmid_params)
 
     def test_folded_bias_ratio_param_space_replaces_current_source_sizes(self):
@@ -544,26 +600,28 @@ class OptimizerConfigTest(unittest.TestCase):
         self.assertEqual(spec.fixed_width_scale_param, "Lbias")
         self.assertEqual(spec.fixed_width_scale_reference, 400e-9)
 
-    def test_two_stage_gmid_space_derives_nmos_vbias(self):
+    def test_two_stage_gmid_space_uses_external_ibias(self):
         spec = get_topology("two_stage_ota").get_gmid_spec()
         self.assertNotIn(
             "VBIAS",
             [param.name for param in spec.pass_through_params],
         )
-        self.assertEqual(len(spec.derived_gate_biases), 1)
-        bias = spec.derived_gate_biases[0]
-        self.assertEqual(bias.role, "tail_nmos")
-        self.assertEqual(bias.param_name, "VBIAS")
-        self.assertEqual(bias.device_type, "nmos")
-        self.assertEqual(bias.supply_voltage, 0.0)
+        self.assertEqual(spec.derived_gate_biases, [])
+        self.assertIn(
+            "IBIAS",
+            [current.name for current in spec.derived_branch_currents],
+        )
+        transistors = {transistor.role: transistor for transistor in spec.transistors}
+        self.assertEqual(transistors["bias_nmos"].current_source, "IBIAS")
+        self.assertEqual(transistors["diff_pair_nmos"].current_source, "I_tail")
+        self.assertEqual(transistors["cs_pmos"].current_source, "I_cs")
 
     def test_two_stage_diff_pair_uses_negative_body_bias_for_lookup(self):
         spec = get_topology("two_stage_ota").get_gmid_spec()
         transistors = {transistor.role: transistor for transistor in spec.transistors}
 
         self.assertEqual(transistors["diff_pair_nmos"].Vbs, -0.3)
-        self.assertEqual(transistors["tail_nmos"].Vbs, 0.0)
-        self.assertEqual(transistors["load_nmos"].Vbs, 0.0)
+        self.assertEqual(transistors["bias_nmos"].Vbs, 0.0)
 
     def test_gmid_specs_use_lookup_supported_body_biases(self):
         supported_vbs_by_model = {
@@ -575,6 +633,7 @@ class OptimizerConfigTest(unittest.TestCase):
         for name in (
             "5t_ota",
             "two_stage_ota",
+            "pmos_input_two_stage_ota",
             "folded_cascode",
             "nmcf_three_stage",
         ):
@@ -594,7 +653,7 @@ class OptimizerConfigTest(unittest.TestCase):
         self.assertEqual(transistors["diff_pair_pmos"].Vbs, -0.2)
         self.assertEqual(transistors["cs_pmos"].model, "pch_lvt_mac")
 
-    def test_vbias_physical_ranges_are_topology_owned(self):
+    def test_bias_physical_ranges_are_topology_owned(self):
         five_t_params = {
             param.name: param for param in get_topology("5t_ota").get_param_space().params
         }
@@ -605,8 +664,8 @@ class OptimizerConfigTest(unittest.TestCase):
 
         self.assertEqual(five_t_params["VBIAS"].low, 0.15)
         self.assertEqual(five_t_params["VBIAS"].high, 0.55)
-        self.assertEqual(two_stage_params["VBIAS"].low, 0.4)
-        self.assertEqual(two_stage_params["VBIAS"].high, 0.85)
+        self.assertEqual(two_stage_params["m_tail_unit"].low, 1)
+        self.assertEqual(two_stage_params["m_tail_unit"].high, 16)
 
     def test_folded_derived_currents_follow_bias_ratios(self):
         spec = get_topology("folded_cascode_two_stage").get_gmid_spec()

@@ -31,27 +31,28 @@ class GmidCurrentMirrorTest(unittest.TestCase):
     def test_two_stage_load_uses_integer_ratio_to_tail_total_width(self):
         spec = get_topology("two_stage_ota").get_gmid_spec()
         params = {
-            "I_tail": 50e-6,
+            "m_tail_unit": 3,
             "ratio_load_tail": 2,
-            "gm_id_tail_nmos": 8,
-            "L_tail_nmos": 200e-9,
+            "gm_id_bias_nmos": 8,
+            "L_bias_nmos": 200e-9,
             "gm_id_diff_pair_nmos": 14,
             "L_diff_pair_nmos": 120e-9,
             "gm_id_mirror_pmos": 12,
             "L_mirror_pmos": 120e-9,
             "gm_id_cs_pmos": 12,
-            "L_cs_pmos": 120e-9,
         }
 
         physical = GmidSizer(spec, _FakeLookup()).size(params)
-        wtail_total = physical["Wtail"] * physical["m_Wtail"]
-        wload_total = physical["Wload"] * physical["m_Wload"]
+        wbias_total = physical["Wbias"] * physical["m_Wbias"]
         wcs_total = physical["Wcs"] * physical["m_Wcs"]
 
-        self.assertAlmostEqual(wload_total, 2.0 * wtail_total)
-        self.assertAlmostEqual(physical["Lload"], physical["Ltail"])
-        self.assertAlmostEqual(wcs_total, 2.0 * wtail_total)
-        self.assertAlmostEqual(physical["VBIAS"], 0.55)
+        self.assertAlmostEqual(physical["IBIAS"], 20e-6)
+        self.assertAlmostEqual(physical["I_tail"], 60e-6)
+        self.assertAlmostEqual(physical["I_cs"], 120e-6)
+        self.assertAlmostEqual(wbias_total, 2e-6)
+        self.assertAlmostEqual(wcs_total, 12e-6)
+        self.assertEqual(physical["m_tail_unit"], 3)
+        self.assertEqual(physical["ratio_load_tail"], 2)
 
     def test_folded_cascode_uses_bias_ratio_derived_currents(self):
         spec = get_topology("folded_cascode_two_stage").get_gmid_spec()

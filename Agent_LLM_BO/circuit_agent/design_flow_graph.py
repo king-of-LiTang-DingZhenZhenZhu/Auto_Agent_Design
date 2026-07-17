@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 from typing import Any, Literal, TypedDict
 
+from design_audit import run_design_audit
 from pvt_simulation import run_pvt_verification
 from virtuoso_export.exporter import export_from_results, select_export_netlist
 
@@ -29,6 +30,10 @@ class DesignFlowState(TypedDict, total=False):
     nominal_pass: bool | None
     review_available: bool
     review_pass: bool | None
+    audit_status: str | None
+    audit_blockers: int
+    audit_warnings: int
+    audit_report: str | None
     pvt_requested: bool
     pvt_pass: bool | None
     final_source: str | None
@@ -71,6 +76,7 @@ def _build_graph():
     graph = StateGraph(DesignFlowState)
     graph.add_node("load_results", load_results)
     graph.add_node("check_nominal", check_nominal)
+    graph.add_node("run_design_audit", run_design_audit_node)
     graph.add_node("prepare_review", prepare_review)
     graph.add_node("run_pvt", run_pvt_node)
     graph.add_node("check_pvt", check_pvt)
@@ -81,6 +87,14 @@ def _build_graph():
     graph.add_conditional_edges(
         "check_nominal",
         route_after_nominal,
+        {
+            "review": "prepare_review",
+            "audit": "run_design_audit",
+        },
+    )
+    graph.add_conditional_edges(
+        "run_design_audit",
+        route_after_audit,
         {
             "review": "prepare_review",
             "pvt": "run_pvt",
@@ -104,6 +118,9 @@ def _run_fallback(state: DesignFlowState) -> DesignFlowState:
     state = load_results(state)
     state = check_nominal(state)
     if route_after_nominal(state) == "review":
+        return prepare_review(state)
+    state = run_design_audit_node(state)
+    if route_after_audit(state) == "review":
         return prepare_review(state)
     state = run_pvt_node(state)
     state = check_pvt(state)
@@ -142,22 +159,46 @@ def check_nominal(state: DesignFlowState) -> DesignFlowState:
     if state.get("errors"):
         return {**state, "next_action": "fix_errors"}
     if state.get("nominal_pass") or state.get("review_pass"):
-        return {**state, "next_action": "run_pvt"}
+        return {**state, "next_action": "run_design_audit"}
     return {**state, "next_action": "prepare_agent_review"}
 
 
-def route_after_nominal(state: DesignFlowState) -> Literal["review", "pvt"]:
+def route_after_nominal(state: DesignFlowState) -> Literal["review", "audit"]:
     if state.get("nominal_pass") or state.get("review_pass"):
-        return "pvt"
+        return "audit"
     return "review"
+
+
+def run_design_audit_node(state: DesignFlowState) -> DesignFlowState:
+    report = run_design_audit(
+        project=state["project_dir"],
+        results_path=state["results_json"],
+        netlist_path=state.get("final_netlist"),
+        topology_name=state.get("topology", ""),
+    )
+    return {
+        **state,
+        "audit_status": report["status"],
+        "audit_blockers": report["blocker_count"],
+        "audit_warnings": report["warning_count"],
+        "audit_report": report["report_file"],
+        "next_action": "prepare_agent_review" if report["status"] == "block" else "run_pvt",
+    }
+
+
+def route_after_audit(state: DesignFlowState) -> Literal["review", "pvt"]:
+    return "review" if state.get("audit_status") == "block" else "pvt"
 
 
 def prepare_review(state: DesignFlowState) -> DesignFlowState:
     project = Path(state["project_dir"])
+    audit_note = ""
+    if state.get("audit_status") == "block":
+        audit_note = f" inspect `{state.get('audit_report')}`, then"
     return {
         **state,
         "next_action": (
-            "prepare_agent_review: run `python review_optimization.py "
+            f"prepare_agent_review:{audit_note} run `python review_optimization.py "
             f"--project {project} --workspace workspace --topology <topology> "
             "--prepare-agent-review`"
         ),
@@ -260,6 +301,10 @@ def _render_flow_report(state: DesignFlowState) -> str:
         f"- Nominal pass: `{state.get('nominal_pass')}`",
         f"- Review available: `{state.get('review_available')}`",
         f"- Review pass: `{state.get('review_pass')}`",
+        f"- Design audit: `{state.get('audit_status')}`",
+        f"- Audit blockers: `{state.get('audit_blockers')}`",
+        f"- Audit warnings: `{state.get('audit_warnings')}`",
+        f"- Audit report: `{state.get('audit_report')}`",
         f"- Final source: `{state.get('final_source')}`",
         f"- Final netlist: `{state.get('final_netlist')}`",
         f"- PVT requested: `{state.get('pvt_requested')}`",

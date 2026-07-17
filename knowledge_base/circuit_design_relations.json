@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "relations": {
+    "opamp_single_stage_gbw": {
+      "domain": "opamp",
+      "equation": "GBW_Hz ~= gm_input / (2*pi*CL)",
+      "assumptions": [
+        "single dominant output pole",
+        "CL dominates the output-node capacitance"
+      ],
+      "tradeoffs": [
+        "increasing gm usually increases bias current and power",
+        "reducing CL is only valid when the real load permits it"
+      ]
+    },
+    "opamp_miller_gbw": {
+      "domain": "opamp",
+      "equation": "GBW_Hz ~= gm_input / (2*pi*Cc)",
+      "assumptions": [
+        "Miller compensation creates the dominant pole",
+        "the second pole and compensation zero are above UGF"
+      ],
+      "tradeoffs": [
+        "increasing Cc usually improves stability but reduces GBW and slew rate",
+        "increasing gm usually raises current and can reduce phase margin"
+      ]
+    },
+    "opamp_two_pole_pm": {
+      "domain": "opamp",
+      "equation": "PM_deg ~= 90 - atan(UGF/p2)",
+      "equivalent": "p2/UGF ~= tan(PM)",
+      "assumptions": [
+        "the dominant pole contributes approximately -90 degrees at UGF",
+        "one non-dominant pole dominates additional phase lag",
+        "no nearby zero materially changes phase"
+      ],
+      "tradeoffs": [
+        "lowering UGF can improve PM at the cost of speed",
+        "raising p2 can improve PM without intentionally sacrificing UGF"
+      ]
+    },
+    "bandgap_reference": {
+      "domain": "bandgap",
+      "equation": "Vref ~= VBE + K*DeltaVBE",
+      "assumptions": [
+        "first-order CTAT plus PTAT compensation",
+        "K is set by the topology-specific resistor/current ratio"
+      ],
+      "tradeoffs": [
+        "changing K changes both nominal Vref and first-order tempco",
+        "higher current can improve settling while increasing power and self-heating"
+      ]
+    },
+    "bandgap_delta_vbe": {
+      "domain": "bandgap",
+      "equation": "DeltaVBE = (k*T/q)*ln(N)",
+      "assumptions": [
+        "matched bipolar devices at current-density ratio N",
+        "series resistance and high-level injection are negligible"
+      ],
+      "tradeoffs": [
+        "larger N increases PTAT voltage but can increase area and mismatch sensitivity"
+      ]
+    },
+    "bandgap_tempco_cancel": {
+      "domain": "bandgap",
+      "equation": "dVBE/dT + K*(k/q)*ln(N) ~= 0",
+      "assumptions": [
+        "first-order temperature compensation",
+        "curvature and resistor tempco are handled separately"
+      ],
+      "tradeoffs": [
+        "a correct room-temperature Vref does not guarantee low tempco",
+        "residual curvature requires curvature compensation rather than unlimited ratio tuning"
+      ]
+    }
+  },
+  "topologies": {
+    "5t_ota": {
+      "domain": "opamp",
+      "architecture": "single_stage",
+      "input_instances": ["Mdp1", "Mdp2"],
+      "capacitance_parameter": "CL",
+      "relations": ["opamp_single_stage_gbw", "opamp_two_pole_pm"]
+    },
+    "folded_cascode": {
+      "domain": "opamp",
+      "architecture": "single_stage",
+      "input_instances": ["Mdiff1", "Mdiff2"],
+      "capacitance_parameter": "CL",
+      "relations": ["opamp_single_stage_gbw", "opamp_two_pole_pm"]
+    },
+    "two_stage_ota": {
+      "domain": "opamp",
+      "architecture": "miller_two_stage",
+      "input_instances": ["Mdiff1", "Mdiff2"],
+      "capacitance_parameter": "Cc",
+      "relations": ["opamp_miller_gbw", "opamp_two_pole_pm"]
+    },
+    "pmos_input_two_stage_ota": {
+      "domain": "opamp",
+      "architecture": "miller_two_stage",
+      "input_instances": ["Mdiff1", "Mdiff2"],
+      "capacitance_parameter": "Cc",
+      "relations": ["opamp_miller_gbw", "opamp_two_pole_pm"]
+    },
+    "folded_cascode_two_stage": {
+      "domain": "opamp",
+      "architecture": "miller_two_stage",
+      "input_instances": ["Mdiff1", "Mdiff2"],
+      "capacitance_parameter": "Cc",
+      "relations": ["opamp_miller_gbw", "opamp_two_pole_pm"]
+    },
+    "bandgap_ptat": {
+      "domain": "bandgap",
+      "architecture": "ctat_ptat_hierarchical",
+      "relations": [
+        "bandgap_reference",
+        "bandgap_delta_vbe",
+        "bandgap_tempco_cancel"
+      ],
+      "limitations": [
+        "the current topology uses idealized PTAT/CTAT sources rather than PDK bipolar devices",
+        "dedicated Vref/tempco/line-regulation parsers are not implemented yet"
+      ]
+    }
+  }
+}

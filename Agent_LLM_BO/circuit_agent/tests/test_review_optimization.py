@@ -350,11 +350,78 @@ ends dut
             context = (review_root / "agent_context.md").read_text(encoding="utf-8")
             plan = (review_root / "patch_plan.json").read_text(encoding="utf-8")
             self.assertIn("Local Agent BO Review Context", context)
-            self.assertIn("Topology-Specific Knowledge Base", context)
-            self.assertIn("5T OTA Optimization Guide", context)
-            self.assertIn("Optimization Metrics CSV", context)
+            self.assertIn("Required Evidence", context)
+            self.assertIn("failure_repair", context)
+            self.assertIn("5t_ota_optimization.md", context)
+            self.assertIn("parameter_effects.md", context)
+            self.assertIn("knowledge_analysis.md", context)
+            self.assertIn("design_audit.md", context)
+            self.assertIn('target_gaps: {"gain_db": -20.0}', context)
+            self.assertIn("dc_operating_points.csv", context)
+            self.assertNotIn("AGENT_REVIEW.md", context)
+            self.assertNotIn("optimization_metrics.csv", context)
+            self.assertNotIn("optimization_review_guide.md", context)
+            self.assertNotIn("# 5T OTA Optimization Guide", context)
+            self.assertNotIn("# BO Parameter Effect Analysis", context)
+            self.assertTrue((review_root / "knowledge_analysis.json").exists())
+            self.assertTrue((review_root / "knowledge_analysis.md").exists())
             self.assertIn("W1", context)
             self.assertIn('"iteration": 1', plan)
+            self.assertIn('"review_mode": "failure_repair"', plan)
+            self.assertIn('"findings": []', plan)
+
+    def test_write_local_agent_review_package_uses_success_audit_route(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            project = root / "outputs" / "proj"
+            review_root = project / "agent_review"
+            run_dir = workspace / "run_000"
+            run_dir.mkdir(parents=True)
+            project.mkdir(parents=True)
+            (project / "results.json").write_text(
+                json.dumps({"all_targets_met": True}), encoding="utf-8"
+            )
+            (project / "design_audit").mkdir()
+            (project / "design_audit" / "design_audit.md").write_text(
+                "# Design Audit\n", encoding="utf-8"
+            )
+            (run_dir / "circuit.cir").write_text(
+                "parameters Wdp=5u Ldp=120n\n",
+                encoding="utf-8",
+            )
+            history = {
+                "targets": {"gain_db": 40},
+                "history": [],
+            }
+            records = [{
+                "iteration": 0,
+                "reward": 1.0,
+                "result": {"converged": True, "gain_db": 45},
+            }]
+
+            write_local_agent_review_package(
+                project=project,
+                workspace=workspace,
+                topology_name="5t_ota",
+                history=history,
+                history_path=workspace / "history.json",
+                records=records,
+                param_bounds={"Wdp": ParamDef("Wdp", 1e-6, 20e-6)},
+                review_root=review_root,
+            )
+
+            context = (review_root / "agent_context.md").read_text(encoding="utf-8")
+            plan = json.loads(
+                (review_root / "patch_plan.json").read_text(encoding="utf-8")
+            )
+            self.assertIn("`success_audit`", context)
+            self.assertIn("BO has met its nominal targets", context)
+            self.assertIn("branch currents", context)
+            self.assertIn("decision=accept", context)
+            self.assertNotIn("AGENT_REVIEW.md", context)
+            self.assertEqual(plan["review_mode"], "success_audit")
+            self.assertEqual(plan["findings"], [])
 
     def test_patch_plan_run_preserves_agent_context_and_plan(self):
         template = """

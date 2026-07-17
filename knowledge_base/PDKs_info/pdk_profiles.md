@@ -109,6 +109,48 @@ profile 同时提供常规 MOS 和 LVT MOS model 名称：
 }
 ```
 
+## 电压域与器件 Flavor
+
+一个 PDK profile 可声明多个 `voltage_domains`。选择 domain 会同时切换
+VDD 范围、Spectre/HSPICE section、gm/Id table（如有覆盖）以及 MOS model；不要只
+切换 model 而保留原 VDD。`model_flavors` 以 `nmos/pmos → svt/lvt/hvt/...` 组织，
+可用 `profile.resolve_model("pmos:hvt")` 解析。
+
+```json
+{
+  "name": "my28",
+  "...": "base core fields retained for backward compatibility",
+  "voltage_domains": {
+    "core_1p0": {
+      "vdd": 1.0,
+      "vdd_min": 0.9,
+      "vdd_max": 1.1,
+      "max_device_voltage": 1.1,
+      "model_flavors": {
+        "nmos": {"svt": "n_core_svt", "lvt": "n_core_lvt"},
+        "pmos": {"svt": "p_core_svt", "lvt": "p_core_lvt"}
+      }
+    },
+    "io_1p8": {
+      "vdd": 1.8,
+      "vdd_min": 1.62,
+      "vdd_max": 1.98,
+      "max_device_voltage": 1.98,
+      "spectre_section": "io_tt",
+      "gmid_table_path": "/PDKS/MY28/gmid_io_1p8.json",
+      "model_flavors": {
+        "nmos": {"svt": "n_io18_svt", "hvt": "n_io18_hvt"},
+        "pmos": {"svt": "p_io18_svt", "hvt": "p_io18_hvt"}
+      }
+    }
+  }
+}
+```
+
+选择方式：设环境变量 `PDK_VOLTAGE_DOMAIN=io_1p8`，或在生成项目时传入
+`params={"VOLTAGE_DOMAIN": "io_1p8"}`。后者会记录到 `requirements.json`，
+`main.py` 在 gm/Id sizing 前自动恢复同一 domain。
+
 如果某个 profile 没有给 topology preset，系统会回退到 topology 自带的 `DEFAULT_PARAMS` 和默认搜索空间，保证旧 profile 兼容。推荐维护策略是：
 
 1. 新 PDK 先跑无 preset 的 topology dry-run/初始仿真。

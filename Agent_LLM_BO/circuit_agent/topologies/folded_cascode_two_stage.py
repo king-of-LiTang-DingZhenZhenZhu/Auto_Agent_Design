@@ -33,7 +33,7 @@ from __future__ import annotations
 
 from topologies.base import BaseTopology, TopologyMeta
 from models import CircuitFiles, ParamDef, ParamSpace, format_spice_value
-from pdk_profiles import get_pdk_profile, spectre_include_line
+from pdk_profiles import get_pdk_profile, get_pdk_profile_for_params, spectre_include_line
 
 
 _FIXED_BIAS_PARAM_NAMES = {
@@ -114,7 +114,7 @@ class FoldedCascodeTwoStageOTA(BaseTopology):
     def generate_circuit(self, params: dict[str, float] | None = None) -> str:
         """Generate the DUT .cir subcircuit netlist."""
         p = self._merge_params_with_preset(params)
-        pdk = get_pdk_profile()
+        pdk = get_pdk_profile_for_params(params)
         p["m_tail_unit"] = 2 * int(round(p["m_half_unit"]))
         p["m_load_unit"] = (
             int(round(p["m_half_unit"])) * int(round(p["m_load_ratio"]))
@@ -146,7 +146,7 @@ class FoldedCascodeTwoStageOTA(BaseTopology):
         analysis_type: str = "ac",
     ) -> str:
         """Generate the Spectre-native testbench .scs file."""
-        pdk = get_pdk_profile()
+        pdk = get_pdk_profile_for_params(params)
         tb_defaults = self._testbench_defaults_with_preset(
             {
                 "VCM": 0.4,
@@ -284,11 +284,11 @@ class FoldedCascodeTwoStageOTA(BaseTopology):
                 log_scale=True, unit="m",
             ),
             ParamDef(
-                name="Cc", low=0.1e-12, high=5e-12,
+                name="Cc", low=0.1e-12, high=3e-12,
                 log_scale=True, unit="F",
             ),
             ParamDef(
-                name="Rz", low=100, high=10e3,
+                name="Rz", low=100, high=5e3,
                 log_scale=True, unit="Ohm",
             ),
         ]))
@@ -324,7 +324,7 @@ class FoldedCascodeTwoStageOTA(BaseTopology):
                     model=pdk.pmos_lvt_model,
                     current_source="I_tail", current_fraction=0.5,
                     gm_id_low=10, gm_id_high=15, gm_id_default=12,
-                    L_low=60e-9, L_high=500e-9, L_default=80e-9,
+                    L_low=60e-9, L_high=240e-9, L_default=80e-9,
                     Vds_estimate=0.25, Vbs=-0.2, multiplicity=2,
                 ),
                 # -- Second-stage PMOS common-source amplifier --

@@ -14,6 +14,7 @@ from topologies.five_t_ota import FiveTOTA
 from topologies.folded_cascode import FoldedCascodeOTA
 from topologies.folded_cascode_two_stage import FoldedCascodeTwoStageOTA
 from topologies.nmcf_three_stage import NMCFThreeStageOTA
+from topologies.pmos_input_two_stage_ota import PMOSInputTwoStageOTA
 from topologies.two_stage_ota import TwoStageOTA
 
 if TYPE_CHECKING:
@@ -25,6 +26,7 @@ if TYPE_CHECKING:
 TOPOLOGY_REGISTRY: dict[str, type[BaseTopology]] = {
     "5t_ota": FiveTOTA,
     "two_stage_ota": TwoStageOTA,
+    "pmos_input_two_stage_ota": PMOSInputTwoStageOTA,
     "folded_cascode": FoldedCascodeOTA,
     "folded_cascode_two_stage": FoldedCascodeTwoStageOTA,
     "nmcf_three_stage": NMCFThreeStageOTA,

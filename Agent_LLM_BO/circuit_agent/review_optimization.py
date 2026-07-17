@@ -19,7 +19,9 @@ from pathlib import Path
 from typing import Any
 
 from config import Settings
+from knowledge_review import build_knowledge_analysis, write_knowledge_analysis
 from models import NetlistTemplate, ParamDef, ParamSpace, SimResult
+from parameter_effects import analyze_history, write_analysis
 from simulator import Simulator
 from summarize_metrics import build_report_from_sim_result
 from topologies import get_topology
@@ -202,47 +204,56 @@ def write_local_agent_review_package(
     review_root: Path,
 ) -> None:
     """Write context files for a local Claude/Codex Agent to review."""
-    guide_path = (
-        Path(__file__).resolve().parents[2]
-        / "knowledge_base"
-        / "Opamp_knowledge_base"
-        / "optimization_review_guide.md"
-    )
-    review_guide = (
-        guide_path.read_text(encoding="utf-8")
-        if guide_path.exists()
-        else "No optimization review guide found."
-    )
     topology_guide_path = _topology_review_guide_path(topology_name)
-    topology_guide = (
-        topology_guide_path.read_text(encoding="utf-8")
-        if topology_guide_path.exists()
-        else f"No topology-specific guide found for {topology_name}."
-    )
-    metrics_path = project / "optimization_metrics.csv"
-    metrics_csv = (
-        metrics_path.read_text(encoding="utf-8")
-        if metrics_path.exists()
-        else "optimization_metrics.csv not found"
-    )
+    design_audit_path = project / "design_audit" / "design_audit.md"
+    review_mode = _detect_review_mode(project, history, records)
     history_summary = _build_history_summary(history, history_path)
-    candidate_context = _build_candidate_context(workspace, records, param_bounds)
+    candidate_context = _build_candidate_context(
+        workspace,
+        records,
+        param_bounds,
+        history.get("targets") or {},
+    )
+    parameter_analysis_dir = project / "parameter_analysis"
+    parameter_effects_path = parameter_analysis_dir / "parameter_effects.md"
+    if not parameter_effects_path.exists():
+        write_analysis(analyze_history(history), parameter_analysis_dir)
+    knowledge_analysis = build_knowledge_analysis(
+        topology_name=topology_name,
+        history=history,
+        records=records,
+        workspace=workspace,
+    )
+    _, knowledge_markdown_path = write_knowledge_analysis(
+        knowledge_analysis, review_root
+    )
     context = _build_local_agent_context(
         topology_name=topology_name,
-        review_guide=review_guide,
-        topology_guide=topology_guide,
-        metrics_csv=metrics_csv,
+        review_mode=review_mode,
         history_summary=history_summary,
         candidate_context=candidate_context,
+        topology_guide_path=topology_guide_path,
+        history_path=history_path,
+        parameter_effects_path=parameter_effects_path,
+        knowledge_analysis_path=knowledge_markdown_path,
+        design_audit_path=design_audit_path,
     )
     review_root.mkdir(parents=True, exist_ok=True)
     (review_root / "agent_context.md").write_text(context, encoding="utf-8")
     (review_root / "patch_plan_template.json").write_text(
-        json.dumps(_patch_plan_template(records), indent=2, ensure_ascii=False),
+        json.dumps(
+            _patch_plan_template(records, review_mode),
+            indent=2,
+            ensure_ascii=False,
+        ),
         encoding="utf-8",
     )
     (review_root / "patch_plan.json").write_text(
-        json.dumps(_patch_plan_template(records), indent=2, ensure_ascii=False),
+        json.dumps(
+            _patch_plan_template(records, review_mode),
+            indent=2,
+            ensure_ascii=False,
+        ),
         encoding="utf-8",
     )
 
@@ -652,6 +663,7 @@ def _build_candidate_context(
     workspace: Path,
     records: list[dict[str, Any]],
     param_bounds: dict[str, ParamDef],
+    targets: dict[str, Any],
 ) -> str:
     sections: list[str] = []
     for record in records:
@@ -668,6 +680,17 @@ def _build_candidate_context(
         sections.append(f"iteration: {iteration}")
         sections.append(f"reward: {record.get('reward')}")
         sections.append(f"result: {json.dumps(record.get('result', {}), sort_keys=True)}")
+        sections.append(
+            f"target_gaps: {json.dumps(_compute_target_gaps(record.get('result') or {}, targets), sort_keys=True)}"
+        )
+        sections.append(f"run_dir: {run_dir.resolve()}")
+        sections.append(
+            f"dc_operating_points: {(run_dir / 'diagnostics' / 'dc_operating_points.csv').resolve()}"
+        )
+        sections.append(
+            f"diagnostics_summary: {(run_dir / 'diagnostics' / 'diagnostics_summary.txt').resolve()}"
+        )
+        sections.append(f"sim_log: {(run_dir / 'sim.log').resolve()}")
         sections.append("available_params:")
         for name, value in sorted(params.items()):
             bound = param_bounds.get(name)
@@ -684,66 +707,59 @@ def _build_candidate_context(
 
 def _build_local_agent_context(
     topology_name: str,
-    review_guide: str,
-    topology_guide: str,
-    metrics_csv: str,
+    review_mode: str,
     history_summary: str,
     candidate_context: str,
+    topology_guide_path: Path,
+    history_path: Path,
+    parameter_effects_path: Path,
+    knowledge_analysis_path: Path,
+    design_audit_path: Path,
 ) -> str:
+    if review_mode == "success_audit":
+        task = """BO has met its nominal targets. Audit the successful design rather than assuming it is final:
+- inspect critical DC operating points and saturation margins;
+- judge whether transistor dimensions, multiplicities, branch currents, and current ratios are physically reasonable;
+- identify parameters near bounds, excessive area/current, hidden overdesign, and safe power/area optimization opportunities;
+- prefer `decision=accept` with no candidate when no evidence-backed improvement is needed."""
+        evidence = f"""1. Design audit: `{design_audit_path.resolve()}`
+2. Topology guide: `{topology_guide_path.resolve()}`
+3. Knowledge-driven diagnostics: `{knowledge_analysis_path.resolve()}`
+4. Parameter effects, only for optimization opportunities: `{parameter_effects_path.resolve()}`
+5. Full optimization history: `{history_path.resolve()}`"""
+    else:
+        task = """BO has not met all nominal targets. Diagnose before proposing edits:
+- identify the dominant target gap and any conflicting secondary gaps;
+- inspect DC operating points before treating the problem as pure sizing;
+- combine topology knowledge, first-order theory, and empirical parameter effects;
+- propose conservative, evidence-backed candidates or state that the search space/topology should change."""
+        evidence = f"""1. Topology guide: `{topology_guide_path.resolve()}`
+2. Parameter effects: `{parameter_effects_path.resolve()}`
+3. Knowledge-driven diagnostics: `{knowledge_analysis_path.resolve()}`
+4. Full optimization history: `{history_path.resolve()}`
+5. Design audit, when present: `{design_audit_path.resolve()}`"""
     return f"""# Local Agent BO Review Context
 
-This file is for a local Agent such as Claude or Codex. Do not call an external
-LLM from the Python script. The local Agent should read this context and write
-`patch_plan.json` in the same directory.
+This is a compact, run-specific context. Read the listed evidence files before
+writing `patch_plan.json` in this directory.
+
+## Review Mode
+
+`{review_mode}`
 
 ## Task
 
-Review the BO results, identify why the best runs miss the targets, and propose
-conservative parameter edits as a structured patch plan. Python will later
-validate the plan, ignore unknown parameters, clamp values to topology bounds,
-render candidate netlists, and optionally simulate them.
+{task}
 
 ## Topology
 
 {topology_name}
 
-## Required Patch Plan Schema
+## Required Evidence
 
-```json
-{{
-  "summary": "one paragraph explaining the strategy",
-  "candidates": [
-    {{
-      "iteration": 3,
-      "reason": "why this run should be patched",
-      "actions": [
-        {{
-          "param": "Cc",
-          "operation": "scale",
-          "factor": 1.25,
-          "reason": "PM is low, increase compensation"
-        }}
-      ]
-    }}
-  ]
-}}
-```
+Read in this order:
 
-Allowed actions:
-- `operation="scale"` with `factor`
-- `operation="set"` with `value`
-
-Safety rules:
-- Only use parameters listed under Candidate Run Context.
-- Do not add parameters.
-- Do not edit instances, connections, ports, models, or testbenches.
-- Prefer conservative scale factors, usually `0.8` to `1.3`.
-
-## Optimization Metrics CSV
-
-```csv
-{metrics_csv.strip()}
-```
+{evidence}
 
 ## Optimization History Summary
 
@@ -757,17 +773,15 @@ Safety rules:
 {candidate_context.strip()}
 ```
 
-## Topology-Specific Knowledge Base
+## Output Contract
 
-```text
-{topology_guide.strip()}
-```
-
-## General Review Knowledge Base
-
-```text
-{review_guide.strip()}
-```
+- Write only `patch_plan.json`; do not edit rendered netlists.
+- Set `decision` to `accept`, `modify`, `restart_bo`, or `change_topology`.
+- Record evidence-backed observations in `findings`.
+- Use only parameters listed above and only `scale`/`set` actions.
+- Cite evidence and equation assumptions in each candidate reason.
+- If evidence conflicts, request a local perturbation experiment instead of
+  asserting a causal parameter direction.
 """
 
 
@@ -781,9 +795,14 @@ def _topology_review_guide_path(topology_name: str) -> Path:
     )
 
 
-def _patch_plan_template(records: list[dict[str, Any]]) -> dict[str, Any]:
+def _patch_plan_template(
+    records: list[dict[str, Any]], review_mode: str = "failure_repair"
+) -> dict[str, Any]:
     return {
+        "review_mode": review_mode,
+        "decision": "",
         "summary": "",
+        "findings": [],
         "candidates": [
             {
                 "iteration": int(record["iteration"]),
@@ -793,6 +812,56 @@ def _patch_plan_template(records: list[dict[str, Any]]) -> dict[str, Any]:
             for record in records
         ],
     }
+
+
+def _detect_review_mode(
+    project: Path,
+    history: dict[str, Any],
+    records: list[dict[str, Any]],
+) -> str:
+    results_path = project / "results.json"
+    if results_path.exists():
+        results = json.loads(results_path.read_text(encoding="utf-8"))
+        return "success_audit" if results.get("all_targets_met") else "failure_repair"
+    targets = history.get("targets") or {}
+    if records and _result_meets_targets(records[0].get("result") or {}, targets):
+        return "success_audit"
+    return "failure_repair"
+
+
+def _result_meets_targets(
+    result: dict[str, Any], targets: dict[str, Any]
+) -> bool:
+    if result.get("converged") is False:
+        return False
+    gaps = _compute_target_gaps(result, targets)
+    return bool(gaps) and all(value >= 0 for value in gaps.values())
+
+
+def _compute_target_gaps(
+    result: dict[str, Any], targets: dict[str, Any]
+) -> dict[str, float]:
+    gaps: dict[str, float] = {}
+    lower_better = {"power_w", "settling_time_s"}
+    aliases = {"bandwidth_hz": ("bandwidth_hz", "gbw_hz")}
+    for name, target in targets.items():
+        if target is None or name == "load_cap_f":
+            continue
+        keys = aliases.get(name, (name,))
+        actual = next((result.get(key) for key in keys if result.get(key) is not None), None)
+        if actual is None:
+            continue
+        try:
+            target_value = float(target)
+            actual_value = float(actual)
+        except (TypeError, ValueError):
+            continue
+        gaps[name] = (
+            target_value - actual_value
+            if name in lower_better
+            else actual_value - target_value
+        )
+    return gaps
 
 
 def _below(

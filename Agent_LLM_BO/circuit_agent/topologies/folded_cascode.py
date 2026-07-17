@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from topologies.base import BaseTopology, TopologyMeta
 from models import CircuitFiles, ParamDef, ParamSpace, format_spice_value
-from pdk_profiles import get_pdk_profile, spectre_include_line
+from pdk_profiles import get_pdk_profile, get_pdk_profile_for_params, spectre_include_line
 
 
 _FIXED_BIAS_PARAM_NAMES = {
@@ -95,7 +95,7 @@ class FoldedCascodeOTA(BaseTopology):
     def generate_circuit(self, params: dict[str, float] | None = None) -> str:
         """Generate the DUT .cir subcircuit netlist."""
         p = self._merge_params_with_preset(params)
-        pdk = get_pdk_profile()
+        pdk = get_pdk_profile_for_params(params)
         p["m_tail_unit"] = 2 * int(round(p["m_half_unit"]))
 
         return _CIRCUIT_TEMPLATE.format(
@@ -120,7 +120,7 @@ class FoldedCascodeOTA(BaseTopology):
         analysis_type: str = "ac",
     ) -> str:
         """Generate the Spectre-native testbench .scs file."""
-        pdk = get_pdk_profile()
+        pdk = get_pdk_profile_for_params(params)
         tb_defaults = self._testbench_defaults_with_preset(
             {
                 "VCM": 0.4,
@@ -260,7 +260,7 @@ class FoldedCascodeOTA(BaseTopology):
                     model=pdk.pmos_lvt_model,
                     current_source="I_tail", current_fraction=0.5,
                     gm_id_low=10, gm_id_high=15, gm_id_default=12,
-                    L_low=60e-9, L_high=500e-9, L_default=80e-9,
+                    L_low=60e-9, L_high=240e-9, L_default=80e-9,
                     Vds_estimate=0.25, Vbs=-0.2, multiplicity=2,
                 ),
             ],

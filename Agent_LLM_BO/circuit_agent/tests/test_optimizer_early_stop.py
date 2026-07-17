@@ -1,12 +1,20 @@
 from __future__ import annotations
 
 import csv
+import json
 import tempfile
 import unittest
 from pathlib import Path
 
 from config import Settings
-from models import DesignTarget, IterationRecord, OptimizationState, ParamSpace, SimResult
+from models import (
+    DesignTarget,
+    IterationRecord,
+    OptimizationState,
+    ParamDef,
+    ParamSpace,
+    SimResult,
+)
 from operating_point import evaluate_dc_operating_points
 from optimizer import HybridOptimizer
 
@@ -39,6 +47,35 @@ class OptimizerEarlyStopTest(unittest.TestCase):
         self.assertTrue(
             self._optimizer()._detect_repeated_severe_deviation(state, targets)
         )
+
+    def test_history_persists_search_space_and_physical_params(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            optimizer = HybridOptimizer(
+                None, None, Settings(workspace_dir=tmp)
+            )
+            state = OptimizationState(
+                targets=DesignTarget(),
+                param_space=ParamSpace([
+                    ParamDef("gm_id_diff", 5.0, 15.0, log_scale=False)
+                ]),
+            )
+            state.update(IterationRecord(
+                iteration=0,
+                params={"gm_id_diff": 10.0},
+                physical_params={"Wdiff": 4e-6},
+                result=SimResult(gain_db=40.0),
+                reward=1.0,
+            ))
+
+            optimizer._save_history(state)
+
+            data = json.loads(
+                (Path(tmp) / "history.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(data["search_space"][0]["name"], "gm_id_diff")
+            self.assertEqual(
+                data["history"][0]["physical_params"]["Wdiff"], 4e-6
+            )
 
     def test_non_severe_result_resets_recent_window(self):
         targets = DesignTarget(gain_db=60, bandwidth_hz=100e6)

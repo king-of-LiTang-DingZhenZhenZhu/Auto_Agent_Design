@@ -40,6 +40,8 @@ class DesignFlowGraphTests(unittest.TestCase):
 
             self.assertEqual(state["next_action"], "inspect_pvt_report")
             self.assertEqual(state["final_source"], "bo_best")
+            self.assertIn(state["audit_status"], {"pass", "warn"})
+            self.assertTrue((project / "design_audit" / "design_audit.md").exists())
             self.assertTrue((project / "pvt" / "pvt_results.csv").exists())
             self.assertTrue((project / "flow" / "flow_state.json").exists())
             self.assertTrue((project / "flow" / "flow_report.md").exists())
@@ -65,6 +67,34 @@ class DesignFlowGraphTests(unittest.TestCase):
             self.assertIn("prepare_agent_review", state["next_action"])
             self.assertIs(state["nominal_pass"], False)
             self.assertTrue((project / "flow" / "flow_report.md").exists())
+
+    def test_nominal_pass_with_audit_blocker_stops_before_pvt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / "outputs" / "proj"
+            project.mkdir(parents=True)
+            netlist = project / "netlist" / "circuit.cir"
+            netlist.parent.mkdir()
+            netlist.write_text(get_topology("5t_ota").generate_circuit(), encoding="utf-8")
+            (project / "results.json").write_text(
+                json.dumps(
+                    {
+                        "project_name": "proj",
+                        "all_targets_met": True,
+                        "netlist_file": str(netlist),
+                        "operating_point_status": {
+                            "critical_linear": ["Mdp1"],
+                            "critical_near_edge": [],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            state = run_design_flow(project, run_pvt=True, simulate=False)
+
+            self.assertEqual(state["audit_status"], "block")
+            self.assertIn("prepare_agent_review", state["next_action"])
+            self.assertFalse((project / "pvt").exists())
 
 
 if __name__ == "__main__":

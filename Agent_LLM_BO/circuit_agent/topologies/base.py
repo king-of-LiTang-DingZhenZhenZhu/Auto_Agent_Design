@@ -6,12 +6,9 @@ import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Any
 
-from models import CircuitFiles, ParamSpace
-
-if TYPE_CHECKING:
-    from models import DesignTarget
+from models import CircuitFiles, DesignTarget, ParamSpace
 
 
 @dataclass
@@ -44,6 +41,72 @@ class TopologyMeta:
     def max_bw_hz(self) -> float:
         """Backward-compatible alias; current AC metric is GBW/UGF."""
         return self.max_gbw_hz
+
+
+@dataclass(frozen=True)
+class HierarchicalBlockSpec:
+    """One child block optimized before its parent topology.
+
+    ``netlist_param`` and ``results_param`` name the parent topology arguments
+    that receive the frozen child artifact paths.
+    """
+
+    block_id: str
+    topology_name: str
+    expected_subckt: str
+    ports: tuple[str, ...]
+    targets: DesignTarget
+    sizing_policy: str = "frozen_macro"
+    netlist_param: str = ""
+    results_param: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "block_id": self.block_id,
+            "topology_name": self.topology_name,
+            "expected_subckt": self.expected_subckt,
+            "ports": list(self.ports),
+            "targets": self.targets.to_requirements_dict()["targets"],
+            "topology_hint": self.targets.topology_hint,
+            "custom_specs": self.targets.custom_specs,
+            "sizing_policy": self.sizing_policy,
+            "netlist_param": self.netlist_param,
+            "results_param": self.results_param,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "HierarchicalBlockSpec":
+        targets = dict(data.get("targets", {}))
+        return cls(
+            block_id=str(data["block_id"]),
+            topology_name=str(data["topology_name"]),
+            expected_subckt=str(data["expected_subckt"]),
+            ports=tuple(str(port) for port in data.get("ports", [])),
+            targets=DesignTarget(
+                gain_db=targets.get("gain_db"),
+                bandwidth_hz=targets.get("bandwidth_hz", targets.get("gbw_hz")),
+                phase_margin_deg=targets.get("phase_margin_deg"),
+                power_w=targets.get("power_w"),
+                load_cap_f=targets.get("load_cap_f"),
+                slew_rate_v_per_s=targets.get("slew_rate_v_per_s"),
+                settling_time_s=targets.get("settling_time_s"),
+                topology_hint=str(data.get("topology_hint", "")),
+                custom_specs=dict(data.get("custom_specs", {})),
+            ),
+            sizing_policy=str(data.get("sizing_policy", "frozen_macro")),
+            netlist_param=str(data.get("netlist_param", "")),
+            results_param=str(data.get("results_param", "")),
+        )
+
+    def summary_dict(self) -> dict[str, Any]:
+        """Return the concise copy stored in ``requirements.json``."""
+        return {
+            "topology": self.topology_name,
+            "expected_subckt": self.expected_subckt,
+            "ports": list(self.ports),
+            "sizing_policy": self.sizing_policy,
+            "derived_targets": self.targets.to_requirements_dict()["targets"],
+        }
 
 
 class BaseTopology(ABC):
@@ -91,7 +154,7 @@ class BaseTopology(ABC):
         self,
         project_dir: str | Path,
         targets: DesignTarget | None = None,
-        params: dict[str, float] | None = None,
+        params: dict[str, Any] | None = None,
         original_requirement: str = "",
     ) -> Path:
         """Write all project files into a single directory, ready for main.py.
@@ -143,6 +206,12 @@ class BaseTopology(ABC):
             )
             req["topology_name"] = self.meta.name
             req["topology_display_name"] = self.meta.display_name
+            voltage_domain = generation_params.get(
+                "VOLTAGE_DOMAIN",
+                generation_params.get("voltage_domain"),
+            )
+            if voltage_domain:
+                req["voltage_domain"] = str(voltage_domain)
             req["generated_at"] = datetime.datetime.now().isoformat()
             req["default_params"] = self.get_default_params()
 
@@ -152,7 +221,37 @@ class BaseTopology(ABC):
                 encoding="utf-8",
             )
 
+        blocks = self.get_hierarchical_blocks(targets, generation_params)
+        if blocks:
+            hierarchy = {
+                "schema_version": 1,
+                "parent_topology": self.meta.name,
+                "blocks": [block.to_dict() for block in blocks],
+            }
+            (out / "hierarchy.json").write_text(
+                json.dumps(hierarchy, indent=2, ensure_ascii=False, default=str),
+                encoding="utf-8",
+            )
+            if targets:
+                req_path = out / "requirements.json"
+                req = json.loads(req_path.read_text(encoding="utf-8"))
+                req["hierarchical_blocks"] = {
+                    block.block_id: block.summary_dict() for block in blocks
+                }
+                req_path.write_text(
+                    json.dumps(req, indent=2, ensure_ascii=False, default=str),
+                    encoding="utf-8",
+                )
+
         return out
+
+    def get_hierarchical_blocks(
+        self,
+        targets: DesignTarget | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> list[HierarchicalBlockSpec]:
+        """Return child modules that must be optimized before this topology."""
+        return []
 
     # ------------------------------------------------------------------
     # gm/Id support (optional — override to enable gm/Id sizing mode)

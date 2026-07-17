@@ -106,6 +106,61 @@ class SpectreTopologyTest(unittest.TestCase):
         self.assertIn(f") {pdk.pmos_lvt_model} l=Lbias", folded)
         self.assertIn(f") {pdk.nmos_lvt_model} l=Lbias", folded)
 
+        pmos_input_two_stage = get_topology(
+            "pmos_input_two_stage_ota"
+        ).generate_circuit()
+        self.assertIn(f") {pdk.pmos_lvt_model} w=Wdiff", pmos_input_two_stage)
+        self.assertIn(f") {pdk.nmos_lvt_model} w=Wcs", pmos_input_two_stage)
+
+    def test_pmos_input_two_stage_ota_structure(self):
+        topo = get_topology("pmos_input_two_stage_ota")
+        circuit = topo.generate_circuit()
+        testbench = topo.generate_testbench(analysis_type="ac")
+        param_names = set(topo.get_param_space().get_param_names())
+
+        self.assertRegex(
+            circuit,
+            r"(?m)^subckt pmos_input_two_stage_ota \(vip vin vout ibias vdd vss\)",
+        )
+        self.assertIn("Mbias (ibias ibias vdd vdd)", circuit)
+        self.assertIn("Mtail (n_tail ibias vdd vdd)", circuit)
+        self.assertIn("Mdiff1 (n_mirr vip n_tail vdd)", circuit)
+        self.assertIn("Mmirr1 (n_mirr n_mirr vss vss)", circuit)
+        self.assertIn("Mcs (vout n_s1 vss vss)", circuit)
+        self.assertIn("Mload (vout ibias vdd vdd)", circuit)
+        self.assertNotIn("IBIAS", param_names)
+        self.assertIn("Wbias", param_names)
+        self.assertIn("m_tail_unit", param_names)
+        self.assertIn("ratio_load_tail", param_names)
+        self.assertIn("IBIASsrc (ibias vss) isource type=dc dc=IBIAS", testbench)
+        self.assertNotIn("VBIASsrc", testbench)
+        self.assertIn("Cc", param_names)
+        self.assertIn("Rz", param_names)
+        self.assertEqual(
+            topo.required_model_roles(),
+            ("nmos_lvt", "pmos_lvt"),
+        )
+
+    def test_two_stage_ota_uses_current_biased_diode(self):
+        topo = get_topology("two_stage_ota")
+        circuit = topo.generate_circuit()
+        testbench = topo.generate_testbench(analysis_type="ac")
+        param_names = set(topo.get_param_space().get_param_names())
+
+        self.assertRegex(
+            circuit,
+            r"(?m)^subckt two_stage_ota \(vip vin vout ibias vdd vss\)",
+        )
+        self.assertIn("Mbias (ibias ibias vss vss)", circuit)
+        self.assertIn("Mtail (n_tail ibias vss vss)", circuit)
+        self.assertIn("Mload (vout ibias vss vss)", circuit)
+        self.assertIn("m_tail_unit", param_names)
+        self.assertIn("ratio_load_tail", param_names)
+        self.assertNotIn("IBIAS", param_names)
+        self.assertNotIn("VBIAS", param_names)
+        self.assertIn("IBIASsrc (vdd ibias) isource type=dc dc=IBIAS", testbench)
+        self.assertNotIn("VBIASsrc", testbench)
+
     def test_bandgap_ptat_embeds_frozen_folded_cascode_macro(self):
         topo = get_topology("bandgap_ptat")
         circuit = topo.generate_circuit()
@@ -154,7 +209,7 @@ ends folded_cascode
             circuit,
         )
 
-    def test_bandgap_write_project_records_child_opamp_source(self):
+    def test_bandgap_write_project_records_hierarchical_opamp_spec(self):
         fake_opamp = """\
 subckt folded_cascode_two_stage (vip vin vout ibias vdd vss)
 Rfake (vout vss) resistor r=1G
@@ -177,15 +232,13 @@ ends folded_cascode_two_stage
                 original_requirement="bandgap with optimized folded opamp",
             )
             req = json.loads((project / "requirements.json").read_text(encoding="utf-8"))
-            child_circuit = (
-                project / "child_blocks" / "folded_cascode_opamp" / "circuit.cir"
-            )
-            child_results = (
-                project / "child_blocks" / "folded_cascode_opamp" / "source_results.json"
-            )
+            hierarchy = json.loads((project / "hierarchy.json").read_text(encoding="utf-8"))
+            block = hierarchy["blocks"][0]
 
-            self.assertTrue(child_circuit.exists())
-            self.assertTrue(child_results.exists())
+            self.assertEqual(hierarchy["parent_topology"], "bandgap_ptat")
+            self.assertEqual(block["block_id"], "opamp")
+            self.assertEqual(block["netlist_param"], "opamp_netlist")
+            self.assertEqual(block["results_param"], "opamp_results")
             self.assertEqual(
                 req["hierarchical_blocks"]["opamp"]["ports"],
                 ["vip", "vin", "vout", "ibias", "vdd", "vss"],
@@ -224,15 +277,15 @@ ends folded_cascode_two_stage
         circuit = topo.generate_circuit()
         rendered = NetlistTemplate.from_netlist(circuit).render(
             {
-                "Wtail": 100e-6,
-                "Ltail": 200e-9,
+                "Wbias": 100e-6,
+                "Lbias": 200e-9,
+                "m_tail_unit": 3,
+                "ratio_load_tail": 2,
                 "Wdiff": 5e-6,
                 "Ldiff": 120e-9,
                 "Wmirr": 5e-6,
                 "Lmirr": 120e-9,
                 "Wcs": 120e-6,
-                "Wload": 110e-6,
-                "Lload": 200e-9,
                 "Cc": 1e-12,
                 "Rz": 1e3,
             },
@@ -245,8 +298,12 @@ ends folded_cascode_two_stage
         )
         self.assertRegex(
             rendered,
-            r"Mload .* w=55u l=200n nf=22 m=2",
+            r"Mbias .* w=50u l=200n nf=20 m=2",
         )
+        self.assertIn("m_tail_unit=3", rendered)
+        self.assertIn("ratio_load_tail=2", rendered)
+        self.assertIn("m=m_tail_unit", rendered)
+        self.assertIn("m=m_load_unit", rendered)
 
     def test_rendered_topology_values_do_not_emit_exponent_suffix(self):
         topo = get_topology("folded_cascode_two_stage")

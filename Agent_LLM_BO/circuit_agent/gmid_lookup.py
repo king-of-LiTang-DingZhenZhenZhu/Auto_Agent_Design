@@ -645,8 +645,10 @@ class GmidSizer:
         branch_currents: dict[str, float] = {}
         for bc in self._spec.branch_currents:
             branch_currents[bc.name] = gmid_params.get(bc.name, bc.default)
+            result[bc.name] = branch_currents[bc.name]
         for dbc in self._spec.derived_branch_currents:
             branch_currents[dbc.name] = dbc.resolve(gmid_params)
+            result[dbc.name] = branch_currents[dbc.name]
 
         transistors_by_role = {ts.role: ts for ts in self._spec.transistors}
         mirror_output_roles = {

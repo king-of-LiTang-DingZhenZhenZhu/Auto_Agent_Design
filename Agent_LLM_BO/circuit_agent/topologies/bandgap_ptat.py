@@ -13,14 +13,12 @@ The opamp macro uses the folded-cascode port order:
 
 from __future__ import annotations
 
-import json
-import shutil
 from pathlib import Path
 from typing import Any
 
 from models import CircuitFiles, DesignTarget, ParamDef, ParamSpace, format_spice_value
-from pdk_profiles import get_pdk_profile, spectre_include_line
-from topologies.base import BaseTopology, TopologyMeta
+from pdk_profiles import get_pdk_profile_for_params, spectre_include_line
+from topologies.base import BaseTopology, HierarchicalBlockSpec, TopologyMeta
 from topologies.folded_cascode_two_stage import FoldedCascodeTwoStageOTA
 
 
@@ -63,7 +61,7 @@ class BandgapPTAT(BaseTopology):
     def generate_circuit(self, params: dict[str, Any] | None = None) -> str:
         """Generate a hierarchical Spectre-native bandgap/PTAT netlist."""
         p = self._merge_params_with_preset(params)
-        pdk = get_pdk_profile()
+        pdk = get_pdk_profile_for_params(params)
         opamp_netlist = self._load_opamp_netlist(params)
 
         return _CIRCUIT_TEMPLATE.format(
@@ -94,7 +92,7 @@ class BandgapPTAT(BaseTopology):
         dedicated parser; the AC/SR/ST forms here keep first-version projects
         compatible with the current BO/dry-run infrastructure.
         """
-        pdk = get_pdk_profile()
+        pdk = get_pdk_profile_for_params(params)
         p = self._merge_params_with_preset(params)
         tb_defaults = self._testbench_defaults_with_preset(
             {
@@ -142,22 +140,6 @@ class BandgapPTAT(BaseTopology):
             ],
             circuit_name=CircuitFiles.extract_subckt_name(circuit_content),
         )
-
-    def write_project(
-        self,
-        project_dir: str | Path,
-        targets: DesignTarget | None = None,
-        params: dict[str, Any] | None = None,
-        original_requirement: str = "",
-    ) -> Path:
-        out = super().write_project(
-            project_dir,
-            targets=targets,
-            params=params,
-            original_requirement=original_requirement,
-        )
-        self._write_child_block_metadata(out, targets, params)
-        return out
 
     def get_default_params(self) -> dict[str, float]:
         return self._default_params_with_preset()
@@ -220,82 +202,29 @@ class BandgapPTAT(BaseTopology):
             },
         )
 
+    def get_hierarchical_blocks(
+        self,
+        targets: DesignTarget | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> list[HierarchicalBlockSpec]:
+        return [
+            HierarchicalBlockSpec(
+                block_id="opamp",
+                topology_name="folded_cascode_two_stage",
+                expected_subckt="folded_cascode_two_stage",
+                ports=("vip", "vin", "vout", "ibias", "vdd", "vss"),
+                targets=self.derive_opamp_targets(targets),
+                sizing_policy="frozen_macro",
+                netlist_param="opamp_netlist",
+                results_param="opamp_results",
+            )
+        ]
+
     def _load_opamp_netlist(self, params: dict[str, Any] | None = None) -> str:
         source = _get_optional_path(params, "opamp_netlist", "OPAMP_NETLIST")
         if source is not None and source.exists():
             return _sanitize_child_netlist(source.read_text(encoding="utf-8"))
         return _sanitize_child_netlist(FoldedCascodeTwoStageOTA().generate_circuit())
-
-    def _write_child_block_metadata(
-        self,
-        project_dir: Path,
-        targets: DesignTarget | None,
-        params: dict[str, Any] | None,
-    ) -> None:
-        child_dir = project_dir / "child_blocks" / "folded_cascode_opamp"
-        child_dir.mkdir(parents=True, exist_ok=True)
-
-        opamp_netlist_path = _get_optional_path(params, "opamp_netlist", "OPAMP_NETLIST")
-        if opamp_netlist_path is not None and opamp_netlist_path.exists():
-            shutil.copyfile(opamp_netlist_path, child_dir / "circuit.cir")
-            opamp_source = str(opamp_netlist_path)
-        else:
-            (child_dir / "circuit.cir").write_text(
-                FoldedCascodeTwoStageOTA().generate_circuit(),
-                encoding="utf-8",
-            )
-            opamp_source = "fallback:folded_cascode_default"
-
-        opamp_results_path = _get_optional_path(
-            params,
-            "opamp_results",
-            "OPAMP_RESULTS",
-        )
-        if opamp_results_path is not None and opamp_results_path.exists():
-            shutil.copyfile(opamp_results_path, child_dir / "source_results.json")
-            results_source = str(opamp_results_path)
-        else:
-            (child_dir / "source_results.json").write_text(
-                json.dumps(
-                    {
-                        "source": opamp_source,
-                        "note": (
-                            "No folded-cascode results.json was supplied; "
-                            "the bandgap project uses the available child "
-                            "netlist as a frozen macro."
-                        ),
-                    },
-                    indent=2,
-                    ensure_ascii=False,
-                ),
-                encoding="utf-8",
-            )
-            results_source = None
-
-        req_path = project_dir / "requirements.json"
-        if not req_path.exists():
-            return
-
-        req = json.loads(req_path.read_text(encoding="utf-8"))
-        req["hierarchical_blocks"] = {
-            "opamp": {
-                "topology": "folded_cascode_two_stage",
-                "ports": ["vip", "vin", "vout", "ibias", "vdd", "vss"],
-                "netlist_source": opamp_source,
-                "results_source": results_source,
-                "local_netlist": str(child_dir / "circuit.cir"),
-                "local_results": str(child_dir / "source_results.json"),
-                "sizing_policy": "frozen_macro",
-                "derived_targets": self.derive_opamp_targets(
-                    targets
-                ).to_requirements_dict()["targets"],
-            }
-        }
-        req_path.write_text(
-            json.dumps(req, indent=2, ensure_ascii=False, default=str),
-            encoding="utf-8",
-        )
-
 
 def _get_optional_path(
     params: dict[str, Any] | None,

@@ -30,7 +30,7 @@ from __future__ import annotations
 
 from topologies.base import BaseTopology, TopologyMeta
 from models import CircuitFiles, ParamDef, ParamSpace, format_spice_value
-from pdk_profiles import get_pdk_profile, spectre_include_line
+from pdk_profiles import get_pdk_profile, get_pdk_profile_for_params, spectre_include_line
 
 
 class NMCFThreeStageOTA(BaseTopology):
@@ -104,7 +104,7 @@ class NMCFThreeStageOTA(BaseTopology):
     def generate_circuit(self, params: dict[str, float] | None = None) -> str:
         """Generate the DUT .cir subcircuit netlist."""
         p = self._merge_params_with_preset(params)
-        pdk = get_pdk_profile()
+        pdk = get_pdk_profile_for_params(params)
 
         return _CIRCUIT_TEMPLATE.format(
             spectre_include=spectre_include_line(pdk),
@@ -139,7 +139,7 @@ class NMCFThreeStageOTA(BaseTopology):
         analysis_type: str = "ac",
     ) -> str:
         """Generate the Spectre-native testbench .scs file."""
-        pdk = get_pdk_profile()
+        pdk = get_pdk_profile_for_params(params)
         tb_defaults = self._testbench_defaults_with_preset(
             {
                 "VCM": 0.3,

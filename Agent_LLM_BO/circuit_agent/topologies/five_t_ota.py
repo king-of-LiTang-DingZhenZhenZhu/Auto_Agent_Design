@@ -14,7 +14,7 @@ import math
 
 from topologies.base import BaseTopology, TopologyMeta
 from models import CircuitFiles, ParamDef, ParamSpace, format_spice_value
-from pdk_profiles import get_pdk_profile, spectre_include_line
+from pdk_profiles import get_pdk_profile, get_pdk_profile_for_params, spectre_include_line
 
 
 class FiveTOTA(BaseTopology):
@@ -58,7 +58,7 @@ class FiveTOTA(BaseTopology):
     def generate_circuit(self, params: dict[str, float] | None = None) -> str:
         """Generate the DUT .cir subcircuit netlist."""
         p = self._merge_params_with_preset(params)
-        pdk = get_pdk_profile()
+        pdk = get_pdk_profile_for_params(params)
 
         return _CIRCUIT_TEMPLATE.format(
             spectre_include=spectre_include_line(pdk),
@@ -82,7 +82,7 @@ class FiveTOTA(BaseTopology):
     ) -> str:
         """Generate AC, slew-rate, or settling-time Spectre testbench."""
         # Bias / supply defaults
-        pdk = get_pdk_profile()
+        pdk = get_pdk_profile_for_params(params)
         p = self._merge_params_with_preset(params)
         tb_defaults = self._testbench_defaults_with_preset(
             {

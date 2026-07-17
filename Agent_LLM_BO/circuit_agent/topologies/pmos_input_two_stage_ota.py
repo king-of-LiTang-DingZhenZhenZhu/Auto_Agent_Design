@@ -1,24 +1,20 @@
-"""Two-Stage Miller-Compensated OTA — NMOS-input + PMOS common-source second stage.
+"""Two-stage Miller OTA with PMOS-input 5T first stage and NMOS CS second stage.
 
-Reference: /Desktop/Knowleage_Base/01-电路拓扑/两级密勒补偿运放.md
+Topology:
+    First stage:
+        Mtail  - PMOS tail current source
+        Mdiff1/Mdiff2 - PMOS differential pair
+        Mmirr1/Mmirr2 - NMOS current-mirror load
 
-Topology (方案A — 五管OTA NMOS 输入第一级 + 共源第二级):
+    Bias:
+        Mbias - PMOS diode driven by an external ideal bias current
 
-  First Stage (NMOS-input 5T OTA):
-      M1/M2 — NMOS differential pair
-      M3/M4 — PMOS current-mirror load (diode-connected M3)
-      M5    — NMOS tail current source (Vb)
+    Second stage:
+        Mcs    - NMOS common-source amplifier
+        Mload  - PMOS current-source load
 
-  Second Stage:
-      M6    — PMOS common-source amplifier (gate ← stage1_out)
-      M7    — NMOS current-source load (Vb)
-
-  Compensation:
-      Cc    — Miller capacitor between stage1_out and vout
-      Rz    — Nulling resistor in series with Cc (pushes RHP zero to LHP)
-
-  Bias design: an external ideal current source drives an internal
-  diode-connected NMOS.  The diode node ``ibias`` biases M5 and M7.
+    Compensation:
+        Rz + Cc - Miller compensation from first-stage output to vout
 
 Port order: vip vin vout ibias vdd vss
 """
@@ -27,36 +23,48 @@ from __future__ import annotations
 
 import math
 
-from topologies.base import BaseTopology, TopologyMeta
 from models import CircuitFiles, ParamDef, ParamSpace, format_spice_value
 from pdk_profiles import get_pdk_profile, get_pdk_profile_for_params, spectre_include_line
+from topologies.base import BaseTopology, TopologyMeta
 
 
-class TwoStageOTA(BaseTopology):
-    """Two-stage Miller-compensated OTA.
-
-    NMOS diff pair → PMOS mirror → PMOS CS second stage → NMOS load.
-    An external IBIAS current drives a diode-connected NMOS bias device.
-    The resulting ibias voltage drives M5 and M7.
-    Suitable for Vcm ~0.4-0.6 V with VDD=1.0 V (TSMC 28nm core devices).
-    """
+class PMOSInputTwoStageOTA(BaseTopology):
+    """PMOS-input 5T OTA followed by an NMOS common-source second stage."""
 
     meta = TopologyMeta(
-        name="two_stage_ota",
-        display_name="Two-Stage Miller OTA",
+        name="pmos_input_two_stage_ota",
+        display_name="PMOS-Input Two-Stage Miller OTA",
         description=(
-            "Two-stage OTA with NMOS differential pair, PMOS current-mirror "
-            "first stage, PMOS common-source second stage, and Miller "
-            "compensation (Cc + Rz).  High gain (55-85 dB), moderate GBW."
+            "Two-stage OTA with PMOS differential input pair, NMOS current-mirror "
+            "first-stage load, NMOS common-source second stage, PMOS load, and "
+            "Miller compensation. Uses LVT MOS models."
         ),
         min_gain_db=45,
-        max_gain_db= 80,
+        max_gain_db=80,
         min_gbw_hz=10e6,
         max_gbw_hz=5e8,
         typical_power_w=1e-3,
         complexity=2,
-        escalation="folded_cascode",  # future
+        escalation="folded_cascode",
     )
+
+    DEFAULT_PARAMS: dict[str, float] = {
+        "Wbias": 5e-6,
+        "Lbias": 200e-9,
+        "m_tail_unit": 2,
+        "ratio_load_tail": 2,
+        "Wdiff": 10e-6,
+        "Ldiff": 120e-9,
+        "Wmirr": 6e-6,
+        "Lmirr": 200e-9,
+        "Wcs": 20e-6,
+        "Cc": 500e-15,
+        "Rz": 1000.0,
+        "IBIAS": 20e-6,
+    }
+
+    def required_model_roles(self) -> tuple[str, ...]:
+        return ("nmos_lvt", "pmos_lvt")
 
     def critical_operating_point_instances(self) -> set[str]:
         return {
@@ -70,33 +78,6 @@ class TwoStageOTA(BaseTopology):
             "Mbias",
         }
 
-    # ------------------------------------------------------------------
-    # Default parameters (SI units)
-    # ------------------------------------------------------------------
-    DEFAULT_PARAMS: dict[str, float] = {
-        # First stage — NMOS tail current
-        "Wbias": 5e-6,
-        "Lbias": 200e-9,
-        "m_tail_unit": 2,
-        "ratio_load_tail": 2,
-        # First stage — NMOS diff pair
-        "Wdiff": 10e-6,
-        "Ldiff": 60e-9,
-        # First stage — PMOS current mirror
-        "Wmirr": 5e-6,
-        "Lmirr": 100e-9,
-        # Second stage — PMOS common-source
-        "Wcs": 20e-6,
-        # Compensation
-        "Cc": 500e-15,
-        "Rz": 1000.0,
-        # External ideal bias current into the internal NMOS diode.
-        "IBIAS": 20e-6,
-    }
-
-    # ------------------------------------------------------------------
-    # generate_circuit
-    # ------------------------------------------------------------------
     def generate_circuit(self, params: dict[str, float] | None = None) -> str:
         """Generate the DUT .cir subcircuit netlist."""
         p = self._merge_params_with_preset(params)
@@ -104,8 +85,8 @@ class TwoStageOTA(BaseTopology):
 
         return _CIRCUIT_TEMPLATE.format(
             spectre_include=spectre_include_line(pdk),
-            nmos_model=pdk.nmos_model,
-            pmos_model=pdk.pmos_model,
+            nmos_lvt_model=pdk.nmos_lvt_model,
+            pmos_lvt_model=pdk.pmos_lvt_model,
             Wbias=_fmt(p["Wbias"]),
             Lbias=_fmt(p["Lbias"]),
             m_tail_unit=int(p["m_tail_unit"]),
@@ -119,25 +100,17 @@ class TwoStageOTA(BaseTopology):
             Rz=_fmt(p["Rz"]),
         )
 
-    # ------------------------------------------------------------------
-    # generate_testbench
-    # ------------------------------------------------------------------
     def generate_testbench(
         self,
         params: dict[str, float] | None = None,
         analysis_type: str = "ac",
     ) -> str:
-        """Generate the Spectre-native testbench .scs file.
-
-        Args:
-            params: Override defaults (VDD, VCM, IBIAS, CL).
-            analysis_type: "ac", "sr" (or legacy "tran"), or "st".
-        """
+        """Generate AC, slew-rate, or settling-time Spectre testbench."""
         pdk = get_pdk_profile_for_params(params)
         p = self._merge_params_with_preset(params)
         tb_defaults = self._testbench_defaults_with_preset(
             {
-                "VCM": 0.7,
+                "VCM": pdk.vdd - 0.35,
                 "IBIAS": p.get("IBIAS", 20e-6),
                 "CL": 2e-12,
             }
@@ -150,7 +123,7 @@ class TwoStageOTA(BaseTopology):
         if params:
             vdd = params.get("VDD", vdd)
             vcm = params.get("VCM", vcm)
-            ibias = params.get("IBIAS", params.get("I_tail", ibias))
+            ibias = params.get("IBIAS", ibias)
             cload = params.get("CL", cload)
 
         if analysis_type in ("tran", "sr"):
@@ -159,13 +132,17 @@ class TwoStageOTA(BaseTopology):
                 VCM=vcm,
                 IBIAS=_fmt(ibias),
                 CL=_fmt(cload),
-                VHIGH=vcm + 0.2,
                 VLOW=vcm - 0.2,
+                VHIGH=vcm + 0.2,
             )
         if analysis_type == "st":
             return _TB_ST_TEMPLATE.format(
-                VDD=vdd, VCM=vcm, IBIAS=_fmt(ibias), CL=_fmt(cload),
-                VHIGH=vcm + 10e-3, VLOW=vcm,
+                VDD=vdd,
+                VCM=vcm,
+                IBIAS=_fmt(ibias),
+                CL=_fmt(cload),
+                VLOW=vcm,
+                VHIGH=vcm + 10e-3,
             )
         return _TB_AC_TEMPLATE.format(
             VDD=vdd,
@@ -174,53 +151,29 @@ class TwoStageOTA(BaseTopology):
             CL=_fmt(cload),
         )
 
-    # ------------------------------------------------------------------
-    # get_circuit_files (override — two testbenches)
-    # ------------------------------------------------------------------
     def get_circuit_files(
         self, params: dict[str, float] | None = None
     ) -> CircuitFiles:
         """Return AC, slew-rate, and 0.1% settling-time testbenches."""
         circuit_content = self.generate_circuit(params)
-        tb_ac = self.generate_testbench(params, analysis_type="ac")
-        tb_sr = self.generate_testbench(params, analysis_type="sr")
-        tb_st = self.generate_testbench(params, analysis_type="st")
-        circuit_name = CircuitFiles.extract_subckt_name(circuit_content)
         return CircuitFiles(
             circuit_netlist=circuit_content,
-            testbenches=[tb_ac, tb_sr, tb_st],
-            circuit_name=circuit_name,
+            testbenches=[
+                self.generate_testbench(params, "ac"),
+                self.generate_testbench(params, "sr"),
+                self.generate_testbench(params, "st"),
+            ],
+            circuit_name=CircuitFiles.extract_subckt_name(circuit_content),
         )
 
-    # ------------------------------------------------------------------
-    # gm/Id support
-    # gm/Id 模式启动后，BO 搜索的是：
-    # I_tail
-    # gm_id_xxx
-    # L_xxx
-    # ratio_load_tail
-    # Cc
-    # Rz
-    # 然后 GmidSizer 用这个 L 去查 gm/Id table，算出 W
-    # ------------------------------------------------------------------
-
     def get_gmid_spec(self, targets=None):
-        """Return the gm/Id spec for the two-stage OTA.
+        """Return gm/Id spec for PMOS-input two-stage OTA.
 
-        One fixed unit bias current plus integer mirror multipliers:
-        - IBIAS: unit current through the diode NMOS
-        - m_tail_unit: Mtail/Mbias current ratio
-        - ratio_load_tail: Mload/Mtail current ratio
-
-        Transistor roles:
-        - bias_nmos (unit diode NMOS, gate/drain=ibias)
-        - diff_pair_nmos (NMOS input pair, each I_tail/2)
-        - mirror_pmos (PMOS current mirror load, each I_tail/2)
-        - cs_pmos (second-stage PMOS CS amplifier)
-
-        Mtail and Mload share W/L/nf with Mbias in the netlist; only m changes.
+        The first-stage PMOS tail and second-stage PMOS load share the
+        voltage generated by pulling ``IBIAS`` through a diode-connected PMOS.
         """
         from models import DerivedBranchCurrentSpec, GmidTopologySpec, TransistorSpec
+
         pdk = get_pdk_profile()
         unit_current = 20e-6
         pass_through_space = self._apply_param_space_overrides(ParamSpace(params=[
@@ -246,7 +199,7 @@ class TwoStageOTA(BaseTopology):
             gm_required = (
                 2.0 * math.pi * targets.bandwidth_hz * compensation_estimate
             )
-            single_input_current = gm_required / 15.0
+            single_input_current = gm_required / 18.0
             tail_current_low = max(tail_current_low, 2.0 * single_input_current)
         tail_multiplier_min = max(1, math.ceil(tail_current_low / unit_current))
         tail_multiplier_high = max(8, 4 * tail_multiplier_min)
@@ -274,43 +227,39 @@ class TwoStageOTA(BaseTopology):
                 ),
             ],
             transistors=[
-                # -- Unit NMOS diode for external current reference --
                 TransistorSpec(
-                    role="bias_nmos",
+                    role="bias_pmos",
                     w_param="Wbias", l_param="Lbias",
-                    model=pdk.nmos_model,
+                    model=pdk.pmos_lvt_model,
                     current_source="IBIAS", current_fraction=1.0,
-                    gm_id_low=8, gm_id_high=15, gm_id_default=10,
-                    L_low=200e-9, L_high=600e-9, L_default=200e-9,
+                    gm_id_low=8, gm_id_high=18, gm_id_default=12,
+                    L_low=120e-9, L_high=600e-9, L_default=200e-9,
                     Vds_estimate=0.2,
                 ),
-                # -- First stage: NMOS diff pair (each I_tail/2) --
                 TransistorSpec(
-                    role="diff_pair_nmos",
+                    role="diff_pair_pmos",
                     w_param="Wdiff", l_param="Ldiff",
-                    model=pdk.nmos_model,
+                    model=pdk.pmos_lvt_model,
                     current_source="I_tail", current_fraction=0.5,
-                    gm_id_low=10, gm_id_high=20, gm_id_default=12,
-                    L_low=60e-9, L_high=500e-9, L_default=60e-9,
-                    Vds_estimate=0.25, Vbs=-0.3, multiplicity=2,
+                    gm_id_low=10, gm_id_high=20, gm_id_default=16,
+                    L_low=120e-9, L_high=600e-9, L_default=180e-9,
+                    Vds_estimate=0.25, Vbs=-0.2, multiplicity=2,
                 ),
-                # -- First stage: PMOS current mirror load (each I_tail/2) --
                 TransistorSpec(
-                    role="mirror_pmos",
+                    role="mirror_nmos",
                     w_param="Wmirr", l_param="Lmirr",
-                    model=pdk.pmos_model,
+                    model=pdk.nmos_lvt_model,
                     current_source="I_tail", current_fraction=0.5,
-                    gm_id_low=8, gm_id_high=15, gm_id_default=10,
-                    L_low=60e-9, L_high=500e-9, L_default=100e-9,
-                    Vds_estimate=0.3, multiplicity=2,
+                    gm_id_low=5, gm_id_high=15, gm_id_default=12,
+                    L_low=120e-9, L_high=600e-9, L_default=200e-9,
+                    Vds_estimate=0.35, multiplicity=2,
                 ),
-                # -- Second stage: PMOS common-source amplifier --
                 TransistorSpec(
-                    role="cs_pmos",
+                    role="cs_nmos",
                     w_param="Wcs", l_param="Lbias",
-                    model=pdk.pmos_model,
+                    model=pdk.nmos_lvt_model,
                     current_source="I_cs", current_fraction=1.0,
-                    gm_id_low=8, gm_id_high=15, gm_id_default=12,
+                    gm_id_low=8, gm_id_high=18, gm_id_default=12,
                     L_low=200e-9, L_high=600e-9, L_default=200e-9,
                     Vds_estimate=0.45,
                 ),
@@ -328,25 +277,18 @@ class TwoStageOTA(BaseTopology):
             ],
         )
 
-    # ------------------------------------------------------------------
-    # get_default_params
-    # ------------------------------------------------------------------
     def get_default_params(self) -> dict[str, float]:
         return self._default_params_with_preset()
 
-    # ------------------------------------------------------------------
-    # get_param_space: 这是 非 gm/Id 普通物理参数模式下的 BO 搜索范围
-    # ------------------------------------------------------------------
     def get_param_space(self) -> ParamSpace:
         return self._apply_param_space_overrides(ParamSpace(
             params=[
-                # --- Unit NMOS diode and current-mirror multipliers ---
                 ParamDef(
                     name="Wbias", low=0.5e-6, high=200e-6,
                     log_scale=True, unit="m", max_per_finger=2.6e-6,
                 ),
                 ParamDef(
-                    name="Lbias", low=200e-9, high=600e-9,
+                    name="Lbias", low=120e-9, high=600e-9,
                     log_scale=True, unit="m",
                 ),
                 ParamDef(
@@ -357,7 +299,6 @@ class TwoStageOTA(BaseTopology):
                     name="ratio_load_tail", low=1, high=4,
                     log_scale=False, unit="x", value_type="int",
                 ),
-                # --- First stage: diff pair ---
                 ParamDef(
                     name="Wdiff", low=0.5e-6, high=200e-6,
                     log_scale=True, unit="m", max_per_finger=2.6e-6,
@@ -366,21 +307,18 @@ class TwoStageOTA(BaseTopology):
                     name="Ldiff", low=30e-9, high=900e-9,
                     log_scale=True, unit="m",
                 ),
-                # --- First stage: current mirror ---
                 ParamDef(
                     name="Wmirr", low=0.5e-6, high=200e-6,
                     log_scale=True, unit="m", max_per_finger=2.6e-6,
                 ),
                 ParamDef(
-                    name="Lmirr", low=30e-9, high=900e-9,
+                    name="Lmirr", low=120e-9, high=900e-9,
                     log_scale=True, unit="m",
                 ),
-                # --- Second stage: PMOS CS amp ---
                 ParamDef(
                     name="Wcs", low=0.5e-6, high=200e-6,
                     log_scale=True, unit="m", max_per_finger=2.6e-6,
                 ),
-                # --- Compensation ---
                 ParamDef(
                     name="Cc", low=0.1e-12, high=5e-12,
                     log_scale=True, unit="F",
@@ -393,12 +331,8 @@ class TwoStageOTA(BaseTopology):
         ))
 
 
-# ------------------------------------------------------------------
-# Spectre-native templates
-# ------------------------------------------------------------------
-
 _CIRCUIT_TEMPLATE = """\
-// two_stage_ota.cir -- Two-Stage Miller OTA (Spectre native syntax)
+// pmos_input_two_stage_ota.cir -- PMOS-input two-stage Miller OTA
 simulator lang=spectre insensitive=yes
 
 {spectre_include}
@@ -409,29 +343,26 @@ parameters Wdiff={Wdiff} Ldiff={Ldiff}
 parameters Wmirr={Wmirr} Lmirr={Lmirr} Wcs={Wcs}
 parameters Cc={Cc} Rz={Rz}
 
-subckt two_stage_ota (vip vin vout ibias vdd vss)
-// Bias generator: external current into diode-connected NMOS
-Mbias (ibias ibias vss vss) {nmos_model} w=Wbias l=Lbias nf=1
-// First stage: NMOS differential pair
-Mdiff1 (n_mirr vin n_tail vss) {nmos_model} w=Wdiff l=Ldiff nf=1
-Mdiff2 (n_s1 vip n_tail vss) {nmos_model} w=Wdiff l=Ldiff nf=1
-// First stage: PMOS current mirror load
-Mmirr1 (n_mirr n_mirr vdd vdd) {pmos_model} w=Wmirr l=Lmirr nf=1
-Mmirr2 (n_s1 n_mirr vdd vdd) {pmos_model} w=Wmirr l=Lmirr nf=1
-// First stage: NMOS tail current source
-Mtail (n_tail ibias vss vss) {nmos_model} w=Wbias l=Lbias nf=1 m=m_tail_unit
-// Second stage
-Mcs (vout n_s1 vdd vdd) {pmos_model} w=Wcs l=Lbias nf=1
-Mload (vout ibias vss vss) {nmos_model} w=Wbias l=Lbias nf=1 m=m_load_unit
+subckt pmos_input_two_stage_ota (vip vin vout ibias vdd vss)
+// Bias generator: external current pulled from diode-connected PMOS
+Mbias (ibias ibias vdd vdd) {pmos_lvt_model} w=Wbias l=Lbias nf=1
+// First stage: PMOS differential pair with NMOS current-mirror load
+Mdiff1 (n_mirr vip n_tail vdd) {pmos_lvt_model} w=Wdiff l=Ldiff nf=1
+Mdiff2 (n_s1 vin n_tail vdd) {pmos_lvt_model} w=Wdiff l=Ldiff nf=1
+Mmirr1 (n_mirr n_mirr vss vss) {nmos_lvt_model} w=Wmirr l=Lmirr nf=1
+Mmirr2 (n_s1 n_mirr vss vss) {nmos_lvt_model} w=Wmirr l=Lmirr nf=1
+Mtail (n_tail ibias vdd vdd) {pmos_lvt_model} w=Wbias l=Lbias nf=1 m=m_tail_unit
+// Second stage: NMOS common-source amplifier with PMOS current-source load
+Mcs (vout n_s1 vss vss) {nmos_lvt_model} w=Wcs l=Lbias nf=1
+Mload (vout ibias vdd vdd) {pmos_lvt_model} w=Wbias l=Lbias nf=1 m=m_load_unit
 // Miller compensation
 Rz (n_s1 n_rz) resistor r=Rz
 Cc (n_rz vout) capacitor c=Cc
-ends two_stage_ota
+ends pmos_input_two_stage_ota
 """
 
-# Differential AC testbench
 _TB_AC_TEMPLATE = """\
-// tb_two_stage_ota_ac.scs -- Two-Stage OTA differential AC analysis
+// tb_pmos_input_two_stage_ota_ac.scs -- Differential AC analysis
 simulator lang=spectre insensitive=yes
 
 include "circuit.cir"
@@ -440,13 +371,13 @@ parameters VDD={VDD} VCM={VCM} IBIAS={IBIAS} CL={CL}
 
 VDDsrc (vdd 0) vsource type=dc dc=VDD
 VSSsrc (vss 0) vsource type=dc dc=0
-IBIASsrc (vdd ibias) isource type=dc dc=IBIAS
+IBIASsrc (ibias vss) isource type=dc dc=IBIAS
 VCMsrc (vcm 0) vsource type=dc dc=VCM
 VIPsrc (vinp vcm) vsource type=dc dc=0 mag=1
 Rfb (vout vinn) resistor r=1G
 Cfb (vinn 0) capacitor c=1
 
-Xdut (vinp vinn vout ibias vdd vss) two_stage_ota
+Xdut (vinp vinn vout ibias vdd vss) pmos_input_two_stage_ota
 CLload (vout 0) capacitor c=CL
 
 tempOption options temp=27
@@ -459,10 +390,8 @@ save vout
 save VDDsrc:p
 """
 
-# Unity-gain large-signal slew-rate testbench
 _TB_SR_TEMPLATE = """\
-// tb_two_stage_ota_sr.scs -- Unity-gain large-signal slew-rate analysis
-// 对于 SR 的测量，不能把输出目标推到电路根本到不了的位置，比如 0.9V
+// tb_pmos_input_two_stage_ota_sr.scs -- Unity-gain slew-rate analysis
 simulator lang=spectre insensitive=yes
 
 include "circuit.cir"
@@ -472,11 +401,11 @@ parameters VLOW={VLOW} VHIGH={VHIGH}
 
 VDDsrc (vdd 0) vsource type=dc dc=VDD
 VSSsrc (vss 0) vsource type=dc dc=0
-IBIASsrc (vdd ibias) isource type=dc dc=IBIAS
+IBIASsrc (ibias vss) isource type=dc dc=IBIAS
 VIPsrc (vinp 0) vsource type=pulse val0=VLOW val1=VHIGH delay=2n rise=100p fall=100p width=50n period=100n
 VFBsrc (vin vout) vsource type=dc dc=0
 
-Xdut (vinp vin vout ibias vdd vss) two_stage_ota
+Xdut (vinp vin vout ibias vdd vss) pmos_input_two_stage_ota
 CLload (vout 0) capacitor c=CL
 
 tempOption options temp=27
@@ -487,7 +416,7 @@ save vinp vout
 """
 
 _TB_ST_TEMPLATE = """\
-// tb_two_stage_ota_st.scs -- Unity-gain 0.1% settling-time analysis
+// tb_pmos_input_two_stage_ota_st.scs -- Unity-gain settling-time analysis
 simulator lang=spectre insensitive=yes
 
 include "circuit.cir"
@@ -497,11 +426,11 @@ parameters VLOW={VLOW} VHIGH={VHIGH}
 
 VDDsrc (vdd 0) vsource type=dc dc=VDD
 VSSsrc (vss 0) vsource type=dc dc=0
-IBIASsrc (vdd ibias) isource type=dc dc=IBIAS
+IBIASsrc (ibias vss) isource type=dc dc=IBIAS
 VIPsrc (vinp 0) vsource type=pulse val0=VLOW val1=VHIGH delay=5n rise=100p fall=100p width=80n period=160n
 VFBsrc (vin vout) vsource type=dc dc=0
 
-Xdut (vinp vin vout ibias vdd vss) two_stage_ota
+Xdut (vinp vin vout ibias vdd vss) pmos_input_two_stage_ota
 CLload (vout 0) capacitor c=CL
 
 tempOption options temp=27
@@ -512,10 +441,5 @@ save vinp vout
 """
 
 
-# ------------------------------------------------------------------
-# internal helpers
-# ------------------------------------------------------------------
-
 def _fmt(value: float) -> str:
-    """Format a float with SPICE engineering suffix (u, n, p, f, k)."""
     return format_spice_value(value)

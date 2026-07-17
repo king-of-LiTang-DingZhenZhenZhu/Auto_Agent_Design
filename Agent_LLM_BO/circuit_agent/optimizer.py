@@ -600,6 +600,17 @@ class HybridOptimizer:
             "best_reward": state.best_reward,
             "topology_changes": state.topology_changes,
             "stop_reason": state.stop_reason,
+            "search_space": [
+                {
+                    "name": param.name,
+                    "low": param.low,
+                    "high": param.high,
+                    "log_scale": param.log_scale,
+                    "unit": param.unit,
+                    "value_type": param.value_type,
+                }
+                for param in state.param_space.params
+            ],
             "targets": {
                 "gain_db": state.targets.gain_db,
                 "bandwidth_hz": state.targets.bandwidth_hz,
@@ -613,6 +624,7 @@ class HybridOptimizer:
                 {
                     "iteration": r.iteration,
                     "params": r.params,
+                    "physical_params": r.physical_params,
                     "reward": r.reward,
                     "result": {
                         "gain_db": r.result.gain_db,

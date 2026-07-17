@@ -20,6 +20,8 @@ knowledge_base/Opamp_knowledge_base/topologies/<topology>_optimization.md
 - `workspace/run_xxx/diagnostics/diagnostics_summary.txt`：DC/AC 人类可读诊断。
 - `workspace/run_xxx/diagnostics/dc_operating_points.csv`：用于判断 `|vds|-|vdsat|`。
 - topology 专用 guide：当前拓扑的调参知识来源。
+- `agent_review/knowledge_analysis.json|md`：理论关系、派生量和适用条件。
+- `parameter_analysis/parameter_effects.json|md`：本轮 BO 的经验参数影响。
 
 Top 样本选择规则：按 reward 降序选前 10%，至少 3 条，最多 10 条；总数少于 3 条时全部使用。
 
@@ -57,8 +59,23 @@ Agent 不直接改 `.cir`。先由 Python 导出 `agent_context.md` 和 `patch_p
 1. 先看仿真是否收敛；未收敛时优先查 `sim.log` 和 testbench。
 2. 再看 DC OP：critical MOS 若 `|vds|-|vdsat| < 0` 为 linear，`0~50mV` 为 near-edge。
 3. 再看指标缺口：gain、GBW/UGF、PM、power、SR、settling。
-4. 查 topology 专用 guide，选择与当前拓扑匹配的参数。
-5. 每个 Top run 只生成一个综合候选，避免一次 review 产生过多组合。
+4. 用 `knowledge_analysis.md` 中的公式检查理论需求、实测 OP 与指标是否一致。
+5. 用 `parameter_effects.md` 检查本轮 BO 的经验趋势和参数边界压力。
+6. 查 topology 专用 guide，选择与当前拓扑匹配的参数。
+7. 理论、BO 趋势和 Spectre 结果冲突时，不直接下结论；优先规划局部参数扰动实验。
+8. 每个 Top run 只生成一个综合候选，避免一次 review 产生过多组合。
+
+## 知识驱动规则
+
+结构化公式来自 `knowledge_base/circuit_design_relations.json`。Review 将其作为物理先验，不作为替代 Spectre 的精确模型：
+
+- 单级运放：`GBW ~= gm_input/(2*pi*CL)`。
+- Miller 补偿多级运放：`GBW ~= gm_input/(2*pi*Cc)`。
+- 两极点近似：`PM ~= 90deg-atan(UGF/p2)`，等价于 `p2/UGF ~= tan(PM)`。
+- 一阶 bandgap：`Vref ~= VBE + K*DeltaVBE`。
+- `DeltaVBE=(k*T/q)*ln(N)`，一阶温漂抵消要求 `dVBE/dT + K*(k/q)*ln(N) ~= 0`。
+
+每条公式都必须同时检查适用条件。例如 Miller GBW 关系要求主极点补偿成立，PM 两极点近似要求没有邻近零点。若理论预测和实测差异很大，应优先怀疑额外极点/零点、器件工作区变化、寄生或参数交互。
 
 ## 安全约束
 
