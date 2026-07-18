@@ -112,7 +112,7 @@ class PMOSInputTwoStageOTA(BaseTopology):
             {
                 "VCM": pdk.vdd - 0.35,
                 "IBIAS": p.get("IBIAS", 20e-6),
-                "CL": 2e-12,
+                "CL": 1e-12,
             }
         )
         vdd = pdk.vdd
@@ -178,16 +178,16 @@ class PMOSInputTwoStageOTA(BaseTopology):
         unit_current = 20e-6
         pass_through_space = self._apply_param_space_overrides(ParamSpace(params=[
             ParamDef(
-                name="Cc", low=0.1e-12, high=5e-12,
+                name="Cc", low=0.1e-12, high=500e-15,
                 log_scale=True, unit="F",
             ),
             ParamDef(
-                name="Rz", low=100, high=5e3,
+                name="Rz", low=100, high=2e3,
                 log_scale=True, unit="Ohm",
             ),
         ]))
 
-        tail_current_low = 50e-6
+        tail_current_low = 20e-6
         if (
             targets is not None
             and targets.bandwidth_hz is not None
@@ -232,7 +232,7 @@ class PMOSInputTwoStageOTA(BaseTopology):
                     w_param="Wbias", l_param="Lbias",
                     model=pdk.pmos_lvt_model,
                     current_source="IBIAS", current_fraction=1.0,
-                    gm_id_low=8, gm_id_high=18, gm_id_default=12,
+                    gm_id_low=8, gm_id_high=14, gm_id_default=12,
                     L_low=120e-9, L_high=600e-9, L_default=200e-9,
                     Vds_estimate=0.2,
                 ),

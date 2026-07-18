@@ -322,7 +322,12 @@ class OptimizerConfigTest(unittest.TestCase):
                 self.assertIn("parameters m_half_unit=4 m_load_ratio=3", circuit)
 
                 spec = topology.get_gmid_spec()
-                self.assertEqual(spec.fixed_params["Wbp_big"], 6e-6)
+                self.assertFalse(spec.fixed_params)
+                transistors = {
+                    transistor.role: transistor for transistor in spec.transistors
+                }
+                self.assertEqual(transistors["bias_pmos"].L_default, 500e-9)
+                self.assertEqual(transistors["bias_nmos"].L_default, 500e-9)
                 params = {param.name: param for param in spec.build_param_space().params}
                 self.assertEqual(params["m_half_unit"].low, 3)
                 self.assertEqual(params["m_half_unit"].high, 5)
@@ -554,11 +559,14 @@ class OptimizerConfigTest(unittest.TestCase):
         params = {param.name: param for param in spec.build_param_space().params}
         transistor_roles = {transistor.role for transistor in spec.transistors}
 
-        self.assertEqual(transistor_roles, {"diff_pair_pmos", "cs_pmos"})
+        self.assertEqual(
+            transistor_roles,
+            {"bias_pmos", "bias_nmos", "diff_pair_pmos", "cs_pmos"},
+        )
         self.assertFalse(spec.branch_currents)
         self.assertEqual(
             {current.name for current in spec.derived_branch_currents},
-            {"I_tail", "I_fold", "I_cs"},
+            {"IBIAS", "I_tail", "I_fold", "I_cs"},
         )
         for name in (
             "gm_id_tail_pmos",
@@ -572,7 +580,11 @@ class OptimizerConfigTest(unittest.TestCase):
             self.assertNotIn(name, params)
         self.assertIn("m_half_unit", params)
         self.assertIn("m_load_ratio", params)
-        self.assertIn("Lbias", params)
+        self.assertIn("gm_id_bias_pmos", params)
+        self.assertIn("gm_id_bias_nmos", params)
+        self.assertIn("L_bias_pmos", params)
+        self.assertNotIn("L_bias_nmos", params)
+        self.assertNotIn("Lbias", params)
         for name in (
             "bias_p_scale", "bias_n_scale",
             "bias_p_small_scale", "bias_n_small_scale",
@@ -584,21 +596,35 @@ class OptimizerConfigTest(unittest.TestCase):
             "Lbp_big", "Lbp_small", "Lbn_big", "Lbn_small",
         ):
             self.assertNotIn(name, params)
-        for name in (
-            "gm_id_bias_pmos_big",
-            "gm_id_bias_pmos_small",
-            "gm_id_bias_nmos_big",
-            "gm_id_bias_nmos_small",
-        ):
-            self.assertNotIn(name, params)
-        self.assertEqual(spec.fixed_params["Wbp_big"], 4.8e-6)
-        self.assertEqual(spec.fixed_params["nf_Wbp_big"], 4)
-        self.assertEqual(spec.fixed_params["m_Wbp_big"], 1)
-        self.assertEqual(spec.fixed_params["Wbn_big"], 4.8e-6)
-        self.assertEqual(spec.fixed_params["nf_Wbn_big"], 4)
-        self.assertEqual(spec.fixed_params["m_Wbn_big"], 1)
-        self.assertEqual(spec.fixed_width_scale_param, "Lbias")
-        self.assertEqual(spec.fixed_width_scale_reference, 400e-9)
+        self.assertFalse(spec.fixed_params)
+        self.assertIsNone(spec.fixed_width_scale_param)
+
+    def test_folded_m_half_lower_bound_comes_from_gbw(self):
+        targets = DesignTarget(bandwidth_hz=500e6, load_cap_f=1e-12)
+
+        single_stage = get_topology("folded_cascode").get_gmid_spec(targets)
+        single_stage_m = next(
+            param for param in single_stage.pass_through_params
+            if param.name == "m_half_unit"
+        )
+        single_stage_gm = 2.0 * math.pi * 500e6 * 1e-12
+        self.assertEqual(
+            single_stage_m.low,
+            math.ceil((single_stage_gm / 15.0) / 20e-6),
+        )
+        self.assertGreaterEqual(single_stage_m.high, 4 * single_stage_m.low)
+
+        two_stage = get_topology("folded_cascode_two_stage").get_gmid_spec(targets)
+        two_stage_m = next(
+            param for param in two_stage.pass_through_params
+            if param.name == "m_half_unit"
+        )
+        two_stage_gm = 2.0 * math.pi * 500e6 * (0.5e-12)
+        self.assertEqual(
+            two_stage_m.low,
+            math.ceil((two_stage_gm / 20.0) / 20e-6),
+        )
+        self.assertGreaterEqual(two_stage_m.high, 4 * two_stage_m.low)
 
     def test_two_stage_gmid_space_uses_external_ibias(self):
         spec = get_topology("two_stage_ota").get_gmid_spec()

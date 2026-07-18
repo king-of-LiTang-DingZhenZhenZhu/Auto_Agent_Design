@@ -31,6 +31,8 @@ Port order: vip vin vout ibias vdd vss
 
 from __future__ import annotations
 
+import math
+
 from topologies.base import BaseTopology, TopologyMeta
 from models import CircuitFiles, ParamDef, ParamSpace, format_spice_value
 from pdk_profiles import get_pdk_profile, get_pdk_profile_for_params, spectre_include_line
@@ -266,25 +268,47 @@ class FoldedCascodeTwoStageOTA(BaseTopology):
         ))
 
     def get_gmid_spec(self, targets=None):
-        """Return gm/Id spec for folded cascode — reduces 26 → 17 params."""
+        """Return the gm/Id search definition for the two-stage OTA."""
         from models import DerivedBranchCurrentSpec, GmidTopologySpec, TransistorSpec
         pdk = get_pdk_profile()
         defaults = self._default_params_with_preset()
+        unit_current = 20e-6
+        bias_length_default = min(max(defaults["Lbias"], 300e-9), 600e-9)
+
+        single_input_current_low = unit_current
+        if (
+            targets is not None
+            and targets.bandwidth_hz is not None
+            and targets.load_cap_f is not None
+            and targets.bandwidth_hz > 0
+            and targets.load_cap_f > 0
+        ):
+            compensation_estimate = 0.5 * targets.load_cap_f
+            gm_required = (
+                2.0 * math.pi * targets.bandwidth_hz * compensation_estimate
+            )
+            single_input_current_low = max(
+                single_input_current_low,
+                gm_required / 20.0,
+            )
+        half_multiplier_min = max(
+            1,
+            math.ceil(single_input_current_low / unit_current),
+        )
+        half_multiplier_high = max(6, 4 * half_multiplier_min)
+
         pass_through_space = self._apply_param_space_overrides(ParamSpace(params=[
             ParamDef(
-                name="m_half_unit", low=2, high=6,
+                name="m_half_unit", low=half_multiplier_min,
+                high=half_multiplier_high, log_scale=False,
+                unit="x", value_type="int",
+            ),
+            ParamDef(
+                name="m_load_ratio", low=2, high=6,
                 log_scale=False, unit="x", value_type="int",
             ),
             ParamDef(
-                name="m_load_ratio", low=2, high=8,
-                log_scale=False, unit="x", value_type="int",
-            ),
-            ParamDef(
-                name="Lbias", low=300e-9, high=600e-9,
-                log_scale=True, unit="m",
-            ),
-            ParamDef(
-                name="Cc", low=0.1e-12, high=3e-12,
+                name="Cc", low=0.1e-12, high=1e-12,
                 log_scale=True, unit="F",
             ),
             ParamDef(
@@ -296,20 +320,25 @@ class FoldedCascodeTwoStageOTA(BaseTopology):
         return GmidTopologySpec(
             derived_branch_currents=[
                 DerivedBranchCurrentSpec(
+                    name="IBIAS",
+                    unit_current=unit_current,
+                    multiplier_offset=1.0,
+                ),
+                DerivedBranchCurrentSpec(
                     name="I_tail",
-                    unit_current=20e-6,
+                    unit_current=unit_current,
                     multiplier_param="m_half_unit",
                     multiplier_scale=2.0,
                 ),
                 DerivedBranchCurrentSpec(
                     name="I_fold",
-                    unit_current=20e-6,
+                    unit_current=unit_current,
                     multiplier_param="m_half_unit",
                     multiplier_scale=2.0,
                 ),
                 DerivedBranchCurrentSpec(
                     name="I_cs",
-                    unit_current=20e-6,
+                    unit_current=unit_current,
                     multiplier_param="m_half_unit",
                     multiplier_scale=1.0,
                     extra_param="m_load_ratio",
@@ -317,13 +346,33 @@ class FoldedCascodeTwoStageOTA(BaseTopology):
                 ),
             ],
             transistors=[
+                TransistorSpec(
+                    role="bias_pmos",
+                    w_param="Wbp_big", l_param="Lbias",
+                    model=pdk.pmos_lvt_model,
+                    current_source="IBIAS", current_fraction=1.0,
+                    gm_id_low=8, gm_id_high=15, gm_id_default=12,
+                    L_low=300e-9, L_high=600e-9,
+                    L_default=bias_length_default,
+                    Vds_estimate=0.2,
+                ),
+                TransistorSpec(
+                    role="bias_nmos",
+                    w_param="Wbn_big", l_param="Lbias",
+                    model=pdk.nmos_lvt_model,
+                    current_source="IBIAS", current_fraction=1.0,
+                    gm_id_low=8, gm_id_high=15, gm_id_default=12,
+                    L_low=300e-9, L_high=600e-9,
+                    L_default=bias_length_default,
+                    Vds_estimate=0.2,
+                ),
                 # -- PMOS diff pair (each side carries I_tail / 2) --
                 TransistorSpec(
                     role="diff_pair_pmos",
                     w_param="Wdiffp", l_param="Ldiffp",
                     model=pdk.pmos_lvt_model,
                     current_source="I_tail", current_fraction=0.5,
-                    gm_id_low=10, gm_id_high=15, gm_id_default=12,
+                    gm_id_low=10, gm_id_high=20, gm_id_default=15,
                     L_low=60e-9, L_high=240e-9, L_default=80e-9,
                     Vds_estimate=0.25, Vbs=-0.2, multiplicity=2,
                 ),
@@ -334,22 +383,12 @@ class FoldedCascodeTwoStageOTA(BaseTopology):
                     model=pdk.pmos_lvt_model,
                     current_source="I_cs", current_fraction=1.0,
                     gm_id_low=8, gm_id_high=15, gm_id_default=12,
-                    L_low=300e-9, L_high=600e-9, L_default=400e-9,
+                    L_low=300e-9, L_high=600e-9,
+                    L_default=bias_length_default,
                     Vds_estimate=0.6,
                 ),
             ],
             pass_through_params=pass_through_space.params,
-            fixed_params={
-                name: defaults[name]
-                for name in (
-                    "Wbp_big",
-                    "nf_Wbp_big", "m_Wbp_big",
-                    "Wbn_big",
-                    "nf_Wbn_big", "m_Wbn_big",
-                )
-            },
-            fixed_width_scale_param="Lbias",
-            fixed_width_scale_reference=400e-9,
         )
 
 

@@ -4,7 +4,7 @@
 
 | 角色 | 职责 |
 |------|------|
-| **你 (Claude Code)** | 理解需求 → 查阅知识库选择拓扑 → 调 Python 拓扑库生成网表文件 → 给出/调用优化命令 → 读取结果 → 基于知识与数据做 BO 后 Review |
+| **你 (Claude Code)** | 理解顶层需求 → 选择系统架构 → 分解子模块并派生指标预算 → 为叶子模块选择拓扑 → 生成项目/调用优化 → 读取结果 → 基于知识与数据做层级回传和 BO 后 Review |
 | **Python 拓扑库** (`topologies/`) | 硬约束生成 Spectre native syntax 的 `.cir` / `.scs` 网表文件，保证语法正确 |
 | **Python 脚本** (`main.py`) | 执行 Spectre 仿真、解析结果、运行 BO 优化循环 |
 | **Python 脚本** (`review_optimization.py`) | BO 完成后选取 Top 迭代，汇总指标、OP、参数影响和理论诊断，生成受约束候选并仿真验证 |
@@ -19,27 +19,49 @@
 
 > **环境要求**：生成网表或运行本项目之前，必须先执行 `conda activate Auto_Agent_Design`。
 
-1. **解析需求** — 提取 `gain_db`, `bandwidth_hz`(即 GBW/UGF), `phase_margin_deg`, `power_w`, `load_cap_f`, `slew_rate_v_per_s`, `settling_time_s`, `topology_hint`
-2. **选择拓扑** — 用户指定则跳过；否则按决策树匹配（见下方），优先选复杂度最低的
-3. **生成网表** — 调 `topo.write_project()` 一行生成 `.cir` + testbench + `requirements.json`
-4. **运行优化** — `python main.py --netlist ... --testbench ... --requirements ...`
-5. **读取结果** — 查看 `outputs/<project>/results.json`，重点关注 `all_targets_met`、`target_status`、`gap`
-6. **BO 后 Review** — 达标结果先运行 Design Audit；若未达标或审计存在 blocker，运行 `review_optimization.py` 分析 Top 迭代并填写 `patch_plan.json`
-7. **PVT 验证** — BO 最优或 Review candidate 达标且 Design Audit 无 blocker 后，运行 `pvt_simulation.py` 做 27-corner PVT 检查
-8. **导出 Virtuoso 原理图** — nominal 和 PVT 都满足后，运行 `export_to_virtuoso.py` 生成 Virtuoso 导入脚本
+1. **解析顶层需求** — 除叶子模块的增益、GBW、PM、功耗、负载、SR/ST 外，系统设计还要提取功能、精度/分辨率、采样率/带宽、噪声、动态范围、输入输出范围、延迟、时钟、电源域和 PVT 约束。
+2. **选择系统架构** — 系统级需求先比较候选架构并建立 block graph；例如 ADC 先选 SAR/pipeline/sigma-delta，不能直接跳到“选一个运放”。
+3. **派生 child targets** — 将系统误差、噪声、速度、功耗和摆幅预算分配到各 child，声明接口、负载、电源域、推导公式、设计裕量及 PVT 门槛。
+4. **选择 child topology** — 对每个叶子 child 再查 topology registry、专用知识库和 PDK 能力，选择复杂度最低且满足局部指标的晶体管级拓扑。
+5. **生成项目** — 叶子模块调用 `topo.write_project()`；层级 parent 还应生成 `hierarchy.json` 和 child block 声明。
+6. **分阶段优化** — 叶子模块运行 `main.py`；层级系统运行 `hierarchical_flow.py`，执行 child BO/PVT → frozen artifact → parent BO/PVT。
+7. **读取与 Review** — 检查 `results.json`、gap 和 DC OP；未达标时区分系统架构、预算、接口、child topology 和尺寸参数问题。
+8. **系统回传** — parent 未达标时重新分配受影响 child 的指标预算，只重跑必要模块；v1 不把全部 child W/L 展开做 joint BO。
+9. **签核与导出** — nominal、Design Audit 和 PVT 通过后，运行 `export_to_virtuoso.py` 生成 Virtuoso 导入脚本。
 
 > **文件命名**：根据电路拓扑命名，例如 5T OTA → `5t_ota.cir` + `tb_5t_ota_ac.scs`。所有文件放在同名文件夹下。
 
 ---
 
-## 第二步：拓扑选择（决策树）
+## 第二步：系统架构、子模块与拓扑决策
+
+决策顺序：
+
+```text
+顶层指标
+  → 系统架构
+  → block graph
+  → child 指标预算与接口
+  → child topology
+  → gm/Id + BO 尺寸优化
+```
+
+只有需求本身就是 OTA、比较器等叶子模拟模块时，才直接执行 topology selection。运放子模块可参考：
 
 ```
 gain ≥ 40 dB → two_stage_ota 或 folded_cascode
 gain < 40 dB → 5t_ota
 gain ≥ 100 dB → nmcf_three_stage      # 尚未完善
-bandgap/PTAT 系统 → bandgap_ptat，两阶段：先优化内部 folded_cascode 运放，再冻结 macro 做 bandgap 级 BO
 ```
+
+系统级例子：
+
+- **SAR ADC**：根据分辨率、采样率、输入带宽、功耗和参考建立要求选择 CDAC/采样网络、比较器、参考驱动、时钟和数字控制。SAR 本身不必然需要运放；只有前端缓冲或参考驱动确有闭环精度/速度需求时才派生对应运放指标。
+- **Pipeline ADC**：先进行级数、每级位数和误差预算，再由闭环增益误差、半周期建立时间、kT/C/噪声和输出摆幅推导 residue amplifier 的 DC gain、GBW、PM、SR、噪声、线性度和负载，最后选择 OTA topology。
+- **Sigma-delta ADC**：先确定环路阶数、OSR、量化器和 NTF，再从积分器泄漏、噪声与摆幅预算派生 OTA 的 DC gain、UGF、SR、噪声和输出摆幅。
+- **Bandgap/PTAT**：先确定 Vref、tempco、line/load regulation、启动时间和功耗预算，再派生 error amplifier、PTAT/CTAT 核心、startup 和 bias 指标；当前 `bandgap_ptat` 已支持冻结 child opamp 后优化 parent。
+
+每个 child target 必须记录来源和假设。例如 pipeline residue amplifier 的建立时间不能直接等于 ADC 总周期，应扣除采样、开关非重叠和比较/数字延迟后再分配；GBW 与 SR 还要根据闭环增益、反馈因子、负载和允许误差推导。
 
 查看可用拓扑及其指标范围：
 ```bash
@@ -54,7 +76,7 @@ python -c "from topologies import list_topologies; [print(f'{m.name}: {m.display
 
 PDK 路径、MOS model、VDD、gm/Id 表、PVT 温度、Virtuoso tech library、拓扑初始参数 preset 统一入口在 `pdk_profiles.py`。不要在 topology 文件里硬编码 PDK 路径或 model 名称；换工艺时新增 `PDKProfile`，必要时在 `topology_presets` 覆盖默认值。换工艺前先验证：`python pdk_profiles.py --validate --require-gmid --require-virtuoso`。
 
-VDD 默认来自 profile，单次覆盖用 `params={"VDD": 1.1}` 或 `--vdd` CLI。层级系统（`bandgap_ptat`）先独立优化子模块 opamp，再冻结 macro 做系统级 BO。
+VDD 默认来自 profile，单次覆盖用 `params={"VDD": 1.1}` 或 `--vdd` CLI。层级系统（`bandgap_ptat`）先独立优化子模块 opamp，再冻结 macro 做系统级 BO。当前通用 frozen-child 框架已经存在，但 ADC 架构、ADC 专用指标预算器和 ADC topologies 尚未实现，不要把上述 ADC 决策规则误认为可直接运行的代码能力。
 
 ---
 
@@ -155,7 +177,7 @@ outputs/<project>/
     └── knowledge_analysis.md
 ```
 
-`agent_context.md` 只内嵌本轮摘要和 Top run 参数/边界，并列出必须继续读取的证据文件路径。完整 Review 流程和 patch schema 位于 `Agent_LLM_BO/circuit_agent/AGENT_REVIEW.md`；参数影响、知识诊断、拓扑指南和全量指标不再重复塞入 context。需要时 Agent 应直接读取对应 run 文件。
+`agent_context.md` 直接给出本轮 Review 路线、任务、Top run 指标/参数/边界、target gaps、证据路径和 patch schema。Agent 按其中的路径读取当前拓扑知识、参数影响、理论诊断和必要的 run diagnostics；`Agent_LLM_BO/circuit_agent/AGENT_REVIEW.md` 只供开发者/操作者理解流程，不作为 Agent evidence。
 
 知识驱动诊断从 `knowledge_base/circuit_design_relations.json` 读取结构化关系，当前包括：
 
@@ -252,20 +274,22 @@ python export_to_virtuoso.py \
 ```
 Agent (Claude Code)                      Python 脚本
 ───────────────────                      ────────────
-• 解析用户需求                            • main.py: BO 优化循环
-• 查阅知识库选择拓扑                       • topologies/: 硬约束网表生成
-• 调 topologies/ 生成网表                 • simulator.py: Spectre 仿真
-• 调 main.py 运行优化                     • review_optimization.py: BO 后 Review
-• 读 results.json，汇报用户               • pvt_simulation.py: PVT 验证
-• 调 review_optimization.py 做 BO 后 Review  • export_to_virtuoso.py: Virtuoso 导出
-• 用理论/数据解释失败并填写 patch plan       • parameter_effects.py: BO 经验趋势
-• 判断局部修复、重启 BO 或升级拓扑            • knowledge_review.py: 理论派生诊断
+• 解析顶层需求与应用场景                    • main.py: 单个给定拓扑的 BO 优化
+• 选择系统架构并建立 block graph             • topologies/: 硬约束网表生成
+• 派生 child targets、接口和预算              • hierarchical_flow.py: child→parent 编排
+• 为每个叶子 child 选择 topology              • simulator.py: Spectre 仿真
+• 调 topologies/ 生成 parent/child 项目        • review_optimization.py: BO 后 Review
+• 分析 parent gap 并回传受影响 child           • pvt_simulation.py: PVT 验证
+• 用理论/数据判断改尺寸、改预算或改架构          • parameter_effects.py: BO 经验趋势
+• nominal/PVT 通过后组织交付                  • knowledge_review.py: 理论派生诊断
+                                          • export_to_virtuoso.py: Virtuoso 导出
 ```
 
 ## 参考资源
 
 - **拓扑库**：[topologies/](Agent_LLM_BO/circuit_agent/topologies/) — `base.py`, `five_t_ota.py`, `__init__.py`
-- **拓扑选择**：`topologies/__init__.py:get_topology_for_targets()`
+- **运放子模块拓扑选择**：`topologies/__init__.py:get_topology_for_targets()`
+- **层级优化**：[HIERARCHICAL_OPTIMIZATION.md](Agent_LLM_BO/circuit_agent/HIERARCHICAL_OPTIMIZATION.md)
 - **代码入口**：[main.py](Agent_LLM_BO/circuit_agent/main.py)
 - **Review 脚本**：[review_optimization.py](Agent_LLM_BO/circuit_agent/review_optimization.py)
 - **Review 工作流**：[AGENT_REVIEW.md](Agent_LLM_BO/circuit_agent/AGENT_REVIEW.md)

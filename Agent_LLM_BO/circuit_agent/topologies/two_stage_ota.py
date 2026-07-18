@@ -225,16 +225,16 @@ class TwoStageOTA(BaseTopology):
         unit_current = 20e-6
         pass_through_space = self._apply_param_space_overrides(ParamSpace(params=[
             ParamDef(
-                name="Cc", low=0.1e-12, high=5e-12,
+                name="Cc", low=0.1e-12, high=1e-12,
                 log_scale=True, unit="F",
             ),
             ParamDef(
-                name="Rz", low=100, high=5e3,
+                name="Rz", low=100, high=2e3,
                 log_scale=True, unit="Ohm",
             ),
         ]))
 
-        tail_current_low = 50e-6
+        tail_current_low = 20e-6
         if (
             targets is not None
             and targets.bandwidth_hz is not None
