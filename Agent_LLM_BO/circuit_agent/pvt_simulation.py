@@ -255,7 +255,7 @@ def _resolve_source(
     netlist_path: str | Path | None,
 ) -> tuple[Path, Path, str]:
     if results_path:
-        result_path = Path(results_path)
+        result_path = Path(results_path).resolve()
         result_data = json.loads(result_path.read_text(encoding="utf-8"))
         if netlist_path:
             return result_path.parent, Path(netlist_path).resolve(), "explicit_netlist"

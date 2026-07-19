@@ -607,10 +607,14 @@ class OptimizerConfigTest(unittest.TestCase):
             param for param in single_stage.pass_through_params
             if param.name == "m_half_unit"
         )
+        single_stage_diff = next(
+            transistor for transistor in single_stage.transistors
+            if transistor.role == "diff_pair_pmos"
+        )
         single_stage_gm = 2.0 * math.pi * 500e6 * 1e-12
         self.assertEqual(
             single_stage_m.low,
-            math.ceil((single_stage_gm / 15.0) / 20e-6),
+            math.ceil((single_stage_gm / single_stage_diff.gm_id_high) / 20e-6),
         )
         self.assertGreaterEqual(single_stage_m.high, 4 * single_stage_m.low)
 
@@ -619,10 +623,14 @@ class OptimizerConfigTest(unittest.TestCase):
             param for param in two_stage.pass_through_params
             if param.name == "m_half_unit"
         )
+        two_stage_diff = next(
+            transistor for transistor in two_stage.transistors
+            if transistor.role == "diff_pair_pmos"
+        )
         two_stage_gm = 2.0 * math.pi * 500e6 * (0.5e-12)
         self.assertEqual(
             two_stage_m.low,
-            math.ceil((two_stage_gm / 20.0) / 20e-6),
+            math.ceil((two_stage_gm / two_stage_diff.gm_id_high) / 20e-6),
         )
         self.assertGreaterEqual(two_stage_m.high, 4 * two_stage_m.low)
 

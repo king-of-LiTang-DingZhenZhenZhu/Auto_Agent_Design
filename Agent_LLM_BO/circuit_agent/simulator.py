@@ -107,6 +107,9 @@ class Simulator:
         Returns:
             (success, log_content, error_message)
         """
+        netlist_path = Path(netlist_path).resolve()
+        run_dir = Path(run_dir).resolve()
+
         if self.config.dry_run:
             return self._mock_simulate(netlist_path, run_dir)
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,6 +15,7 @@ from pvt_simulation import (
     default_pvt_corners,
     patch_netlist_for_corner,
     patch_testbench_for_corner,
+    _resolve_source,
     run_pvt_verification,
     summarize_pvt,
 )
@@ -21,6 +23,28 @@ from topologies import get_topology
 
 
 class PVTSimulationTests(unittest.TestCase):
+    def test_relative_results_path_resolves_absolute_project_root(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            original_cwd = Path.cwd()
+            try:
+                os.chdir(tmp)
+                project = Path("outputs/proj")
+                project.mkdir(parents=True)
+                netlist = project / "circuit.cir"
+                netlist.write_text("simulator lang=spectre\n", encoding="utf-8")
+                results = project / "results.json"
+                results.write_text("{}", encoding="utf-8")
+
+                project_root, selected, source = _resolve_source(results, netlist)
+
+                self.assertTrue(project_root.is_absolute())
+                self.assertTrue(selected.is_absolute())
+                self.assertEqual(project_root, project.resolve())
+                self.assertEqual(selected, netlist.resolve())
+                self.assertEqual(source, "explicit_netlist")
+            finally:
+                os.chdir(original_cwd)
+
     def test_default_pvt_matrix_has_27_stable_corners(self):
         corners = default_pvt_corners(get_pdk_profile())
 
