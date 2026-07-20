@@ -215,8 +215,10 @@ def _analyze_bandgap_run(
     profile: dict[str, Any],
 ) -> dict[str, Any]:
     area_ratio = _number(params.get("BJT_AREA_RATIO"))
-    rptat = _number(params.get("Rptat"))
-    rctat = _number(params.get("Rctat"))
+    r0_length = _number(params.get("R0_SEG_L"))
+    r0_width = _number(params.get("R0_SEG_W"))
+    r1_length = _number(params.get("R1_SEG_L"))
+    r1_width = _number(params.get("R1_SEG_W"))
     derived: dict[str, float] = {}
     diagnoses: list[dict[str, str]] = []
     unavailable = [
@@ -228,8 +230,10 @@ def _analyze_bandgap_run(
         derived["delta_vbe_27c_first_order_V"] = (
             THERMAL_VOLTAGE_27C * math.log(area_ratio)
         )
-    if rptat and rctat:
-        derived["rctat_over_rptat"] = rctat / rptat
+    if r0_length and r0_width and r1_length and r1_width:
+        r0_geometry = 2.0 * r0_length / r0_width
+        r1_geometry = 4.0 * r1_length / r1_width
+        derived["r1_over_r0_first_order"] = r1_geometry / r0_geometry
     diagnoses.append({
         "confidence": "high",
         "message": (

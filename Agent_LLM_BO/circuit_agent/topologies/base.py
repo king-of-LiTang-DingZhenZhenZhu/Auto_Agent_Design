@@ -192,7 +192,7 @@ class BaseTopology(ABC):
 
         # --- testbench files ---
         tb_files: list[Path] = []
-        tb_suffixes = ["ac", "sr", "st", "dc", "noise"]
+        tb_suffixes = cf.testbench_suffixes or ["ac", "sr", "st", "dc", "noise"]
         for i, tb_content in enumerate(cf.testbenches):
             suffix = tb_suffixes[i] if i < len(tb_suffixes) else f"tb{i}"
             tb_path = out / f"tb_{self.meta.name}_{suffix}.scs"

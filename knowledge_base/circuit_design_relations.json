@@ -120,7 +120,7 @@
         "bandgap_tempco_cancel"
       ],
       "limitations": [
-        "the current topology uses idealized PTAT/CTAT sources rather than PDK bipolar devices",
+        "the topology uses PDK PNP and poly-resistor devices but dedicated BJT operating-point extraction is not implemented",
         "dedicated Vref/tempco/line-regulation parsers are not implemented yet"
       ]
     }

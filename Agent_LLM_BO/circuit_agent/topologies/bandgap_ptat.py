@@ -1,15 +1,4 @@
-"""Hierarchical bandgap/PTAT reference topology.
-
-First version of this topology is intentionally staged:
-
-1. A folded-cascode opamp is optimized and verified as a child macro.
-2. The bandgap/PTAT top level freezes that macro and only optimizes
-   system-level parameters such as resistor ratios, bias current, pass-device
-   size, and compensation/load values.
-
-The opamp macro uses the folded-cascode port order:
-    vip vin vout ibias vdd vss
-"""
+"""Hierarchical PNP bandgap/PTAT reference topology."""
 
 from __future__ import annotations
 
@@ -17,45 +6,49 @@ from pathlib import Path
 from typing import Any
 
 from models import CircuitFiles, DesignTarget, ParamDef, ParamSpace, format_spice_value
-from pdk_profiles import get_pdk_profile_for_params, spectre_include_line
+from pdk_profiles import get_pdk_profile, get_pdk_profile_for_params, spectre_include_line
 from topologies.base import BaseTopology, HierarchicalBlockSpec, TopologyMeta
-from topologies.folded_cascode_two_stage import FoldedCascodeTwoStageOTA
+from topologies.two_stage_ota import TwoStageOTA
 
 
 class BandgapPTAT(BaseTopology):
-    """Bandgap/PTAT system-level topology with frozen folded-cascode macro."""
+    """PNP bandgap core with a frozen two-stage OTA error amplifier."""
 
     meta = TopologyMeta(
         name="bandgap_ptat",
         display_name="Bandgap/PTAT Reference",
         description=(
-            "Hierarchical bandgap/PTAT reference. The folded-cascode error "
-            "amplifier is treated as a frozen child macro; BO searches only "
-            "bandgap-level resistor, current, pass-device, and compensation "
-            "parameters."
+            "Hierarchical PNP bandgap/PTAT core with MOS startup, PMOS current "
+            "mirrors, poly resistors, and a frozen two-stage OTA."
         ),
         min_gain_db=0,
         max_gain_db=0,
         min_gbw_hz=0,
         max_gbw_hz=0,
-        typical_power_w=1e-3,
+        typical_power_w=100e-6,
         complexity=5,
     )
 
     DEFAULT_PARAMS: dict[str, float] = {
-        # System-level resistor network and biasing.
-        "Rptat": 100e3,
-        "Rctat": 100e3,
-        "Rtop": 80e3,
-        "Rbot": 40e3,
-        "Ibias": 20e-6,
-        "Iopbias": 20e-6,
+        # NMOS startup path.
+        "Wstart_small": 300e-9,
+        "Wstart_large": 600e-9,
+        "Lstart_n": 30e-9,
+        # PMOS bandgap mirrors and startup stack.
+        "Wmirror_p": 6e-6,
+        "Lmirror_p": 600e-9,
+        "MREF_RATIO": 4,
+        "Wstack_p": 100e-9,
+        "Lstack_p": 300e-9,
+        # PNP area ratio and poly-resistor geometry.
         "BJT_AREA_RATIO": 8,
-        # Top-level pass device and load/compensation.
-        "Wpass": 20e-6,
-        "Lpass": 500e-9,
-        "Ccomp": 1e-12,
-        "Cload": 1e-12,
+        "R0_SEG_L": 10e-6,
+        "R0_SEG_W": 2e-6,
+        "R1_SEG_L": 10e-6,
+        "R1_SEG_W": 2e-6,
+        # Frozen child bias and output load.
+        "Iopbias": 20e-6,
+        "Cload": 100e-15,
     }
 
     def generate_circuit(self, params: dict[str, Any] | None = None) -> str:
@@ -66,17 +59,24 @@ class BandgapPTAT(BaseTopology):
 
         return _CIRCUIT_TEMPLATE.format(
             spectre_include=spectre_include_line(pdk),
+            nmos_model=pdk.nmos_model,
             pmos_model=pdk.pmos_model,
-            Rptat=_fmt(p["Rptat"]),
-            Rctat=_fmt(p["Rctat"]),
-            Rtop=_fmt(p["Rtop"]),
-            Rbot=_fmt(p["Rbot"]),
-            Ibias=_fmt(p["Ibias"]),
+            pnp_model=pdk.resolve_model("pnp"),
+            resistor_model=pdk.resolve_model("resistor_poly"),
+            Wstart_small=_fmt(p["Wstart_small"]),
+            Wstart_large=_fmt(p["Wstart_large"]),
+            Lstart_n=_fmt(p["Lstart_n"]),
+            Wmirror_p=_fmt(p["Wmirror_p"]),
+            Lmirror_p=_fmt(p["Lmirror_p"]),
+            MREF_RATIO=int(round(p["MREF_RATIO"])),
+            Wstack_p=_fmt(p["Wstack_p"]),
+            Lstack_p=_fmt(p["Lstack_p"]),
             Iopbias=_fmt(p["Iopbias"]),
             BJT_AREA_RATIO=int(round(p["BJT_AREA_RATIO"])),
-            Wpass=_fmt(p["Wpass"]),
-            Lpass=_fmt(p["Lpass"]),
-            Ccomp=_fmt(p["Ccomp"]),
+            R0_SEG_L=_fmt(p["R0_SEG_L"]),
+            R0_SEG_W=_fmt(p["R0_SEG_W"]),
+            R1_SEG_L=_fmt(p["R1_SEG_L"]),
+            R1_SEG_W=_fmt(p["R1_SEG_W"]),
             Cload=_fmt(p["Cload"]),
             opamp_netlist=opamp_netlist,
         )
@@ -84,48 +84,48 @@ class BandgapPTAT(BaseTopology):
     def generate_testbench(
         self,
         params: dict[str, Any] | None = None,
-        analysis_type: str = "ac",
+        analysis_type: str = "startup",
     ) -> str:
-        """Generate nominal testbenches compatible with the existing pipeline.
-
-        Bandgap-specific metrics such as Vref/tempco/line regulation need a
-        dedicated parser; the AC/SR/ST forms here keep first-version projects
-        compatible with the current BO/dry-run infrastructure.
-        """
+        """Generate startup, PSRR, temperature, or line-regulation analysis."""
         pdk = get_pdk_profile_for_params(params)
         p = self._merge_params_with_preset(params)
-        tb_defaults = self._testbench_defaults_with_preset(
-            {
-                "VCM": pdk.vdd / 2,
-                "CL": p["Cload"],
-            }
-        )
+        tb_defaults = self._testbench_defaults_with_preset({"CL": p["Cload"]})
         vdd = pdk.vdd
-        vcm = tb_defaults["VCM"]
         cload = tb_defaults["CL"]
+        vdd_min = pdk.vdd_min
+        vdd_max = pdk.vdd_max
+        temperatures = pdk.pvt_temperatures_c or (-40.0, 27.0, 125.0)
 
         if params:
             vdd = params.get("VDD", vdd)
-            vcm = params.get("VCM", vcm)
             cload = params.get("CL", cload)
+            vdd_min = params.get("VDD_MIN", vdd_min)
+            vdd_max = params.get("VDD_MAX", vdd_max)
 
-        if analysis_type in ("tran", "sr"):
-            return _TB_SR_TEMPLATE.format(
+        if analysis_type in ("startup", "tran", "sr"):
+            return _TB_STARTUP_TEMPLATE.format(
                 VDD=vdd,
-                VCM=vcm,
                 CL=_fmt(cload),
-                VLOW=max(0.0, vcm - 0.1),
-                VHIGH=min(vdd, vcm + 0.1),
             )
-        if analysis_type == "st":
-            return _TB_ST_TEMPLATE.format(
+        if analysis_type in ("temperature", "temp", "nonlinearity"):
+            return _TB_TEMPERATURE_TEMPLATE.format(
                 VDD=vdd,
-                VCM=vcm,
                 CL=_fmt(cload),
-                VLOW=vcm,
-                VHIGH=min(vdd, vcm + 10e-3),
+                TEMP_MIN=min(temperatures),
+                TEMP_MAX=max(temperatures),
             )
-        return _TB_AC_TEMPLATE.format(VDD=vdd, VCM=vcm, CL=_fmt(cload))
+        if analysis_type in ("line", "line_regulation"):
+            line_step = max((vdd_max - vdd_min) / 20.0, 1e-3)
+            return _TB_LINE_TEMPLATE.format(
+                VDD=vdd,
+                VDD_MIN=vdd_min,
+                VDD_MAX=vdd_max,
+                VDD_STEP=line_step,
+                CL=_fmt(cload),
+            )
+        if analysis_type in ("psrr", "ac"):
+            return _TB_PSRR_TEMPLATE.format(VDD=vdd, CL=_fmt(cload))
+        raise ValueError(f"Unsupported bandgap analysis type: {analysis_type}")
 
     def get_circuit_files(
         self, params: dict[str, Any] | None = None
@@ -134,11 +134,13 @@ class BandgapPTAT(BaseTopology):
         return CircuitFiles(
             circuit_netlist=circuit_content,
             testbenches=[
-                self.generate_testbench(params, "ac"),
-                self.generate_testbench(params, "sr"),
-                self.generate_testbench(params, "st"),
+                self.generate_testbench(params, "startup"),
+                self.generate_testbench(params, "psrr"),
+                self.generate_testbench(params, "temperature"),
+                self.generate_testbench(params, "line_regulation"),
             ],
             circuit_name=CircuitFiles.extract_subckt_name(circuit_content),
+            testbench_suffixes=["startup", "psrr", "temperature", "line"],
         )
 
     def get_default_params(self) -> dict[str, float]:
@@ -146,44 +148,66 @@ class BandgapPTAT(BaseTopology):
 
     def get_param_space(self) -> ParamSpace:
         return self._apply_param_space_overrides(ParamSpace(params=[
-            ParamDef("Rptat", low=10e3, high=1e6, log_scale=True, unit="Ohm"),
-            ParamDef("Rctat", low=10e3, high=1e6, log_scale=True, unit="Ohm"),
-            ParamDef("Rtop", low=10e3, high=2e6, log_scale=True, unit="Ohm"),
-            ParamDef("Rbot", low=10e3, high=2e6, log_scale=True, unit="Ohm"),
-            ParamDef("Ibias", low=1e-6, high=200e-6, log_scale=True, unit="A"),
-            ParamDef("Iopbias", low=1e-6, high=200e-6, log_scale=True, unit="A"),
+            ParamDef("R0_SEG_L", low=1e-6, high=20e-6, log_scale=True, unit="m"),
+            ParamDef("R1_SEG_L", low=1e-6, high=20e-6, log_scale=True, unit="m"),
             ParamDef(
-                "BJT_AREA_RATIO",
-                low=2,
-                high=32,
-                log_scale=False,
-                unit="x",
-                value_type="int",
+                "Lmirror_p", low=400e-9, high=800e-9,
+                log_scale=True, unit="m",
             ),
-            ParamDef(
-                "Wpass",
-                low=1e-6,
-                high=200e-6,
-                log_scale=True,
-                unit="m",
-                max_per_finger=2.6e-6,
-            ),
-            ParamDef("Lpass", low=200e-9, high=2e-6, log_scale=True, unit="m"),
-            ParamDef("Ccomp", low=100e-15, high=10e-12, log_scale=True, unit="F"),
-            ParamDef("Cload", low=100e-15, high=20e-12, log_scale=True, unit="F"),
         ]))
 
+    def get_gmid_spec(self, targets: DesignTarget | None = None):
+        """Size the PMOS mirror from fixed nominal branch current."""
+        from models import DerivedBranchCurrentSpec, GmidTopologySpec, TransistorSpec
+
+        pdk = get_pdk_profile()
+        pass_through_space = self._apply_param_space_overrides(ParamSpace(params=[
+            ParamDef("R0_SEG_L", low=1e-6, high=20e-6, log_scale=True, unit="m"),
+            ParamDef("R1_SEG_L", low=1e-6, high=20e-6, log_scale=True, unit="m"),
+        ]))
+        return GmidTopologySpec(
+            derived_branch_currents=[
+                DerivedBranchCurrentSpec(
+                    name="I_mirror",
+                    unit_current=20e-6,
+                    multiplier_offset=1.0,
+                ),
+            ],
+            transistors=[
+                TransistorSpec(
+                    role="mirror_pmos",
+                    w_param="Wmirror_p",
+                    l_param="Lmirror_p",
+                    model=pdk.pmos_model,
+                    current_source="I_mirror",
+                    current_fraction=1.0,
+                    gm_id_low=12,
+                    gm_id_high=18,
+                    gm_id_default=15,
+                    L_low=400e-9,
+                    L_high=800e-9,
+                    L_default=600e-9,
+                    Vds_estimate=0.3,
+                    multiplicity=3,
+                ),
+            ],
+            pass_through_params=pass_through_space.params,
+        )
+
     def required_model_roles(self) -> tuple[str, ...]:
-        return ("pmos", "nmos_lvt", "pmos_lvt")
+        return (
+            "nmos", "pmos", "pnp", "resistor_poly",
+            "nmos_lvt", "pmos_lvt",
+        )
 
     def critical_operating_point_instances(self) -> set[str]:
-        return {"Mpass"}
+        return {"Xdut.M10", "Xdut.M11", "Xdut.M12"}
 
     def derive_opamp_targets(
         self,
         targets: DesignTarget | None = None,
     ) -> DesignTarget:
-        """Derive first-pass folded-cascode requirements for the child opamp."""
+        """Derive first-pass two-stage OTA requirements for the child opamp."""
         custom = dict(targets.custom_specs) if targets else {}
         power_budget = targets.power_w if targets and targets.power_w else None
         load_cap = targets.load_cap_f if targets and targets.load_cap_f else None
@@ -195,7 +219,7 @@ class BandgapPTAT(BaseTopology):
             if power_budget
             else float(custom.get("opamp_power_w", 1e-3)),
             load_cap_f=float(custom.get("opamp_load_cap_f", load_cap or 1e-12)),
-            topology_hint="folded_cascode_two_stage",
+            topology_hint="two_stage_ota",
             custom_specs={
                 "derived_from": "bandgap_ptat",
                 "error_amplifier_role": "frozen_macro",
@@ -210,8 +234,8 @@ class BandgapPTAT(BaseTopology):
         return [
             HierarchicalBlockSpec(
                 block_id="opamp",
-                topology_name="folded_cascode_two_stage",
-                expected_subckt="folded_cascode_two_stage",
+                topology_name="two_stage_ota",
+                expected_subckt="two_stage_ota",
                 ports=("vip", "vin", "vout", "ibias", "vdd", "vss"),
                 targets=self.derive_opamp_targets(targets),
                 sizing_policy="frozen_macro",
@@ -224,7 +248,7 @@ class BandgapPTAT(BaseTopology):
         source = _get_optional_path(params, "opamp_netlist", "OPAMP_NETLIST")
         if source is not None and source.exists():
             return _sanitize_child_netlist(source.read_text(encoding="utf-8"))
-        return _sanitize_child_netlist(FoldedCascodeTwoStageOTA().generate_circuit())
+        return _sanitize_child_netlist(TwoStageOTA().generate_circuit())
 
 def _get_optional_path(
     params: dict[str, Any] | None,
@@ -249,20 +273,7 @@ def _sanitize_child_netlist(netlist: str) -> str:
         if stripped.startswith("include "):
             continue
         kept.append(line)
-    sanitized = "\n".join(kept).strip()
-    sanitized = sanitized.replace(
-        "subckt folded_cascode (",
-        "subckt folded_cascode_two_stage (",
-    )
-    sanitized = sanitized.replace(
-        "ends folded_cascode\n",
-        "ends folded_cascode_two_stage\n",
-    )
-    if sanitized.endswith("ends folded_cascode"):
-        sanitized = sanitized[: -len("ends folded_cascode")] + (
-            "ends folded_cascode_two_stage"
-        )
-    return sanitized
+    return "\n".join(kept).strip()
 
 
 def _fmt(value: float) -> str:
@@ -270,36 +281,51 @@ def _fmt(value: float) -> str:
 
 
 _CIRCUIT_TEMPLATE = """\
-// bandgap_ptat.cir -- Hierarchical Bandgap/PTAT reference (Spectre native syntax)
+// bandgap_ptat.cir -- Hierarchical PNP Bandgap/PTAT (Spectre native syntax)
 simulator lang=spectre insensitive=yes
 
 {spectre_include}
 
-parameters Rptat={Rptat} Rctat={Rctat} Rtop={Rtop} Rbot={Rbot}
-parameters Ibias={Ibias} Iopbias={Iopbias} BJT_AREA_RATIO={BJT_AREA_RATIO}
-parameters Wpass={Wpass} Lpass={Lpass} Ccomp={Ccomp} Cload={Cload}
-parameters VCTAT=700m VPTAT=26m*ln(BJT_AREA_RATIO)
+parameters Wstart_small={Wstart_small} Wstart_large={Wstart_large} Lstart_n={Lstart_n}
+parameters Wmirror_p={Wmirror_p} Lmirror_p={Lmirror_p} MREF_RATIO={MREF_RATIO}
+parameters Wstack_p={Wstack_p} Lstack_p={Lstack_p}
+parameters BJT_AREA_RATIO={BJT_AREA_RATIO} Iopbias={Iopbias} Cload={Cload}
+parameters R0_SEG_L={R0_SEG_L} R0_SEG_W={R0_SEG_W}
+parameters R1_SEG_L={R1_SEG_L} R1_SEG_W={R1_SEG_W}
 
 subckt bandgap_ptat (vref vdd vss)
-// First-version PTAT/CTAT scaffold. Real PDK-specific BJT devices can replace
-// these idealized sources once the bandgap parser and BJT profile are added.
-IBIASsrc (vdd ibias) isource type=dc dc=Ibias
+// Frozen two-stage OTA. Port order: vip vin vout ibias vdd vss
 IOPBIASsrc (vdd opibias) isource type=dc dc=Iopbias
-VctatSrc (nctat vss) vsource type=dc dc=VCTAT
-VptatSrc (nptat vss) vsource type=dc dc=VPTAT
-RptatDev (nptat nsense) resistor r=Rptat
-RctatDev (nctat nsense) resistor r=Rctat
-RtopDev (vref nfb) resistor r=Rtop
-RbotDev (nfb vss) resistor r=Rbot
+Xopamp (vinp vinn vg opibias vdd vss) two_stage_ota
 
-// Folded-cascode error amplifier macro. Port order: vip vin vout ibias vdd vss
-Xopamp (nsense nfb vctrl opibias vdd vss) folded_cascode_two_stage
+// NMOS startup path.
+M1 (vg net1 vss vss) {nmos_model} l=Lstart_n w=Wstart_small nf=1 m=1
+M0 (net1 vinp vss vss) {nmos_model} l=Lstart_n w=Wstart_large nf=2 m=1
 
-// PMOS pass device controlled by the error amplifier.
-Mpass (vref vctrl vdd vdd) {pmos_model} w=Wpass l=Lpass nf=1
-CcompDev (vctrl vss) capacitor c=Ccomp
+// PMOS bandgap mirrors and startup stack.
+M12 (vref vg vdd vdd) {pmos_model} l=Lmirror_p w=Wmirror_p nf=3 m=MREF_RATIO
+M11 (vinp vg vdd vdd) {pmos_model} l=Lmirror_p w=Wmirror_p nf=3 m=1
+M10 (vinn vg vdd vdd) {pmos_model} l=Lmirror_p w=Wmirror_p nf=3 m=1
+M9 (net1 net1 net14 vdd) {pmos_model} l=Lstack_p w=Wstack_p nf=1 m=1
+M8 (net14 net14 net4 vdd) {pmos_model} l=Lstack_p w=Wstack_p nf=1 m=1
+M7 (net4 net4 net10 vdd) {pmos_model} l=Lstack_p w=Wstack_p nf=1 m=1
+M6 (net10 net10 vdd vdd) {pmos_model} l=Lstack_p w=Wstack_p nf=1 m=1
+
+// PNP pair with emitter-area ratio BJT_AREA_RATIO.
+Q1 (vinn vss vss) {pnp_model} m=1
+Q0 (vss vss net15) {pnp_model} m=BJT_AREA_RATIO
+
+// Four-section output resistor R1.
+R1_1 (vref r1_1) {resistor_model} l=R1_SEG_L w=R1_SEG_W m=1 multi=(1)
+R1_2 (r1_1 r1_2) {resistor_model} l=R1_SEG_L w=R1_SEG_W m=1 multi=(1)
+R1_3 (r1_2 r1_3) {resistor_model} l=R1_SEG_L w=R1_SEG_W m=1 multi=(1)
+R1_4 (r1_3 vss) {resistor_model} l=R1_SEG_L w=R1_SEG_W m=1 multi=(1)
+
+// Two-section PTAT resistor R0.
+R0_1 (vinp r0_1) {resistor_model} l=R0_SEG_L w=R0_SEG_W m=1 multi=(1)
+R0_2 (r0_1 net15) {resistor_model} l=R0_SEG_L w=R0_SEG_W m=1 multi=(1)
+
 CloadDev (vref vss) capacitor c=Cload
-Rleak (vref vss) resistor r=1G
 ends bandgap_ptat
 
 // ---- Frozen child opamp macro ----
@@ -307,20 +333,39 @@ ends bandgap_ptat
 """
 
 
-_TB_AC_TEMPLATE = """\
-// tb_bandgap_ptat_ac.scs -- Bandgap/PTAT nominal AC-compatible analysis
+_TB_STARTUP_TEMPLATE = """\
+// tb_bandgap_ptat_startup.scs -- Power-on startup analysis
 simulator lang=spectre insensitive=yes
 
 include "circuit.cir"
 
-parameters VDD={VDD} VCM={VCM} CL={CL}
+parameters VDD={VDD} CL={CL}
+
+VDDsrc (vdd 0) vsource type=pulse val0=0 val1=VDD delay=0 rise=1u fall=1u width=20u period=40u
+VSSsrc (vss 0) vsource type=dc dc=0
+
+Xdut (vout vdd vss) bandgap_ptat
+CLload (vout 0) capacitor c=CL
+
+tempOption options temp=27
+outOpts options rawfmt=psfascii soft_bin=allmodels
+startupTran tran stop=10u maxstep=10n
+
+save vdd vout
+save VDDsrc:p
+"""
+
+
+_TB_PSRR_TEMPLATE = """\
+// tb_bandgap_ptat_psrr.scs -- Supply-ripple rejection analysis
+simulator lang=spectre insensitive=yes
+
+include "circuit.cir"
+
+parameters VDD={VDD} CL={CL}
 
 VDDsrc (vdd 0) vsource type=dc dc=VDD mag=1
 VSSsrc (vss 0) vsource type=dc dc=0
-VCMsrc (vcm 0) vsource type=dc dc=VCM
-VIPsrc (vinp vcm) vsource type=dc dc=0 mag=1
-Rfb (vout vinn) resistor r=1G
-Cfb (vinn 0) capacitor c=1
 
 Xdut (vout vdd vss) bandgap_ptat
 CLload (vout 0) capacitor c=CL
@@ -329,60 +374,53 @@ tempOption options temp=27
 outOpts options rawfmt=psfascii soft_bin=allmodels
 op1 dc oppoint=rawfile
 opInfo info what=oppoint where=rawfile
-ac1 ac start=1 stop=20G dec=20
+psrrAC ac start=1 stop=100M dec=20
 
 save vout
 save VDDsrc:p
 """
 
 
-_TB_SR_TEMPLATE = """\
-// tb_bandgap_ptat_sr.scs -- Bandgap/PTAT startup-style transient scaffold
+_TB_TEMPERATURE_TEMPLATE = """\
+// tb_bandgap_ptat_temperature.scs -- Vref temperature nonlinearity analysis
 simulator lang=spectre insensitive=yes
 
 include "circuit.cir"
 
-parameters VDD={VDD} VCM={VCM} CL={CL}
-parameters VLOW={VLOW} VHIGH={VHIGH}
+parameters VDD={VDD} CL={CL}
 
-VDDsrc (vdd 0) vsource type=pulse val0=0 val1=VDD delay=2n rise=1n fall=1n width=200n period=400n
+VDDsrc (vdd 0) vsource type=dc dc=VDD
 VSSsrc (vss 0) vsource type=dc dc=0
-VCMsrc (vcm 0) vsource type=dc dc=VCM
-VIPsrc (vinp 0) vsource type=pulse val0=VLOW val1=VHIGH delay=5n rise=100p fall=100p width=50n period=100n
 
 Xdut (vout vdd vss) bandgap_ptat
 CLload (vout 0) capacitor c=CL
 
-tempOption options temp=27
 outOpts options rawfmt=psfascii soft_bin=allmodels
-srTran tran stop=500n maxstep=20p
+tempSweep dc param=temp start={TEMP_MIN} stop={TEMP_MAX} step=1
 
-save vinp vout
+save vout
 save VDDsrc:p
 """
 
 
-_TB_ST_TEMPLATE = """\
-// tb_bandgap_ptat_st.scs -- Bandgap/PTAT settling scaffold
+_TB_LINE_TEMPLATE = """\
+// tb_bandgap_ptat_line.scs -- DC line-regulation analysis
 simulator lang=spectre insensitive=yes
 
 include "circuit.cir"
 
-parameters VDD={VDD} VCM={VCM} CL={CL}
-parameters VLOW={VLOW} VHIGH={VHIGH}
+parameters VDD={VDD} VDD_MIN={VDD_MIN} VDD_MAX={VDD_MAX} VDD_STEP={VDD_STEP} CL={CL}
 
-VDDsrc (vdd 0) vsource type=pulse val0=0 val1=VDD delay=2n rise=1n fall=1n width=200n period=400n
+VDDsrc (vdd 0) vsource type=dc dc=VDD
 VSSsrc (vss 0) vsource type=dc dc=0
-VCMsrc (vcm 0) vsource type=dc dc=VCM
-VIPsrc (vinp 0) vsource type=pulse val0=VLOW val1=VHIGH delay=5n rise=100p fall=100p width=50n period=100n
 
 Xdut (vout vdd vss) bandgap_ptat
 CLload (vout 0) capacitor c=CL
 
 tempOption options temp=27
 outOpts options rawfmt=psfascii soft_bin=allmodels
-stTran tran stop=500n maxstep=20p
+lineSweep dc param=VDD start=VDD_MIN stop=VDD_MAX step=VDD_STEP
 
-save vinp vout
+save vout
 save VDDsrc:p
 """

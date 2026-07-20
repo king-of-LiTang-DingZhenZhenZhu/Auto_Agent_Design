@@ -37,7 +37,7 @@ class FakeFlowEnvironment:
         netlist = output / "netlist" / "circuit.cir"
         netlist.parent.mkdir(parents=True, exist_ok=True)
         text = netlist_path.read_text(encoding="utf-8")
-        if self.bad_interface and "folded_cascode_two_stage" in netlist_path.name:
+        if self.bad_interface and "two_stage_ota" in netlist_path.name:
             text = "subckt wrong_opamp (vip vin vout ibias vdd vss)\nends wrong_opamp\n"
         netlist.write_text(text, encoding="utf-8")
         (output / "results.json").write_text(
@@ -50,7 +50,7 @@ class FakeFlowEnvironment:
             encoding="utf-8",
         )
         pdk = get_pdk_profile().to_dict()
-        if self.pdk_mismatch and "folded_cascode_two_stage" in netlist_path.name:
+        if self.pdk_mismatch and "two_stage_ota" in netlist_path.name:
             pdk["name"] = "unexpected_pdk"
         (output / "pdk_profile_used.json").write_text(
             json.dumps(pdk), encoding="utf-8"
@@ -104,7 +104,7 @@ class HierarchicalFlowTests(unittest.TestCase):
             self.assertTrue(manifest["pvt_pass"])
             self.assertEqual(len(environment.commands), 2)
             parent_netlist = (project / "bandgap_ptat.cir").read_text(encoding="utf-8")
-            self.assertIn("subckt folded_cascode_two_stage", parent_netlist)
+            self.assertIn("subckt two_stage_ota", parent_netlist)
 
     def test_child_nominal_failure_stops_before_parent(self):
         with tempfile.TemporaryDirectory() as tmp:

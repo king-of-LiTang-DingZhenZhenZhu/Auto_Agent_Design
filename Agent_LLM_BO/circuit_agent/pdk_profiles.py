@@ -82,6 +82,7 @@ class PDKProfile:
     topology_presets: dict[str, dict[str, object]] = field(default_factory=dict)
     voltage_domains: dict[str, VoltageDomainProfile] = field(default_factory=dict)
     active_voltage_domain: str = ""
+    special_models: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, object]:
         """Return a JSON-serializable representation."""
@@ -101,6 +102,7 @@ class PDKProfile:
             "nmos_lvt": self.nmos_lvt_model,
             "pmos_lvt": self.pmos_lvt_model,
         }
+        models.update(self.special_models)
         if self.active_voltage_domain and self.active_voltage_domain in self.voltage_domains:
             domain = self.voltage_domains[self.active_voltage_domain]
             for polarity, flavors in domain.model_flavors.items():
@@ -166,6 +168,10 @@ PDK_PROFILES: dict[str, PDKProfile] = {
             ),
         },
         active_voltage_domain="core_0p9",
+        special_models={
+            "pnp": "pnp5",
+            "resistor_poly": "rupolym",
+        },
         topology_presets={
             "5t_ota": {
                 "default_params": {
@@ -663,6 +669,10 @@ def _coerce_profile(data: dict[str, object]) -> PDKProfile:
     values = dict(data)
     values["process_sections"] = dict(values.get("process_sections") or {})
     values["topology_presets"] = dict(values.get("topology_presets") or {})
+    values["special_models"] = {
+        str(role): str(model)
+        for role, model in dict(values.get("special_models") or {}).items()
+    }
     temps = values.get("pvt_temperatures_c", (-40.0, 27.0, 125.0))
     values["pvt_temperatures_c"] = tuple(float(temp) for temp in temps)
     options = values.get("spectre_options", ())

@@ -15,6 +15,7 @@
 | HSPICE section | `TOP_TT` |
 | NMOS / PMOS | `nch_mac` / `pch_mac` |
 | LVT NMOS / PMOS | `nch_lvt_mac` / `pch_lvt_mac` |
+| Special models | `pnp:pnp5`, `resistor_poly:rupolym` |
 | VDD default/range | default `0.9 V`, allowed `0.9 V ~ 1.1 V` |
 | W per finger | `0.2um ~ 2.6um` |
 | gm/Id table | `gmid_lookup_table/gm_id_tables_tsmc28.json` |
@@ -65,6 +66,16 @@ profile 同时提供常规 MOS 和 LVT MOS model 名称：
 | LVT PMOS | `pmos_lvt_model` | `pch_lvt_mac` |
 
 当前 `five_t_ota`、`two_stage_ota`、`nmcf_three_stage` 使用常规 MOS；`folded_cascode` 与 `folded_cascode_two_stage` 使用 LVT MOS。换 PDK 时，只需要改 profile 中这些 model 名称，topology 会把对应 model 写入生成的 Spectre netlist 和 gm/Id sizing spec。
+
+PNP、poly resistor 等非 MOS 器件写入 `special_models`，通过
+`profile.resolve_model(<role>)` 获取。当前 `bandgap_ptat` 需要：
+
+```json
+"special_models": {
+  "pnp": "pnp5",
+  "resistor_poly": "rupolym"
+}
+```
 
 ## Topology 初始参数 preset
 
@@ -195,7 +206,7 @@ export VIRTUOSO_PDK_LIB_PATH=/my/pdk/tsmcN28
 推荐新增一个 profile，而不是改 topology：
 
 1. 在 `pdk_profiles.py` 的 `PDK_PROFILES` 中新增一项，或准备外部 JSON 并设置 `PDK_PROFILE_FILE=/path/to/profile.json`。
-2. 填写 Spectre/HSPICE model include、nominal section、PVT process section、VDD 范围、MOS model role、尺寸约束、gm/Id table path、Virtuoso tech lib、OA library path，以及必要 topology 的 `topology_presets`。
+2. 填写 Spectre/HSPICE model include、nominal section、PVT process section、VDD 范围、MOS/special model role、尺寸约束、gm/Id table path、Virtuoso tech lib、OA library path，以及必要 topology 的 `topology_presets`。
 3. 确认 gm/Id 表包含 topology 需要的 model 名。常规拓扑需要 `nmos/pmos`；folded cascode 当前需要 `nmos_lvt/pmos_lvt`。
 4. 运行 profile 验证：
 

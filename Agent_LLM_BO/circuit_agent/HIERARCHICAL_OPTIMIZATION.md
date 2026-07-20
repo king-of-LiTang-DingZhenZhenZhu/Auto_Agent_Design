@@ -6,7 +6,7 @@ blocks: child BO → child PVT → frozen child artifact → parent BO → paren
 ## Generate a Parent Project
 
 The topology writes `hierarchy.json` together with `requirements.json`.
-For example, `bandgap_ptat` declares a frozen `folded_cascode_two_stage`
+For example, `bandgap_ptat` declares a frozen `two_stage_ota`
 error-amplifier block.
 
 ```bash

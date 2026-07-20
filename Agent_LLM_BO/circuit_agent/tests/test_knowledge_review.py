@@ -72,8 +72,10 @@ class KnowledgeReviewTests(unittest.TestCase):
             "reward": 1.0,
             "params": {
                 "BJT_AREA_RATIO": 8,
-                "Rptat": 100e3,
-                "Rctat": 200e3,
+                "R0_SEG_L": 10e-6,
+                "R0_SEG_W": 2e-6,
+                "R1_SEG_L": 10e-6,
+                "R1_SEG_W": 2e-6,
             },
             "result": {"converged": True},
         }
@@ -90,7 +92,7 @@ class KnowledgeReviewTests(unittest.TestCase):
             run["derived"]["delta_vbe_27c_first_order_V"],
             25.852e-3 * math.log(8),
         )
-        self.assertEqual(run["derived"]["rctat_over_rptat"], 2.0)
+        self.assertEqual(run["derived"]["r1_over_r0_first_order"], 2.0)
         self.assertTrue(any("temperature sweep" in item for item in run["unavailable"]))
         self.assertTrue(analysis["limitations"])
 

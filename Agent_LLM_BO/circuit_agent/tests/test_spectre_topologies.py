@@ -68,6 +68,16 @@ class SpectreTopologyTest(unittest.TestCase):
 
                 self.assertTrue(any(name.endswith(".scs") for name in file_names))
                 self.assertFalse(any(name.endswith(".sp") for name in file_names))
+                if meta.name == "bandgap_ptat":
+                    self.assertTrue(
+                        {
+                            "tb_bandgap_ptat_startup.scs",
+                            "tb_bandgap_ptat_psrr.scs",
+                            "tb_bandgap_ptat_temperature.scs",
+                            "tb_bandgap_ptat_line.scs",
+                        }.issubset(file_names)
+                    )
+                    continue
                 self.assertIn(f"tb_{meta.name}_sr.scs", file_names)
                 self.assertIn(f"tb_{meta.name}_st.scs", file_names)
 
@@ -161,33 +171,80 @@ class SpectreTopologyTest(unittest.TestCase):
         self.assertIn("IBIASsrc (vdd ibias) isource type=dc dc=IBIAS", testbench)
         self.assertNotIn("VBIASsrc", testbench)
 
-    def test_bandgap_ptat_embeds_frozen_folded_cascode_macro(self):
+    def test_bandgap_ptat_embeds_frozen_two_stage_ota_macro(self):
         topo = get_topology("bandgap_ptat")
         circuit = topo.generate_circuit()
         param_names = set(topo.get_param_space().get_param_names())
+        pdk = get_pdk_profile()
 
         self.assertRegex(circuit, r"(?m)^subckt bandgap_ptat \(vref vdd vss\)")
         self.assertRegex(
             circuit,
-            r"(?m)^Xopamp \(nsense nfb vctrl opibias vdd vss\) folded_cascode_two_stage",
+            r"(?m)^Xopamp \(vinp vinn vg opibias vdd vss\) two_stage_ota",
         )
         self.assertIn("Port order: vip vin vout ibias vdd vss", circuit)
-        self.assertIn("subckt folded_cascode_two_stage (vip vin vout ibias vdd vss)", circuit)
+        self.assertIn("subckt two_stage_ota (vip vin vout ibias vdd vss)", circuit)
 
-        self.assertIn("Rptat", param_names)
-        self.assertIn("Rctat", param_names)
-        self.assertIn("BJT_AREA_RATIO", param_names)
+        self.assertEqual(param_names, {"R0_SEG_L", "R1_SEG_L", "Lmirror_p"})
+        physical_params = {
+            param.name: param for param in topo.get_param_space().params
+        }
+        self.assertAlmostEqual(physical_params["Lmirror_p"].low, 400e-9)
+        self.assertAlmostEqual(physical_params["Lmirror_p"].high, 800e-9)
+
+        gmid_spec = topo.get_gmid_spec()
+        gmid_params = {
+            param.name: param for param in gmid_spec.build_param_space().params
+        }
+        self.assertEqual(
+            set(gmid_params),
+            {"gm_id_mirror_pmos", "L_mirror_pmos", "R0_SEG_L", "R1_SEG_L"},
+        )
+        self.assertEqual(gmid_params["gm_id_mirror_pmos"].low, 12)
+        self.assertEqual(gmid_params["gm_id_mirror_pmos"].high, 18)
+        self.assertAlmostEqual(gmid_params["L_mirror_pmos"].low, 400e-9)
+        self.assertAlmostEqual(gmid_params["L_mirror_pmos"].high, 800e-9)
+        self.assertIn("M0 (net1 vinp vss vss)", circuit)
+        self.assertIn("M1 (vg net1 vss vss)", circuit)
+        self.assertIn("M12 (vref vg vdd vdd)", circuit)
+        self.assertIn(f"Q1 (vinn vss vss) {pdk.resolve_model('pnp')} m=1", circuit)
+        self.assertIn(
+            f"R1_4 (r1_3 vss) {pdk.resolve_model('resistor_poly')}",
+            circuit,
+        )
+        self.assertNotIn("VctatSrc", circuit)
+        self.assertNotIn("VptatSrc", circuit)
+        self.assertNotIn("Mpass", circuit)
         self.assertNotIn("Wdiffp", param_names)
         self.assertNotIn("Lbias", param_names)
         self.assertNotIn("m_half_unit", param_names)
         self.assertNotIn("bias_p_scale", param_names)
 
+    def test_bandgap_ptat_generates_dedicated_signoff_testbenches(self):
+        topo = get_topology("bandgap_ptat")
+        files = topo.get_circuit_files()
+
+        self.assertEqual(
+            files.testbench_suffixes,
+            ["startup", "psrr", "temperature", "line"],
+        )
+        startup, psrr, temperature, line = files.testbenches
+        self.assertIn(
+            "VDDsrc (vdd 0) vsource type=pulse val0=0 val1=VDD "
+            "delay=0 rise=1u",
+            startup,
+        )
+        self.assertIn("startupTran tran stop=10u", startup)
+        self.assertIn("psrrAC ac start=1 stop=100M", psrr)
+        self.assertIn("tempSweep dc param=temp", temperature)
+        self.assertIn("lineSweep dc param=VDD", line)
+
     def test_bandgap_ptat_uses_external_opamp_netlist(self):
         fake_opamp = """\
-// fake folded opamp
-subckt folded_cascode (vip vin vout ibias vdd vss)
+// fake two-stage opamp
+subckt two_stage_ota (vip vin vout ibias vdd vss)
 Rfake (vout vss) resistor r=1G
-ends folded_cascode
+ends two_stage_ota
 """
         with tempfile.TemporaryDirectory() as tmp:
             opamp_path = Path(tmp) / "opamp.cir"
@@ -197,23 +254,22 @@ ends folded_cascode
                 {"opamp_netlist": str(opamp_path)}
             )
 
-        self.assertIn("// fake folded opamp", circuit)
+        self.assertIn("// fake two-stage opamp", circuit)
         self.assertIn("Rfake (vout vss) resistor r=1G", circuit)
         self.assertIn(
-            "subckt folded_cascode_two_stage (vip vin vout ibias vdd vss)",
+            "subckt two_stage_ota (vip vin vout ibias vdd vss)",
             circuit,
         )
-        self.assertNotIn("subckt folded_cascode (", circuit)
         self.assertIn(
-            "Xopamp (nsense nfb vctrl opibias vdd vss) folded_cascode_two_stage",
+            "Xopamp (vinp vinn vg opibias vdd vss) two_stage_ota",
             circuit,
         )
 
     def test_bandgap_write_project_records_hierarchical_opamp_spec(self):
         fake_opamp = """\
-subckt folded_cascode_two_stage (vip vin vout ibias vdd vss)
+subckt two_stage_ota (vip vin vout ibias vdd vss)
 Rfake (vout vss) resistor r=1G
-ends folded_cascode_two_stage
+ends two_stage_ota
 """
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -229,7 +285,7 @@ ends folded_cascode_two_stage
                 root / "bandgap",
                 targets=targets,
                 params={"opamp_netlist": str(opamp_path)},
-                original_requirement="bandgap with optimized folded opamp",
+                original_requirement="bandgap with optimized two-stage opamp",
             )
             req = json.loads((project / "requirements.json").read_text(encoding="utf-8"))
             hierarchy = json.loads((project / "hierarchy.json").read_text(encoding="utf-8"))
@@ -237,6 +293,8 @@ ends folded_cascode_two_stage
 
             self.assertEqual(hierarchy["parent_topology"], "bandgap_ptat")
             self.assertEqual(block["block_id"], "opamp")
+            self.assertEqual(block["topology_name"], "two_stage_ota")
+            self.assertEqual(block["expected_subckt"], "two_stage_ota")
             self.assertEqual(block["netlist_param"], "opamp_netlist")
             self.assertEqual(block["results_param"], "opamp_results")
             self.assertEqual(

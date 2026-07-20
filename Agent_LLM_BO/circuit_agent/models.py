@@ -927,6 +927,7 @@ class CircuitFiles:
     circuit_netlist: str     # DUT subcircuit content (Spectre or HSPICE syntax)
     testbenches: list[str]   # Testbench contents (include, stimulus, analyses, save)
     circuit_name: str        # Subcircuit name extracted from subckt line
+    testbench_suffixes: list[str] = field(default_factory=list)
 
     @property
     def testbench(self) -> str | None:
