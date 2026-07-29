@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any, Literal, TypedDict
 
 from design_audit import run_design_audit
+from models import DesignTarget
+from pdk_profiles import PDKProfile
 from pvt_simulation import run_pvt_verification
 from virtuoso_export.exporter import export_from_results, select_export_netlist
 
@@ -35,6 +37,8 @@ class DesignFlowState(TypedDict, total=False):
     audit_warnings: int
     audit_report: str | None
     pvt_requested: bool
+    pvt_targets: DesignTarget | None
+    pvt_profile: PDKProfile | None
     pvt_pass: bool | None
     final_source: str | None
     final_netlist: str | None
@@ -50,6 +54,8 @@ def run_design_flow(
     simulate: bool = False,
     export_virtuoso: bool = False,
     lib_name: str = "BO_Designs",
+    pvt_targets: DesignTarget | None = None,
+    pvt_profile: PDKProfile | None = None,
 ) -> DesignFlowState:
     project_dir = Path(project)
     initial: DesignFlowState = {
@@ -61,6 +67,8 @@ def run_design_flow(
         "lib_name": lib_name,
         "errors": [],
         "pvt_requested": run_pvt,
+        "pvt_targets": pvt_targets,
+        "pvt_profile": pvt_profile,
         "langgraph_available": StateGraph is not None,
     }
     if StateGraph is None:
@@ -213,6 +221,8 @@ def run_pvt_node(state: DesignFlowState) -> DesignFlowState:
             results_path=state["results_json"],
             simulate=bool(state.get("simulate")),
             dry_run=not bool(state.get("simulate")),
+            targets=state.get("pvt_targets"),
+            profile=state.get("pvt_profile"),
         )
         return {
             **state,
@@ -281,8 +291,19 @@ def _write_flow_outputs(state: DesignFlowState) -> None:
     project = Path(state["project_dir"])
     flow_dir = project / "flow"
     flow_dir.mkdir(parents=True, exist_ok=True)
+    persisted_state = dict(state)
+    pvt_targets = state.get("pvt_targets")
+    if pvt_targets is not None:
+        persisted_state["pvt_targets"] = pvt_targets.to_requirements_dict()["targets"]
+        persisted_state["pvt_metric_goals"] = {
+            name: goal.to_dict()
+            for name, goal in pvt_targets.resolved_metric_goals().items()
+        }
+    pvt_profile = state.get("pvt_profile")
+    if pvt_profile is not None:
+        persisted_state["pvt_profile"] = pvt_profile.to_dict()
     (flow_dir / "flow_state.json").write_text(
-        json.dumps(state, indent=2, ensure_ascii=False, default=str),
+        json.dumps(persisted_state, indent=2, ensure_ascii=False, default=str),
         encoding="utf-8",
     )
     (flow_dir / "flow_report.md").write_text(

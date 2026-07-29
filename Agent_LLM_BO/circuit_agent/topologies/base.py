@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from models import CircuitFiles, DesignTarget, ParamSpace
+from models import CircuitFiles, DesignTarget, ParamSpace, parse_metric_goals
 
 
 @dataclass
@@ -44,8 +44,8 @@ class TopologyMeta:
 
 
 @dataclass(frozen=True)
-class HierarchicalBlockSpec:
-    """One child block optimized before its parent topology.
+class ExecutableChildSpec:
+    """Execution contract for one child optimized before its parent topology.
 
     ``netlist_param`` and ``results_param`` name the parent topology arguments
     that receive the frozen child artifact paths.
@@ -56,6 +56,7 @@ class HierarchicalBlockSpec:
     expected_subckt: str
     ports: tuple[str, ...]
     targets: DesignTarget
+    pvt_targets: DesignTarget | None = None
     sizing_policy: str = "frozen_macro"
     netlist_param: str = ""
     results_param: str = ""
@@ -67,16 +68,34 @@ class HierarchicalBlockSpec:
             "expected_subckt": self.expected_subckt,
             "ports": list(self.ports),
             "targets": self.targets.to_requirements_dict()["targets"],
+            "metric_goals": {
+                name: goal.to_dict()
+                for name, goal in self.targets.resolved_metric_goals().items()
+            },
             "topology_hint": self.targets.topology_hint,
             "custom_specs": self.targets.custom_specs,
+            "pvt_targets": (
+                self.pvt_targets.to_requirements_dict()["targets"]
+                if self.pvt_targets
+                else None
+            ),
+            "pvt_metric_goals": (
+                {
+                    name: goal.to_dict()
+                    for name, goal in self.pvt_targets.resolved_metric_goals().items()
+                }
+                if self.pvt_targets
+                else {}
+            ),
             "sizing_policy": self.sizing_policy,
             "netlist_param": self.netlist_param,
             "results_param": self.results_param,
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "HierarchicalBlockSpec":
+    def from_dict(cls, data: dict[str, Any]) -> "ExecutableChildSpec":
         targets = dict(data.get("targets", {}))
+        pvt_targets = data.get("pvt_targets")
         return cls(
             block_id=str(data["block_id"]),
             topology_name=str(data["topology_name"]),
@@ -90,8 +109,30 @@ class HierarchicalBlockSpec:
                 load_cap_f=targets.get("load_cap_f"),
                 slew_rate_v_per_s=targets.get("slew_rate_v_per_s"),
                 settling_time_s=targets.get("settling_time_s"),
+                vref_v=targets.get("vref_v"),
+                vref_tolerance_v=targets.get("vref_tolerance_v") or 10e-3,
+                tempco_ppm_per_c=targets.get("tempco_ppm_per_c"),
+                vref_temp_nonlinearity_v=targets.get(
+                    "vref_temp_nonlinearity_v"
+                ),
+                psrr_db=targets.get("psrr_db"),
+                line_regulation_v_per_v=targets.get(
+                    "line_regulation_v_per_v"
+                ),
+                startup_time_s=targets.get("startup_time_s"),
                 topology_hint=str(data.get("topology_hint", "")),
                 custom_specs=dict(data.get("custom_specs", {})),
+                metric_goals=parse_metric_goals(
+                    data.get("metric_goals", targets.get("metric_goals"))
+                ),
+            ),
+            pvt_targets=(
+                _design_target_from_data(
+                    dict(pvt_targets),
+                    metric_goals=data.get("pvt_metric_goals"),
+                )
+                if isinstance(pvt_targets, dict)
+                else None
             ),
             sizing_policy=str(data.get("sizing_policy", "frozen_macro")),
             netlist_param=str(data.get("netlist_param", "")),
@@ -106,7 +147,43 @@ class HierarchicalBlockSpec:
             "ports": list(self.ports),
             "sizing_policy": self.sizing_policy,
             "derived_targets": self.targets.to_requirements_dict()["targets"],
+            "metric_goals": {
+                name: goal.to_dict()
+                for name, goal in self.targets.resolved_metric_goals().items()
+            },
+            "pvt_targets": (
+                self.pvt_targets.to_requirements_dict()["targets"]
+                if self.pvt_targets
+                else None
+            ),
         }
+
+
+HierarchicalBlockSpec = ExecutableChildSpec
+
+
+def _design_target_from_data(
+    targets: dict[str, Any],
+    *,
+    metric_goals: Any = None,
+) -> DesignTarget:
+    return DesignTarget(
+        gain_db=targets.get("gain_db"),
+        bandwidth_hz=targets.get("bandwidth_hz", targets.get("gbw_hz")),
+        phase_margin_deg=targets.get("phase_margin_deg"),
+        power_w=targets.get("power_w"),
+        load_cap_f=targets.get("load_cap_f"),
+        slew_rate_v_per_s=targets.get("slew_rate_v_per_s"),
+        settling_time_s=targets.get("settling_time_s"),
+        vref_v=targets.get("vref_v"),
+        vref_tolerance_v=targets.get("vref_tolerance_v") or 10e-3,
+        tempco_ppm_per_c=targets.get("tempco_ppm_per_c"),
+        vref_temp_nonlinearity_v=targets.get("vref_temp_nonlinearity_v"),
+        psrr_db=targets.get("psrr_db"),
+        line_regulation_v_per_v=targets.get("line_regulation_v_per_v"),
+        startup_time_s=targets.get("startup_time_s"),
+        metric_goals=parse_metric_goals(metric_goals),
+    )
 
 
 class BaseTopology(ABC):
@@ -249,7 +326,7 @@ class BaseTopology(ABC):
         self,
         targets: DesignTarget | None = None,
         params: dict[str, Any] | None = None,
-    ) -> list[HierarchicalBlockSpec]:
+    ) -> list[ExecutableChildSpec]:
         """Return child modules that must be optimized before this topology."""
         return []
 
@@ -279,6 +356,21 @@ class BaseTopology(ABC):
         cascode currently requires LVT devices.
         """
         return ("nmos", "pmos")
+
+    def availability_error(
+        self,
+        params: dict[str, Any] | None = None,
+    ) -> str | None:
+        """Return why the active PDK/domain cannot support this topology."""
+        return None
+
+    def require_available(
+        self,
+        params: dict[str, Any] | None = None,
+    ) -> None:
+        error = self.availability_error(params)
+        if error:
+            raise ValueError(error)
 
     def critical_operating_point_instances(self) -> set[str]:
         """Return MOS instances whose saturation strongly affects reward.

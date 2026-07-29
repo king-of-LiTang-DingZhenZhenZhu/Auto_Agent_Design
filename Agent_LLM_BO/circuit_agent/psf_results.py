@@ -39,7 +39,136 @@ def parse_psf_results(raw_dir: Path, testbench_content: str) -> SimResult | None
     result = SimResult(converged=True)
     found_metrics = False
 
+    stb_name = _analysis_name(testbench_content, "stb")
+    if stb_name:
+        stb_path = _find_analysis_file(raw_dir, stb_name, "stb")
+        if stb_path:
+            try:
+                stb_psf = PSF(str(stb_path))
+                gain_db, ugf_hz, phase_margin_deg = calculate_ac_metrics(
+                    _signal_axis(
+                        stb_psf,
+                        ("loopGain", "loopgain", "loop_gain"),
+                    )
+                )
+                result.gain_db = gain_db
+                result.bandwidth_hz = ugf_hz
+                result.unity_gain_freq_hz = ugf_hz
+                result.phase_margin_deg = phase_margin_deg
+                result.raw_metrics.update(
+                    {
+                        "gain_dc": gain_db,
+                        "gbw_hz": ugf_hz,
+                        "phase_margin": phase_margin_deg,
+                    }
+                )
+                return result
+            except Exception as exc:
+                logger.warning("Failed to parse STB result %s: %s", stb_path, exc)
+
     ac_name = _analysis_name(testbench_content, "ac")
+    if ac_name and ac_name.lower().startswith("ldopsr"):
+        ac_path = _find_analysis_file(raw_dir, ac_name, "ac")
+        if ac_path:
+            try:
+                ac_psf = PSF(str(ac_path))
+                dc_psr_db = calculate_dc_psr_db(
+                    _signal_axis(ac_psf, ("vout", "V(vout)", "/vout"))
+                )
+                result.raw_metrics["dc_psr_db"] = dc_psr_db
+                return result
+            except Exception as exc:
+                logger.warning("Failed to parse LDO PSR result %s: %s", ac_path, exc)
+
+    if ac_name and ac_name.lower().startswith("psrr"):
+        ac_path = _find_analysis_file(raw_dir, ac_name, "ac")
+        if ac_path:
+            try:
+                ac_psf = PSF(str(ac_path))
+                psrr_db = calculate_psrr_db(
+                    _signal_axis(ac_psf, ("vout", "V(vout)", "/vout"))
+                )
+                result.psrr_db = psrr_db
+                result.raw_metrics["psrr_db"] = psrr_db
+                op_name = _analysis_name(testbench_content, "dc")
+                op_path = _find_analysis_file(raw_dir, op_name, "dc")
+                if op_path:
+                    op_psf = PSF(str(op_path))
+                    power = abs(
+                        _scalar_signal(
+                            op_psf,
+                            ("VDDsrc:p", "VDDsrc:pwr", "VDDsrc:power"),
+                        )
+                    )
+                    result.power_w = power
+                    result.raw_metrics["power_total"] = power
+                return result
+            except Exception as exc:
+                logger.warning("Failed to parse PSRR result %s: %s", ac_path, exc)
+
+    dc_name = _analysis_name(testbench_content, "dc")
+    if dc_name and dc_name.lower().startswith("loadsweep"):
+        dc_path = _find_analysis_file(raw_dir, dc_name, "dc")
+        if dc_path:
+            try:
+                dc_psf = PSF(str(dc_path))
+                output_voltage, load_regulation = calculate_load_regulation(
+                    _signal_axis(dc_psf, ("vout", "V(vout)", "/vout"))
+                )
+                result.raw_metrics.update(
+                    {
+                        "output_voltage_v": output_voltage,
+                        "load_regulation_v_per_a": load_regulation,
+                    }
+                )
+                return result
+            except Exception as exc:
+                logger.warning(
+                    "Failed to parse LDO load-regulation result %s: %s",
+                    dc_path,
+                    exc,
+                )
+
+    if dc_name and dc_name.lower().startswith("tempsweep"):
+        dc_path = _find_analysis_file(raw_dir, dc_name, "dc")
+        if dc_path:
+            try:
+                dc_psf = PSF(str(dc_path))
+                vref, tempco, nonlinearity = calculate_temperature_metrics(
+                    _signal_axis(dc_psf, ("vout", "V(vout)", "/vout"))
+                )
+                result.vref_v = vref
+                result.tempco_ppm_per_c = tempco
+                result.vref_temp_nonlinearity_v = nonlinearity
+                result.raw_metrics.update(
+                    {
+                        "vref_v": vref,
+                        "tempco_ppm_per_c": tempco,
+                        "vref_temp_nonlinearity_v": nonlinearity,
+                    }
+                )
+                return result
+            except Exception as exc:
+                logger.warning(
+                    "Failed to parse temperature result %s: %s", dc_path, exc
+                )
+
+    if dc_name and dc_name.lower().startswith("linesweep"):
+        dc_path = _find_analysis_file(raw_dir, dc_name, "dc")
+        if dc_path:
+            try:
+                dc_psf = PSF(str(dc_path))
+                line_regulation = calculate_line_regulation(
+                    _signal_axis(dc_psf, ("vout", "V(vout)", "/vout"))
+                )
+                result.line_regulation_v_per_v = line_regulation
+                result.raw_metrics["line_regulation_v_per_v"] = line_regulation
+                return result
+            except Exception as exc:
+                logger.warning(
+                    "Failed to parse line-regulation result %s: %s", dc_path, exc
+                )
+
     if ac_name:
         ac_path = _find_analysis_file(raw_dir, ac_name, "ac")
         if ac_path:
@@ -86,6 +215,56 @@ def parse_psf_results(raw_dir: Path, testbench_content: str) -> SimResult | None
         if tran_path:
             try:
                 tran_psf = PSF(str(tran_path))
+                if tran_name.lower().startswith("startup"):
+                    time, vdd = _signal_axis(
+                        tran_psf, ("vdd", "V(vdd)", "/vdd")
+                    )
+                    vout_time, vout = _signal_axis(
+                        tran_psf, ("vout", "V(vout)", "/vout")
+                    )
+                    if not np.array_equal(np.asarray(time), np.asarray(vout_time)):
+                        raise ValueError("vdd and vout use different time axes")
+                    success, startup_time, vref = calculate_startup_metrics(
+                        time, vdd, vout
+                    )
+                    result.startup_success = success
+                    result.startup_time_s = startup_time
+                    result.vref_v = vref
+                    result.raw_metrics.update(
+                        {
+                            "startup_success": float(success),
+                            "startup_time_s": startup_time,
+                            "vref_v": vref,
+                        }
+                    )
+                    return result
+                if tran_name.lower().startswith("loadtran"):
+                    time, load_current = _signal_axis(
+                        tran_psf,
+                        (
+                            "ILOADsrc:p",
+                            "ILOADsrc:i",
+                            "ILOADsrc",
+                            "load_current",
+                        ),
+                    )
+                    vout_time, vout = _signal_axis(
+                        tran_psf, ("vout", "V(vout)", "/vout")
+                    )
+                    if not np.array_equal(np.asarray(time), np.asarray(vout_time)):
+                        raise ValueError(
+                            "load current and vout use different time axes"
+                        )
+                    overshoot, undershoot = calculate_load_transient_metrics(
+                        time, load_current, vout
+                    )
+                    result.raw_metrics.update(
+                        {
+                            "overshoot_v": overshoot,
+                            "undershoot_v": undershoot,
+                        }
+                    )
+                    return result
                 time, vinp = _signal_axis(
                     tran_psf, ("vinp", "V(vinp)", "/vinp")
                 )
@@ -128,6 +307,166 @@ def parse_psf_results(raw_dir: Path, testbench_content: str) -> SimResult | None
                 )
 
     return result if found_metrics else None
+
+
+def calculate_startup_metrics(
+    time: Any,
+    supply_voltage: Any,
+    output_voltage: Any,
+    tolerance: float = 0.01,
+) -> tuple[bool, float, float]:
+    """Return startup success, settling time, and final Vref."""
+    time_array, supply, output = _matching_real_arrays(
+        time, supply_voltage, output_voltage
+    )
+    tail_count = max(3, int(np.ceil(output.size * 0.05)))
+    final_vref = float(np.median(output[-tail_count:]))
+    final_supply = float(np.median(supply[-tail_count:]))
+    start_candidates = np.flatnonzero(supply >= 0.01 * final_supply)
+    if start_candidates.size == 0:
+        return False, float(time_array[-1] - time_array[0]), final_vref
+
+    start_index = int(start_candidates[0])
+    error_limit = max(abs(final_vref) * tolerance, 1e-6)
+    outside = np.flatnonzero(
+        np.abs(output[start_index:] - final_vref) > error_limit
+    )
+    settle_index = start_index if outside.size == 0 else start_index + int(outside[-1]) + 1
+    settled = settle_index < output.size
+    startup_time = float(
+        time_array[min(settle_index, output.size - 1)] - time_array[start_index]
+    )
+    escaped_zero_state = final_vref > max(0.1, 0.1 * final_supply)
+    return bool(settled and escaped_zero_state), startup_time, final_vref
+
+
+def calculate_psrr_db(axis_and_values: tuple[Any, Any]) -> float:
+    """Return worst-case PSRR for a 1 V AC ripple applied at VDD."""
+    _axis, response = axis_and_values
+    magnitude = np.abs(np.asarray(response, dtype=complex))
+    magnitude = magnitude[np.isfinite(magnitude)]
+    if magnitude.size == 0:
+        raise ValueError("PSRR response is empty")
+    magnitude = np.maximum(magnitude, np.finfo(float).tiny)
+    return float(np.min(-20.0 * np.log10(magnitude)))
+
+
+def calculate_dc_psr_db(axis_and_values: tuple[Any, Any]) -> float:
+    """Return the near-DC supply-to-output transfer in dB."""
+    frequency = np.asarray(axis_and_values[0], dtype=float)
+    response = np.asarray(axis_and_values[1], dtype=complex)
+    if frequency.size == 0 or response.size != frequency.size:
+        raise ValueError("PSR result must contain matching frequency and response")
+    finite = np.isfinite(frequency) & np.isfinite(response)
+    if not np.any(finite):
+        raise ValueError("PSR response is empty")
+    frequency = frequency[finite]
+    response = response[finite]
+    index = int(np.argmin(frequency))
+    magnitude = max(abs(response[index]), np.finfo(float).tiny)
+    return float(20.0 * np.log10(magnitude))
+
+
+def calculate_load_regulation(
+    axis_and_values: tuple[Any, Any],
+) -> tuple[float, float]:
+    """Return no-load output voltage and peak-to-peak load regulation."""
+    load_current, output = _matching_real_arrays(*axis_and_values)
+    span = float(np.ptp(load_current))
+    if span <= 0:
+        raise ValueError("Load-current sweep must span more than one value")
+    no_load_index = int(np.argmin(np.abs(load_current)))
+    return float(output[no_load_index]), float(np.ptp(output) / span)
+
+
+def calculate_load_transient_metrics(
+    time: Any,
+    load_current: Any,
+    output_voltage: Any,
+) -> tuple[float, float]:
+    """Return worst load-release overshoot and load-step undershoot."""
+    time_values, load_values, output = _matching_real_arrays(
+        time, load_current, output_voltage
+    )
+    if np.any(np.diff(time_values) <= 0):
+        raise ValueError("Transient time axis must be strictly increasing")
+
+    midpoint = 0.5 * (float(np.min(load_values)) + float(np.max(load_values)))
+    rising_edges = np.flatnonzero(
+        (load_values[:-1] < midpoint) & (load_values[1:] >= midpoint)
+    )
+    falling_edges = np.flatnonzero(
+        (load_values[:-1] >= midpoint) & (load_values[1:] < midpoint)
+    )
+    if not rising_edges.size or not falling_edges.size:
+        raise ValueError("Load transient needs both rising and falling edges")
+
+    all_edges = np.sort(np.concatenate((rising_edges, falling_edges)))
+    overshoots: list[float] = []
+    undershoots: list[float] = []
+    for edge_index in all_edges:
+        previous_edge = all_edges[all_edges < edge_index]
+        start = int(previous_edge[-1] + 1) if previous_edge.size else 0
+        pre_window = output[start : edge_index + 1]
+        if pre_window.size < 2:
+            continue
+        pre_count = max(2, int(np.ceil(pre_window.size * 0.1)))
+        baseline = float(np.median(pre_window[-pre_count:]))
+
+        next_edge = all_edges[all_edges > edge_index]
+        stop = int(next_edge[0] + 1) if next_edge.size else output.size
+        response = output[edge_index + 1 : stop]
+        if response.size < 2:
+            continue
+        if edge_index in rising_edges:
+            undershoots.append(max(0.0, baseline - float(np.min(response))))
+        else:
+            tail_count = max(2, int(np.ceil(response.size * 0.1)))
+            settled = float(np.median(response[-tail_count:]))
+            overshoots.append(max(0.0, float(np.max(response)) - settled))
+
+    if not overshoots or not undershoots:
+        raise ValueError("No valid load-step response windows found")
+    return max(overshoots), max(undershoots)
+
+
+def calculate_temperature_metrics(
+    axis_and_values: tuple[Any, Any],
+) -> tuple[float, float, float]:
+    """Return Vref at 27 C, peak-to-peak tempco, and linear-fit residual."""
+    temperature, vref = _matching_real_arrays(*axis_and_values)
+    span = float(np.ptp(temperature))
+    if span <= 0:
+        raise ValueError("Temperature sweep must span more than one value")
+    nominal_index = int(np.argmin(np.abs(temperature - 27.0)))
+    nominal_vref = float(vref[nominal_index])
+    if abs(nominal_vref) <= np.finfo(float).tiny:
+        raise ValueError("Nominal Vref is zero")
+    tempco = float(np.ptp(vref) / abs(nominal_vref) / span * 1e6)
+    fit = np.polyval(np.polyfit(temperature, vref, 1), temperature)
+    nonlinearity = float(np.max(np.abs(vref - fit)))
+    return nominal_vref, tempco, nonlinearity
+
+
+def calculate_line_regulation(axis_and_values: tuple[Any, Any]) -> float:
+    """Return absolute peak-to-peak Vref change divided by VDD span."""
+    supply, vref = _matching_real_arrays(*axis_and_values)
+    span = float(np.ptp(supply))
+    if span <= 0:
+        raise ValueError("VDD sweep must span more than one value")
+    return float(np.ptp(vref) / span)
+
+
+def _matching_real_arrays(*values: Any) -> tuple[np.ndarray, ...]:
+    arrays = tuple(np.asarray(value, dtype=float) for value in values)
+    if not arrays or arrays[0].size < 2:
+        raise ValueError("Metric calculation needs at least two samples")
+    if any(array.shape != arrays[0].shape for array in arrays[1:]):
+        raise ValueError("Metric arrays must have matching shapes")
+    if any(not np.all(np.isfinite(array)) for array in arrays):
+        raise ValueError("Metric arrays contain non-finite values")
+    order = np.argsort(arrays[0])
+    return tuple(array[order] for array in arrays)
 
 
 def calculate_ac_metrics(

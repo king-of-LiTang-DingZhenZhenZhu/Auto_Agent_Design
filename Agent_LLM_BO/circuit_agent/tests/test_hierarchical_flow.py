@@ -19,15 +19,18 @@ class FakeFlowEnvironment:
         *,
         nominal_pass: bool = True,
         pvt_pass: bool = True,
+        audit_block: bool = False,
         pdk_mismatch: bool = False,
         bad_interface: bool = False,
     ) -> None:
         self.output_root = output_root
         self.nominal_pass = nominal_pass
         self.pvt_pass = pvt_pass
+        self.audit_block = audit_block
         self.pdk_mismatch = pdk_mismatch
         self.bad_interface = bad_interface
         self.commands: list[list[str]] = []
+        self.qualification_targets: list[DesignTarget | None] = []
 
     def run_command(self, command, **_kwargs):
         self.commands.append(command)
@@ -57,15 +60,45 @@ class FakeFlowEnvironment:
         )
         return CompletedProcess(command, 0, stdout="ok", stderr="")
 
-    def run_pvt(self, *, results_path, **_kwargs):
-        project = Path(results_path).parent
+    def run_qualification(self, *, project, pvt_targets=None, **_kwargs):
+        self.qualification_targets.append(pvt_targets)
+        project = Path(project)
+        if not self.nominal_pass:
+            return {
+                "nominal_pass": False,
+                "review_pass": False,
+                "audit_status": None,
+                "pvt_pass": None,
+                "next_action": "prepare_agent_review",
+                "errors": [],
+            }
+        if self.audit_block:
+            return {
+                "nominal_pass": True,
+                "review_pass": False,
+                "audit_status": "block",
+                "pvt_pass": None,
+                "next_action": "prepare_agent_review",
+                "errors": [],
+            }
         pvt_root = project / "pvt"
         pvt_root.mkdir(parents=True, exist_ok=True)
         report = {"pvt_pass": self.pvt_pass, "pvt_root": str(pvt_root)}
         (pvt_root / "pvt_results.json").write_text(
             json.dumps(report), encoding="utf-8"
         )
-        return report
+        return {
+            "nominal_pass": True,
+            "review_pass": False,
+            "audit_status": "pass",
+            "pvt_pass": self.pvt_pass,
+            "next_action": (
+                "ready_to_export_virtuoso"
+                if self.pvt_pass
+                else "inspect_pvt_report"
+            ),
+            "errors": [],
+        }
 
 
 class HierarchicalFlowTests(unittest.TestCase):
@@ -83,7 +116,7 @@ class HierarchicalFlowTests(unittest.TestCase):
             project,
             output_root=environment.output_root,
             command_runner=environment.run_command,
-            pvt_runner=environment.run_pvt,
+            qualification_runner=environment.run_qualification,
             **kwargs,
         )
 
@@ -101,8 +134,15 @@ class HierarchicalFlowTests(unittest.TestCase):
             self.assertTrue((artifact / "pvt" / "pvt_results.json").exists())
             manifest = json.loads((artifact / "artifact.json").read_text(encoding="utf-8"))
             self.assertTrue(manifest["nominal_pass"])
+            self.assertTrue(manifest["audit_pass"])
             self.assertTrue(manifest["pvt_pass"])
+            self.assertEqual(
+                manifest["qualification_targets"]["pvt"]["targets"]["gain_db"],
+                60.0,
+            )
             self.assertEqual(len(environment.commands), 2)
+            self.assertEqual(environment.qualification_targets[0].gain_db, 60.0)
+            self.assertIsNone(environment.qualification_targets[1])
             parent_netlist = (project / "bandgap_ptat.cir").read_text(encoding="utf-8")
             self.assertIn("subckt two_stage_ota", parent_netlist)
 
@@ -116,6 +156,28 @@ class HierarchicalFlowTests(unittest.TestCase):
 
             self.assertEqual(len(environment.commands), 1)
 
+    def test_reviewed_child_output_can_resume_without_rerunning_child_bo(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            environment = FakeFlowEnvironment(
+                root / "outputs",
+                nominal_pass=False,
+            )
+            project = self._project(root)
+
+            with self.assertRaises(HierarchicalFlowError):
+                self._flow(project, environment).run()
+
+            environment.nominal_pass = True
+            state = self._flow(
+                project,
+                environment,
+                resume_qualification=True,
+            ).run()
+
+            self.assertEqual(state["children"], {"opamp": "resumed"})
+            self.assertEqual(len(environment.commands), 2)
+
     def test_child_pvt_failure_stops_before_parent(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -125,6 +187,22 @@ class HierarchicalFlowTests(unittest.TestCase):
                 self._flow(self._project(root), environment).run()
 
             self.assertEqual(len(environment.commands), 1)
+
+    def test_child_audit_blocker_stops_before_pvt_and_parent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            environment = FakeFlowEnvironment(
+                root / "outputs",
+                audit_block=True,
+            )
+
+            with self.assertRaisesRegex(HierarchicalFlowError, "Design Audit"):
+                self._flow(self._project(root), environment).run()
+
+            self.assertEqual(len(environment.commands), 1)
+            self.assertFalse(
+                (root / "outputs" / "bandgap__opamp" / "pvt").exists()
+            )
 
     def test_pdk_and_interface_mismatch_stop_before_parent(self):
         for mismatch in ("pdk_mismatch", "bad_interface"):

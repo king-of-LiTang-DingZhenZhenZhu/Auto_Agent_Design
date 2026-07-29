@@ -86,6 +86,46 @@ class ReviewOptimizationTests(unittest.TestCase):
         self.assertIn("Cc", changes)
         self.assertIn("Rz", changes)
 
+    def test_bandgap_review_uses_bandgap_rules_not_opamp_rules(self):
+        params = {
+            "R0_SEG_L": 10e-6,
+            "R1_SEG_L": 10e-6,
+            "Lmirror_p": 600e-9,
+            "Wcs": 10e-6,
+            "Cc": 1e-12,
+        }
+        bounds = {
+            "R0_SEG_L": ParamDef("R0_SEG_L", 1e-6, 20e-6),
+            "R1_SEG_L": ParamDef("R1_SEG_L", 1e-6, 20e-6),
+            "Lmirror_p": ParamDef("Lmirror_p", 400e-9, 800e-9),
+            "Wcs": ParamDef("Wcs", 1e-6, 20e-6),
+            "Cc": ParamDef("Cc", 0.1e-12, 2e-12),
+        }
+        result = {
+            "vref_v": 1.15,
+            "startup_success": False,
+            "startup_time_s": 10e-6,
+            "psrr_db": 35,
+            "gain_db": 20,
+        }
+        targets = {
+            "vref_v": 1.2,
+            "vref_tolerance_v": 5e-3,
+            "startup_time_s": 5e-6,
+            "psrr_db": 50,
+            "gain_db": 60,
+        }
+
+        adjusted, changes = apply_review_rules(
+            params, result, targets, bounds, topology_name="bandgap_ptat"
+        )
+
+        self.assertLess(adjusted["R0_SEG_L"], params["R0_SEG_L"])
+        self.assertGreater(adjusted["Lmirror_p"], params["Lmirror_p"])
+        self.assertIn("R1_SEG_L", changes)
+        self.assertEqual(adjusted["Wcs"], params["Wcs"])
+        self.assertEqual(adjusted["Cc"], params["Cc"])
+
     def test_apply_operating_point_rules_adjusts_folded_device_sizes(self):
         params = {
             "Wcs": 20e-6,
@@ -422,6 +462,54 @@ ends dut
             self.assertNotIn("AGENT_REVIEW.md", context)
             self.assertEqual(plan["review_mode"], "success_audit")
             self.assertEqual(plan["findings"], [])
+
+    def test_bandgap_context_uses_bandgap_review_profile(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            project = root / "outputs" / "bandgap"
+            review_root = project / "agent_review"
+            run_dir = workspace / "run_000"
+            run_dir.mkdir(parents=True)
+            project.mkdir(parents=True)
+            (run_dir / "circuit.cir").write_text(
+                "parameters R0_SEG_L=10u R1_SEG_L=10u Lmirror_p=600n\n",
+                encoding="utf-8",
+            )
+            history = {
+                "targets": {"vref_v": 1.2, "tempco_ppm_per_c": 20},
+                "history": [],
+            }
+            records = [{
+                "iteration": 0,
+                "reward": -1000,
+                "result": {"vref_v": 1.15, "tempco_ppm_per_c": 80},
+            }]
+
+            write_local_agent_review_package(
+                project=project,
+                workspace=workspace,
+                topology_name="bandgap_ptat",
+                history=history,
+                history_path=workspace / "history.json",
+                records=records,
+                param_bounds={
+                    "R0_SEG_L": ParamDef("R0_SEG_L", 1e-6, 20e-6),
+                    "R1_SEG_L": ParamDef("R1_SEG_L", 1e-6, 20e-6),
+                },
+                review_root=review_root,
+            )
+
+            context = (review_root / "agent_context.md").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("Review Domain\n\nbandgap", context)
+            self.assertIn("Bandgap_knowledge_base", context)
+            self.assertIn("zero-current state", context)
+            self.assertIn("Vref error from tempco", context)
+            self.assertNotIn("Gain/GBW/PM/SR/settling/power gap", context)
+            self.assertIn('"tempco_ppm_per_c": -60.0', context)
+            self.assertIn('"vref_v": -0.0', context)
 
     def test_patch_plan_run_preserves_agent_context_and_plan(self):
         template = """

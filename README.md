@@ -2,6 +2,9 @@
 
 基于 **拓扑库 + gm/Id 查找表 + 贝叶斯优化** 的模拟电路自动设计闭环系统。用户描述需求后，系统生成 Spectre native 网表、调用 Spectre 仿真、解析结果并运行 BO 优化迭代，最终输出最优设计参数、诊断文件和可复现实验目录。
 
+当前完整的叶子电路、系统分解、层级优化、Review、PVT 和导出流程见
+[`FILE_FLOW.md`](FILE_FLOW.md)。
+
 ## 项目结构
 
 ```
@@ -9,86 +12,63 @@ Auto_Agent_Design/
 ├── AGENTS.md                          # AI 操作手册（Codex 工作流程）
 ├── CLAUDE.md                          # Claude Code 配置（已合并至 AGENTS.md）
 ├── README.md                          # 本文件
-│
-└── Agent_LLM_BO/
-    ├── circuit_agent/                 # 核心优化引擎
-    │   ├── main.py                    # 入口：BO 优化循环
-    │   ├── config.py                  # 全局配置
-    │   ├── pdk_profiles.py            # PDK profile：模型路径、器件名、VDD、尺寸约束
-    │   ├── models.py                  # 数据模型
-    │   ├── optimizer.py               # HybridOptimizer：BO + diagnostics reward 优化
-    │   ├── review_optimization.py     # BO 后 Review：指标缺口分析 + 候选网表生成
-    │   ├── simulator.py               # Spectre 仿真调用
-    │   ├── llm_client.py              # 可选 LLM 客户端：需求解析/实验性参数校验
-    │   ├── psf_results.py             # PSF 结果解析（AC/瞬态）
-    │   ├── diagnostics_export.py       # DC/AC 诊断 CSV 与可读摘要
-    │   ├── gmid_lookup.py             # gm/Id 查找表与尺寸计算
-    │   ├── SIZING_MODES.md            # 普通 BO 与 gm/Id BO 参数空间说明
-    │   ├── utils.py                   # 工具函数
-    │   ├── requirements.txt           # Python 依赖
-    │   ├── .env.example               # 环境变量模板
-    │   │
-    │   ├── topologies/                # 拓扑库（硬约束网表生成）
-    │   │   ├── __init__.py            # 拓扑注册与选择器
-    │   │   ├── base.py                # 抽象基类
-    │   │   ├── five_t_ota.py          # 5T OTA
-    │   │   ├── two_stage_ota.py       # 两级 Miller OTA
-    │   │   ├── folded_cascode.py      # 单级折叠 Cascode OTA
-    │   │   ├── folded_cascode_two_stage.py # 折叠 Cascode + CS 二级 OTA
-    │   │   ├── nmcf_three_stage.py    # NMCF 三级 OTA
-    │   │   └── bandgap_ptat.py        # Bandgap/PTAT 层级系统拓扑
-    │   │
-    │   ├── virtuoso_export/           # Virtuoso SKILL 导出
-    │   │   ├── exporter.py
-    │   │   ├── parser.py
-    │   │   ├── placement.py
-    │   │   └── skill_writer.py
-    │   │
-    │   ├── tests/                     # 单元测试
-    │   │
-    │   ├── outputs/                   # 优化结果输出
-    │   └── workspace/                 # 运行时工作目录
-    │
-    ├── knowledge_base/                # 设计知识库与 PDK 说明
-    │   ├── Opamp_knowledge_base/
-    │   └── PDKs_info/
-    │       ├── pdk_profiles.md
-    │       └── tsmc28_pdk_constraints.md
-    │
-    ├── Spice_Scripts/                 # HSPICE 格式参考
-    ├── Scs_Scirpts/                   # Spectre 格式参考
-    └── topology_examples/             # 拓扑参考网表
+├── FILE_FLOW.md                       # 当前完整项目流程与文件流
+├── Agent_LLM_BO/
+│   └── circuit_agent/                 # 核心设计与优化引擎
+│       ├── main.py                    # 固定 topology 的 BO 入口
+│       ├── system_decomposition.py    # 系统架构、block graph、指标与预算分解
+│       ├── hierarchical_flow.py       # child-parent 依赖、冻结与嵌入
+│       ├── design_flow_graph.py       # Audit/Review/PVT/导出状态编排
+│       ├── models.py                  # 指标、参数和仿真数据模型
+│       ├── optimizer.py               # BO 与 reward
+│       ├── simulator.py               # Spectre 调用
+│       ├── pdk_profiles.py            # PDK、电压域、model 和 preset
+│       ├── topologies/                # 硬约束 DUT/testbench 生成
+│       ├── virtuoso_export/           # Virtuoso SKILL 导出
+│       ├── tests/
+│       ├── outputs/
+│       └── workspace/
+├── knowledge_base/                    # 系统/运放/Bandgap/PDK 知识库
+│   ├── System_knowledge_base/
+│   ├── Opamp_knowledge_base/
+│   ├── Bandgap_knowledge_base/
+│   └── PDKs_info/
+├── gmid_lookup_table/                 # gm/Id 查找表
+├── Spice_Scripts/                     # HSPICE 格式参考
+└── Scs_Scirpts/                       # Spectre 格式参考
 ```
 
 ## 核心流程
 
-```
+```text
 用户需求
-    │
-    ▼
-① 解析需求 → 提取指标 (gain, GBW, PM, power, SR, settling time...)
-    │
-    ▼
-② 查阅知识库 → 选择拓扑 (复杂度最低优先)
-    │
-    ▼
-③ 拓扑库生成网表 → <circuit_name>/
-    │   ├── <circuit_name>.cir          # DUT 子电路（Spectre native）
-    │   ├── tb_*_ac.scs                 # AC testbench
-    │   ├── tb_*_sr.scs                 # Slew Rate testbench
-    │   ├── tb_*_st.scs                 # 0.1% 建立时间 testbench
-    │   ├── params.json                 # 参数搜索空间（可选）
-    │   └── requirements.json           # 设计指标
-    │
-    ▼
-④ python main.py --netlist ... --testbench ... --requirements ...
-    │
-    ▼
-⑤ 读取 outputs/<project>/results.json → 汇报结果
-    │
-    ▼
-⑥ BO 后 Review → 选取 Top 迭代，指标缺口规则或本地 Agent patch plan 生成候选网表，仿真验证
+  |
+  +-- 叶子模块：OTA/运放
+  |     -> DesignTarget / MetricGoal
+  |     -> 选择 topology
+  |     -> write_project()
+  |     -> main.py: gm/Id + BO + Spectre
+  |     -> success_audit 或 failure_repair
+  |     -> PVT
+  |     -> Virtuoso 导出
+  |
+  +-- 系统级电路：Bandgap/LDO/ADC
+        -> system_decomposition.py
+        -> system_design.json
+        -> parent project + hierarchy.json
+        -> hierarchical_flow.py
+        -> child BO → Audit/Review gate/PVT
+        -> frozen child artifact
+        -> parent BO → Audit/Review gate/PVT
+        -> Review/Audit 与导出
 ```
+
+`system_decomposition.py` 是设计决策层，决定系统架构、block graph、
+child targets、PVT targets、预算和 topology；`hierarchical_flow.py`
+是执行层，只消费已经确定的 `ExecutableChildSpec`。
+
+当前系统级规则只实现了 Bandgap。LDO 和 ADC 尚未实现系统规则和 parent
+topology。
 
 ## 快速开始
 
@@ -119,6 +99,18 @@ python main.py \
 
 # 5. 查看结果
 cat outputs/*/results.json
+```
+
+系统级项目先生成 decomposition 和 hierarchy：
+
+```bash
+python system_decomposition.py \
+  --requirements bandgap_requirements.json \
+  --project bandgap_project
+
+python hierarchical_flow.py \
+  --project bandgap_project \
+  --simulate
 ```
 
 ## 命令行参数
@@ -193,7 +185,10 @@ python pvt_simulation.py \
 
 ## Design Flow Graph
 
-`design_flow_graph.py` 是 BO → Review → PVT → Virtuoso 的上层编排入口。它不替代底层脚本，只读取当前项目状态并决定下一步，输出统一的 `outputs/<project>/flow/flow_state.json` 和 `flow_report.md`。
+`design_flow_graph.py` 是 BO → Design Audit → Review gate → PVT → Virtuoso
+的资格与状态编排入口。它不替代 BO，也不自动填写 `patch_plan.json`。
+`hierarchical_flow.py` 会对每个 child 和 parent 调用它，统一 PVT 前门槛。
+状态写入 `outputs/<project>/flow/flow_state.json` 和 `flow_report.md`。
 
 ```bash
 cd Agent_LLM_BO/circuit_agent
@@ -264,7 +259,12 @@ Agent_LLM_BO/virtuoso_runs/<project>/
 | NMCF Three-Stage OTA | 75–115 dB | 500 kHz – 600 MHz | 4 |
 | Bandgap/PTAT Reference | 系统级 | 系统级 | 5 |
 
-`bandgap_ptat` 使用两阶段层级流程：先把内部 folded-cascode 运放作为 child block 单独优化并验证，再把达标运放作为 frozen macro/subckt 嵌入 bandgap 顶层。bandgap 级 BO 只搜索 resistor ratio、PTAT/CTAT bias、BJT 面积比、pass device、compensation/load 等系统参数，不展开 folded-cascode 内部 W/L。相关规则见 `knowledge_base/Opamp_knowledge_base/topologies/bandgap_ptat_optimization.md`。
+`bandgap_ptat` 先由 `system_decomposition.py` 生成系统架构、block graph、
+child nominal/PVT targets 和 `hierarchy.json`，再把内部运放单独优化、
+通过 Design Audit、必要的 Review 和 PVT 后冻结为 macro/subckt，最后
+对 bandgap parent 执行相同资格流程。bandgap
+级 BO 不展开 child 运放内部 W/L。相关规则见
+`knowledge_base/Bandgap_knowledge_base/topologies/bandgap_ptat_optimization.md`。
 
 ## gm/Id 设计方法
 

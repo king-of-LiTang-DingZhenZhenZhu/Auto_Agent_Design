@@ -13,11 +13,11 @@ from pathlib import Path
 from typing import Any, Callable
 
 from config import settings
-from models import CircuitFiles, DesignTarget
+from design_flow_graph import run_design_flow
+from models import CircuitFiles, DesignTarget, parse_metric_goals
 from pdk_profiles import PDKProfile, get_pdk_profile
-from pvt_simulation import run_pvt_verification
 from topologies import get_topology
-from topologies.base import HierarchicalBlockSpec
+from topologies.base import ExecutableChildSpec
 from virtuoso_export.exporter import select_export_netlist
 
 
@@ -26,7 +26,7 @@ class HierarchicalFlowError(RuntimeError):
 
 
 CommandRunner = Callable[..., subprocess.CompletedProcess[str]]
-PVTRunner = Callable[..., dict[str, Any]]
+QualificationRunner = Callable[..., dict[str, Any]]
 
 
 class HierarchicalFlow:
@@ -39,14 +39,16 @@ class HierarchicalFlow:
         simulate: bool = False,
         max_iter: int | None = None,
         force_child: bool = False,
+        resume_qualification: bool = False,
         output_root: str | Path | None = None,
         command_runner: CommandRunner = subprocess.run,
-        pvt_runner: PVTRunner = run_pvt_verification,
+        qualification_runner: QualificationRunner = run_design_flow,
     ) -> None:
         self.project = Path(project).resolve()
         self.simulate = simulate
         self.max_iter = max_iter
         self.force_child = force_child
+        self.resume_qualification = resume_qualification
         self.agent_dir = Path(__file__).parent
         self.output_root = (
             Path(output_root).resolve()
@@ -54,7 +56,8 @@ class HierarchicalFlow:
             else settings.get_outputs_path().resolve()
         )
         self.command_runner = command_runner
-        self.pvt_runner = pvt_runner
+        self.qualification_runner = qualification_runner
+        self.resumed_outputs: set[str] = set()
 
     def run(self) -> dict[str, Any]:
         requirements = self._load_json(self.project / "requirements.json")
@@ -69,7 +72,7 @@ class HierarchicalFlow:
             voltage_domain=requirements.get("voltage_domain")
         )
         blocks = [
-            HierarchicalBlockSpec.from_dict(data)
+            ExecutableChildSpec.from_dict(data)
             for data in hierarchy.get("blocks", [])
         ]
         if not blocks:
@@ -99,20 +102,41 @@ class HierarchicalFlow:
             child_artifacts[spec.block_id] = self._optimize_child(
                 spec, parent_profile
             )
-            child_states[spec.block_id] = "optimized"
+            child_output_name = settings.sanitize_project_name(
+                f"{self.project.name}__{spec.block_id}"
+            )
+            child_states[spec.block_id] = (
+                "resumed"
+                if child_output_name in self.resumed_outputs
+                else "optimized"
+            )
 
         self._regenerate_parent(requirements, topology_name, child_artifacts)
-        parent_output = self._run_main(self.project, topology_name, self.project.name)
-        parent_pvt = self._run_pvt(parent_output / "results.json", parent_profile)
-        if not parent_pvt.get("pvt_pass"):
-            raise HierarchicalFlowError("Parent PVT verification did not pass")
+        parent_output = self._run_or_resume_main(
+            self.project,
+            topology_name,
+            self.project.name,
+        )
+        parent_qualification = self._qualify_output(
+            parent_output,
+            parent_profile,
+        )
+        self._require_qualified(parent_qualification, "Parent")
 
         state = {
             "project": str(self.project),
             "simulate": self.simulate,
             "children": child_states,
             "parent_output": str(parent_output),
+            "parent_bo_state": (
+                "resumed"
+                if settings.sanitize_project_name(self.project.name)
+                in self.resumed_outputs
+                else "optimized"
+            ),
+            "parent_audit_status": parent_qualification.get("audit_status"),
             "parent_pvt_pass": True,
+            "parent_next_action": parent_qualification.get("next_action"),
         }
         (self.project / "hierarchical_flow.json").write_text(
             json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8"
@@ -121,7 +145,7 @@ class HierarchicalFlow:
 
     def _optimize_child(
         self,
-        spec: HierarchicalBlockSpec,
+        spec: ExecutableChildSpec,
         parent_profile: PDKProfile,
     ) -> dict[str, Path]:
         child_topology = get_topology(spec.topology_name)
@@ -138,27 +162,22 @@ class HierarchicalFlow:
                 f"Hierarchical child '{spec.block_id}' for {self.project.name}"
             ),
         )
-        child_output = self._run_main(
+        child_output = self._run_or_resume_main(
             child_project,
             child_topology.meta.name,
             f"{self.project.name}__{spec.block_id}",
         )
-        results_path = child_output / "results.json"
-        results = self._load_json(results_path)
-        if not results.get("all_targets_met"):
-            raise HierarchicalFlowError(
-                f"Child '{spec.block_id}' did not meet its nominal targets"
-            )
-        pvt_report = self._run_pvt(results_path, parent_profile)
-        if not pvt_report.get("pvt_pass"):
-            raise HierarchicalFlowError(
-                f"Child '{spec.block_id}' PVT verification did not pass"
-            )
+        qualification = self._qualify_output(
+            child_output,
+            parent_profile,
+            targets=spec.pvt_targets or spec.targets,
+        )
+        self._require_qualified(qualification, f"Child '{spec.block_id}'")
         return self._freeze_artifact(
             spec=spec,
             source_project=child_output,
             parent_profile=parent_profile,
-            pvt_report=pvt_report,
+            qualification=qualification,
         )
 
     def _run_main(
@@ -217,25 +236,63 @@ class HierarchicalFlow:
             )
         return output
 
-    def _run_pvt(
+    def _run_or_resume_main(
         self,
-        results_path: Path,
+        project_dir: Path,
+        topology_name: str,
+        output_name: str,
+    ) -> Path:
+        output = self.output_root / settings.sanitize_project_name(output_name)
+        if self.resume_qualification and (output / "results.json").exists():
+            self.resumed_outputs.add(settings.sanitize_project_name(output_name))
+            return output
+        return self._run_main(project_dir, topology_name, output_name)
+
+    def _qualify_output(
+        self,
+        output: Path,
         profile: PDKProfile,
+        targets: DesignTarget | None = None,
     ) -> dict[str, Any]:
-        return self.pvt_runner(
-            results_path=results_path,
+        return self.qualification_runner(
+            project=output,
+            run_pvt=True,
             simulate=self.simulate,
-            dry_run=not self.simulate,
-            profile=profile,
+            export_virtuoso=False,
+            pvt_targets=targets,
+            pvt_profile=profile,
         )
+
+    @staticmethod
+    def _require_qualified(state: dict[str, Any], label: str) -> None:
+        errors = state.get("errors") or []
+        if errors:
+            raise HierarchicalFlowError(
+                f"{label} qualification failed: {'; '.join(str(item) for item in errors)}"
+            )
+        if not (state.get("nominal_pass") or state.get("review_pass")):
+            raise HierarchicalFlowError(
+                f"{label} did not meet its nominal targets; "
+                f"next action: {state.get('next_action')}"
+            )
+        if state.get("audit_status") not in {"pass", "warn"}:
+            raise HierarchicalFlowError(
+                f"{label} Design Audit did not pass; "
+                f"next action: {state.get('next_action')}"
+            )
+        if state.get("pvt_pass") is not True:
+            raise HierarchicalFlowError(
+                f"{label} PVT verification did not pass; "
+                f"next action: {state.get('next_action')}"
+            )
 
     def _freeze_artifact(
         self,
         *,
-        spec: HierarchicalBlockSpec,
+        spec: ExecutableChildSpec,
         source_project: Path,
         parent_profile: PDKProfile,
-        pvt_report: dict[str, Any],
+        qualification: dict[str, Any],
     ) -> dict[str, Path]:
         results_path = source_project / "results.json"
         results = self._load_json(results_path)
@@ -257,16 +314,20 @@ class HierarchicalFlow:
         shutil.copy2(netlist_path, frozen_netlist)
         shutil.copy2(results_path, frozen_results)
         shutil.copy2(pdk_path, frozen_pdk)
-        self._copy_pvt_summary(source_project, artifact, pvt_report)
+        self._copy_pvt_summary(source_project, artifact, qualification)
 
         manifest = {
-            "schema_version": 1,
+            "schema_version": 3,
             "block_id": spec.block_id,
             "source_project": str(source_project),
             "targets": spec.targets.to_requirements_dict()["targets"],
+            "qualification_targets": _qualification_targets(spec),
             "pdk_profile": source_pdk,
             "nominal_pass": True,
+            "audit_pass": qualification.get("audit_status") in {"pass", "warn"},
+            "audit_status": qualification.get("audit_status"),
             "pvt_pass": True,
+            "qualification_next_action": qualification.get("next_action"),
             "interface": interface,
             "files": {
                 "circuit.cir": _sha256(frozen_netlist),
@@ -283,7 +344,7 @@ class HierarchicalFlow:
         self,
         source_project: Path,
         artifact: Path,
-        pvt_report: dict[str, Any],
+        qualification: dict[str, Any],
     ) -> None:
         pvt_artifact = artifact / "pvt"
         pvt_artifact.mkdir(parents=True, exist_ok=True)
@@ -296,14 +357,14 @@ class HierarchicalFlow:
                 copied = True
         if not copied:
             (pvt_artifact / "pvt_results.json").write_text(
-                json.dumps(pvt_report, indent=2, ensure_ascii=False),
+                json.dumps(qualification, indent=2, ensure_ascii=False, default=str),
                 encoding="utf-8",
             )
 
     def _validate_artifact(
         self,
         artifact: Path,
-        spec: HierarchicalBlockSpec,
+        spec: ExecutableChildSpec,
         parent_profile: PDKProfile,
     ) -> dict[str, Path]:
         paths = {
@@ -316,8 +377,16 @@ class HierarchicalFlow:
         if not all(path.exists() for path in paths.values()):
             raise HierarchicalFlowError(f"Incomplete child artifact: {artifact}")
         manifest = self._load_json(paths["manifest"])
-        if not manifest.get("nominal_pass") or not manifest.get("pvt_pass"):
+        if (
+            not manifest.get("nominal_pass")
+            or not manifest.get("audit_pass")
+            or not manifest.get("pvt_pass")
+        ):
             raise HierarchicalFlowError(f"Child artifact is not qualified: {artifact}")
+        if manifest.get("qualification_targets") != _qualification_targets(spec):
+            raise HierarchicalFlowError(
+                f"Child artifact target contract mismatch: {artifact}"
+            )
         if self._load_json(paths["pdk"]) != parent_profile.to_dict():
             raise HierarchicalFlowError(f"Child artifact PDK mismatch: {artifact}")
         for filename, digest in manifest.get("files", {}).items():
@@ -330,7 +399,7 @@ class HierarchicalFlow:
     def _validate_interface(
         self,
         netlist_path: Path,
-        spec: HierarchicalBlockSpec,
+        spec: ExecutableChildSpec,
     ) -> dict[str, Any]:
         text = netlist_path.read_text(encoding="utf-8")
         actual_subckt = CircuitFiles.extract_subckt_name(text)
@@ -363,7 +432,7 @@ class HierarchicalFlow:
             parent_params["VOLTAGE_DOMAIN"] = voltage_domain
         hierarchy = self._load_json(self.project / "hierarchy.json")
         for data in hierarchy["blocks"]:
-            spec = HierarchicalBlockSpec.from_dict(data)
+            spec = ExecutableChildSpec.from_dict(data)
             artifact = artifacts[spec.block_id]
             parent_params[spec.netlist_param] = str(artifact["netlist"])
             parent_params[spec.results_param] = str(artifact["results"])
@@ -373,6 +442,19 @@ class HierarchicalFlow:
             params=parent_params,
             original_requirement=str(requirements.get("original_requirement", "")),
         )
+        preserved = {
+            key: requirements[key]
+            for key in ("system_type", "system_architecture", "system_design")
+            if key in requirements
+        }
+        if preserved:
+            requirements_path = self.project / "requirements.json"
+            regenerated = self._load_json(requirements_path)
+            regenerated.update(preserved)
+            requirements_path.write_text(
+                json.dumps(regenerated, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
 
     @staticmethod
     def _load_json(path: Path) -> dict[str, Any]:
@@ -397,7 +479,18 @@ def _target_from_requirements(requirements: dict[str, Any]) -> DesignTarget:
         load_cap_f=targets.get("load_cap_f"),
         slew_rate_v_per_s=targets.get("slew_rate_v_per_s"),
         settling_time_s=targets.get("settling_time_s"),
+        vref_v=targets.get("vref_v"),
+        vref_tolerance_v=targets.get("vref_tolerance_v") or 10e-3,
+        tempco_ppm_per_c=targets.get("tempco_ppm_per_c"),
+        vref_temp_nonlinearity_v=targets.get("vref_temp_nonlinearity_v"),
+        psrr_db=targets.get("psrr_db"),
+        line_regulation_v_per_v=targets.get("line_regulation_v_per_v"),
+        startup_time_s=targets.get("startup_time_s"),
         topology_hint=str(requirements.get("topology_hint", "")),
+        custom_specs=dict(requirements.get("custom_specs", {})),
+        metric_goals=parse_metric_goals(
+            requirements.get("metric_goals", targets.get("metric_goals"))
+        ),
     )
 
 
@@ -405,9 +498,32 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _qualification_targets(spec: ExecutableChildSpec) -> dict[str, Any]:
+    pvt_targets = spec.pvt_targets or spec.targets
+    return {
+        "nominal": {
+            "targets": spec.targets.to_requirements_dict()["targets"],
+            "metric_goals": {
+                name: goal.to_dict()
+                for name, goal in spec.targets.resolved_metric_goals().items()
+            },
+        },
+        "pvt": {
+            "targets": pvt_targets.to_requirements_dict()["targets"],
+            "metric_goals": {
+                name: goal.to_dict()
+                for name, goal in pvt_targets.resolved_metric_goals().items()
+            },
+        },
+    }
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run child BO/PVT before parent BO/PVT for a hierarchical project."
+        description=(
+            "Run child BO and design-flow qualification before parent BO and "
+            "qualification for a hierarchical project."
+        )
     )
     parser.add_argument("--project", required=True, help="Generated top-level project directory")
     parser.add_argument(
@@ -417,6 +533,14 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--max-iter", type=int, default=None)
     parser.add_argument("--force-child", action="store_true")
+    parser.add_argument(
+        "--resume-qualification",
+        action="store_true",
+        help=(
+            "Reuse existing BO outputs after manual Review validation and "
+            "continue Audit/PVT/freeze without rerunning BO."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -428,6 +552,7 @@ def main() -> None:
             simulate=args.simulate,
             max_iter=args.max_iter,
             force_child=args.force_child,
+            resume_qualification=args.resume_qualification,
         ).run()
     except HierarchicalFlowError as exc:
         raise SystemExit(f"Hierarchical flow stopped: {exc}") from exc

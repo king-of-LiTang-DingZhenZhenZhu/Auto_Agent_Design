@@ -10,6 +10,7 @@ from config import Settings
 from models import (
     DesignTarget,
     IterationRecord,
+    MetricGoal,
     OptimizationState,
     ParamDef,
     ParamSpace,
@@ -126,6 +127,79 @@ class OptimizerEarlyStopTest(unittest.TestCase):
 
         self.assertGreater(feasible, almost_feasible)
 
+    def test_feasible_opamp_with_lower_power_gets_higher_reward(self):
+        targets = DesignTarget(gain_db=60, bandwidth_hz=100e6, power_w=1e-3)
+        optimizer = self._optimizer()
+
+        higher_gain_higher_power = optimizer.compute_reward(
+            SimResult(gain_db=70, bandwidth_hz=120e6, power_w=1e-3),
+            targets,
+        )
+        enough_gain_lower_power = optimizer.compute_reward(
+            SimResult(gain_db=62, bandwidth_hz=105e6, power_w=0.5e-3),
+            targets,
+        )
+
+        self.assertGreater(enough_gain_lower_power, higher_gain_higher_power)
+
+    def test_custom_metric_goals_support_range_and_target_constraints(self):
+        targets = DesignTarget(
+            metric_goals={
+                "phase_margin_deg": MetricGoal(
+                    constraint="range", low=60, high=75
+                ),
+                "vref_v": MetricGoal(
+                    constraint="target", target=1.2, tolerance=5e-3
+                ),
+            }
+        )
+
+        feasible, status = targets.is_satisfied(
+            SimResult(phase_margin_deg=68, vref_v=1.203)
+        )
+        infeasible, _ = targets.is_satisfied(
+            SimResult(phase_margin_deg=80, vref_v=1.203)
+        )
+
+        self.assertTrue(feasible)
+        self.assertTrue(status["phase_margin_deg"])
+        self.assertFalse(infeasible)
+
+    def test_bandgap_reward_prefers_complete_feasible_result(self):
+        targets = DesignTarget(
+            vref_v=1.2,
+            vref_tolerance_v=5e-3,
+            tempco_ppm_per_c=20,
+            psrr_db=50,
+            line_regulation_v_per_v=1e-3,
+            startup_time_s=5e-6,
+        )
+        optimizer = self._optimizer()
+        feasible = optimizer.compute_reward(
+            SimResult(
+                vref_v=1.2,
+                tempco_ppm_per_c=15,
+                psrr_db=55,
+                line_regulation_v_per_v=0.5e-3,
+                startup_time_s=4e-6,
+                startup_success=True,
+            ),
+            targets,
+        )
+        failed_startup = optimizer.compute_reward(
+            SimResult(
+                vref_v=1.2,
+                tempco_ppm_per_c=15,
+                psrr_db=55,
+                line_regulation_v_per_v=0.5e-3,
+                startup_time_s=4e-6,
+                startup_success=False,
+            ),
+            targets,
+        )
+
+        self.assertGreater(feasible, failed_startup)
+
     def test_reward_penalizes_critical_linear_operating_point(self):
         targets = DesignTarget(gain_db=40, bandwidth_hz=100e6)
         result = SimResult(gain_db=45, bandwidth_hz=120e6)
@@ -198,6 +272,14 @@ class OptimizerEarlyStopTest(unittest.TestCase):
 
         self.assertTrue(
             optimizer._can_stop_for_success(result, targets, op_status)
+        )
+
+    def test_success_stop_continues_when_soft_objective_exists(self):
+        targets = DesignTarget(gain_db=40, power_w=1e-3)
+        result = SimResult(gain_db=45, power_w=0.8e-3)
+
+        self.assertFalse(
+            self._optimizer()._can_stop_for_success(result, targets)
         )
 
     def test_writes_iteration_summary_and_metrics_csv(self):

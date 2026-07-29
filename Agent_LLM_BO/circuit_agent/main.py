@@ -26,6 +26,7 @@ from models import (
     NetlistTemplate,
     ParamSpace,
     SimResult,
+    parse_metric_goals,
 )
 from optimizer import HybridOptimizer
 from parameter_effects import analyze_optimization_history
@@ -175,7 +176,17 @@ def run_from_file(
             load_cap_f=t.get("load_cap_f"),
             slew_rate_v_per_s=t.get("slew_rate_v_per_s"),
             settling_time_s=t.get("settling_time_s"),
+            vref_v=t.get("vref_v"),
+            vref_tolerance_v=t.get("vref_tolerance_v") or 10e-3,
+            tempco_ppm_per_c=t.get("tempco_ppm_per_c"),
+            vref_temp_nonlinearity_v=t.get("vref_temp_nonlinearity_v"),
+            psrr_db=t.get("psrr_db"),
+            line_regulation_v_per_v=t.get("line_regulation_v_per_v"),
+            startup_time_s=t.get("startup_time_s"),
             topology_hint=req_data.get("topology_hint", ""),
+            metric_goals=parse_metric_goals(
+                req_data.get("metric_goals", t.get("metric_goals"))
+            ),
         )
         voltage_domain = req_data.get("voltage_domain")
         if voltage_domain:
@@ -214,7 +225,15 @@ def run_from_file(
             load_cap_f=t.get("load_cap_f"),
             slew_rate_v_per_s=t.get("slew_rate_v_per_s"),
             settling_time_s=t.get("settling_time_s"),
+            vref_v=t.get("vref_v"),
+            vref_tolerance_v=t.get("vref_tolerance_v") or 10e-3,
+            tempco_ppm_per_c=t.get("tempco_ppm_per_c"),
+            vref_temp_nonlinearity_v=t.get("vref_temp_nonlinearity_v"),
+            psrr_db=t.get("psrr_db"),
+            line_regulation_v_per_v=t.get("line_regulation_v_per_v"),
+            startup_time_s=t.get("startup_time_s"),
             topology_hint=t.get("topology_hint", ""),
+            metric_goals=parse_metric_goals(t.get("metric_goals")),
         )
     elif any([args.gain, args.bw, args.pm, args.power, args.sr, args.settling_time]):
         targets = DesignTarget(
@@ -396,7 +415,7 @@ def run_from_file(
 
     if success:
         all_met, _ = targets.is_satisfied(initial_result)
-        if all_met:
+        if all_met and not targets.has_soft_objectives():
             console.print("\n[bold green]All targets already met! No optimization needed.[/bold green]")
             _save_final_output(template, initial_params, initial_result, config,
                               circuit_files=circuit_files, param_space=param_space,
@@ -404,6 +423,11 @@ def run_from_file(
                               original_requirement=original_requirement_text,
                               topology_name=topology_name_val)
             return
+        if all_met:
+            console.print(
+                "\n[green]All hard constraints already pass; continuing BO "
+                "for feasible-region objectives.[/green]"
+            )
 
     # --- Optimization loop ---
     console.print(
@@ -682,6 +706,27 @@ def _display_targets(targets: DesignTarget):
             "Settling Time (0.1%)",
             f"<= {_eng_fmt(targets.settling_time_s)}s",
         )
+    if targets.vref_v is not None:
+        table.add_row(
+            "Vref",
+            f"{targets.vref_v:g} V ± {targets.vref_tolerance_v:g} V",
+        )
+    if targets.tempco_ppm_per_c is not None:
+        table.add_row("Tempco", f"<= {targets.tempco_ppm_per_c:g} ppm/°C")
+    if targets.vref_temp_nonlinearity_v is not None:
+        table.add_row(
+            "Vref Temp Nonlinearity",
+            f"<= {_eng_fmt(targets.vref_temp_nonlinearity_v)}V",
+        )
+    if targets.psrr_db is not None:
+        table.add_row("Worst-case PSRR", f">= {targets.psrr_db:g} dB")
+    if targets.line_regulation_v_per_v is not None:
+        table.add_row(
+            "Line Regulation",
+            f"<= {targets.line_regulation_v_per_v:g} V/V",
+        )
+    if targets.startup_time_s is not None:
+        table.add_row("Startup Time", f"<= {_eng_fmt(targets.startup_time_s)}s")
 
     console.print(table)
 
@@ -759,6 +804,68 @@ def _display_results_table(result: SimResult, targets: DesignTarget, title: str)
             actual,
             mark,
         )
+
+    bandgap_rows = [
+        (
+            "vref_v",
+            "Vref",
+            f"{targets.vref_v:g}±{targets.vref_tolerance_v:g} V"
+            if targets.vref_v is not None
+            else "",
+            f"{result.vref_v:.6g} V" if result.vref_v is not None else "N/A",
+        ),
+        (
+            "tempco_ppm_per_c",
+            "Tempco",
+            f"<= {targets.tempco_ppm_per_c:g} ppm/°C"
+            if targets.tempco_ppm_per_c is not None
+            else "",
+            f"{result.tempco_ppm_per_c:.3g} ppm/°C"
+            if result.tempco_ppm_per_c is not None
+            else "N/A",
+        ),
+        (
+            "vref_temp_nonlinearity_v",
+            "Vref Temp Nonlinearity",
+            f"<= {_eng_fmt(targets.vref_temp_nonlinearity_v)}V"
+            if targets.vref_temp_nonlinearity_v is not None
+            else "",
+            f"{_eng_fmt(result.vref_temp_nonlinearity_v)}V"
+            if result.vref_temp_nonlinearity_v is not None
+            else "N/A",
+        ),
+        (
+            "psrr_db",
+            "Worst-case PSRR",
+            f">= {targets.psrr_db:g} dB" if targets.psrr_db is not None else "",
+            f"{result.psrr_db:.2f} dB" if result.psrr_db is not None else "N/A",
+        ),
+        (
+            "line_regulation_v_per_v",
+            "Line Regulation",
+            f"<= {targets.line_regulation_v_per_v:g} V/V"
+            if targets.line_regulation_v_per_v is not None
+            else "",
+            f"{result.line_regulation_v_per_v:.6g} V/V"
+            if result.line_regulation_v_per_v is not None
+            else "N/A",
+        ),
+        (
+            "startup_time_s",
+            "Startup Time",
+            f"<= {_eng_fmt(targets.startup_time_s)}s"
+            if targets.startup_time_s is not None
+            else "",
+            f"{_eng_fmt(result.startup_time_s)}s"
+            if result.startup_time_s is not None
+            else "N/A",
+        ),
+    ]
+    for metric, label, target_text, actual_text in bandgap_rows:
+        if getattr(targets, metric) is None:
+            continue
+        mark = "[green]✓[/green]" if status.get(metric) else "[red]✗[/red]"
+        table.add_row(label, target_text, actual_text, mark)
 
     console.print(table)
 
@@ -919,6 +1026,12 @@ def _save_final_output(
 
     # 4. Save structured JSON result
     result_data = result.to_result_dict(targets=targets, params=params)
+    if targets is not None:
+        result_data["targets"] = targets.to_requirements_dict()["targets"]
+        result_data["metric_goals"] = {
+            name: goal.to_dict()
+            for name, goal in targets.resolved_metric_goals().items()
+        }
     result_data["netlist_file"] = str(circuit_path)
     result_data["project_name"] = project_name
     if topology_name:

@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from config import Settings, settings
-from models import DesignTarget, SimResult
+from models import DesignTarget, SimResult, parse_metric_goals
 from pdk_profiles import PDKProfile, get_pdk_profile, spectre_include_line
 from simulator import Simulator
 from summarize_metrics import build_report_from_sim_result
@@ -73,13 +73,15 @@ def patch_netlist_for_corner(
 
 
 def patch_testbench_for_corner(testbench_text: str, corner: PVTCorner) -> str:
-    text = re.sub(
-        r"(?m)(parameters\b[^\n]*\bVDD=)([^\s]+)",
+    supply_name = "VDD" if re.search(r"\bVDD=", testbench_text) else "VIN"
+    supply_pattern = rf"(?m)(parameters\b[^\n]*\b{supply_name}=)([^\s]+)"
+    text, replacements = re.subn(
+        supply_pattern,
         rf"\g<1>{_fmt_spectre(corner.vdd)}",
         testbench_text,
         count=1,
     )
-    if "VDD=" not in text:
+    if replacements == 0:
         text = text.replace(
             "include \"circuit.cir\"",
             f"include \"circuit.cir\"\n\nparameters VDD={_fmt_spectre(corner.vdd)}",
@@ -102,6 +104,7 @@ def run_pvt_verification(
     dry_run: bool = False,
     config: Settings | None = None,
     profile: PDKProfile | None = None,
+    targets: DesignTarget | None = None,
 ) -> dict[str, Any]:
     cfg = config or settings
     if dry_run:
@@ -112,7 +115,7 @@ def run_pvt_verification(
         results_path=results_path,
         netlist_path=netlist_path,
     )
-    targets = _load_targets(project_root, results_path)
+    targets = targets or _load_targets(project_root, results_path)
     testbenches = _resolve_testbenches(
         project_root=project_root,
         selected_netlist=selected_netlist,
@@ -316,7 +319,9 @@ def _load_targets(project_root: Path, results_path: str | Path | None) -> Design
         result_data = json.loads(Path(results_path).read_text(encoding="utf-8"))
         targets = result_data.get("targets")
         if isinstance(targets, dict):
-            return _target_from_dict(targets)
+            target_data = dict(targets)
+            target_data["metric_goals"] = result_data.get("metric_goals", {})
+            return _target_from_dict(target_data)
     return None
 
 
@@ -329,6 +334,14 @@ def _target_from_dict(data: dict[str, Any]) -> DesignTarget:
         load_cap_f=data.get("load_cap_f"),
         slew_rate_v_per_s=data.get("slew_rate_v_per_s"),
         settling_time_s=data.get("settling_time_s"),
+        vref_v=data.get("vref_v"),
+        vref_tolerance_v=data.get("vref_tolerance_v") or 10e-3,
+        tempco_ppm_per_c=data.get("tempco_ppm_per_c"),
+        vref_temp_nonlinearity_v=data.get("vref_temp_nonlinearity_v"),
+        psrr_db=data.get("psrr_db"),
+        line_regulation_v_per_v=data.get("line_regulation_v_per_v"),
+        startup_time_s=data.get("startup_time_s"),
+        metric_goals=parse_metric_goals(data.get("metric_goals")),
     )
 
 
@@ -352,6 +365,17 @@ def _row_from_corner(
         "power_w(mW)": _fmt_csv(result.power_w, 3, 1e3),
         "slew_rate_v_per_s(V/us)": _fmt_csv(result.slew_rate_v_per_s, 2, 1e-6),
         "settling_time_s(ns)": _fmt_csv(result.settling_time_s, 2, 1e9),
+        "vref_v(V)": _fmt_csv(result.vref_v, 6),
+        "tempco_ppm_per_c(ppm/C)": _fmt_csv(result.tempco_ppm_per_c, 3),
+        "vref_temp_nonlinearity_v(mV)": _fmt_csv(
+            result.vref_temp_nonlinearity_v, 3, 1e3
+        ),
+        "psrr_db(dB)": _fmt_csv(result.psrr_db, 2),
+        "line_regulation_v_per_v(V/V)": _fmt_csv(
+            result.line_regulation_v_per_v, 6
+        ),
+        "startup_time_s(us)": _fmt_csv(result.startup_time_s, 3, 1e6),
+        "startup_success": result.startup_success,
         "failed_metrics": ";".join(
             name for name, passed in sorted(status.items()) if not passed
         ),
@@ -374,6 +398,13 @@ def _write_pvt_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         "power_w(mW)",
         "slew_rate_v_per_s(V/us)",
         "settling_time_s(ns)",
+        "vref_v(V)",
+        "tempco_ppm_per_c(ppm/C)",
+        "vref_temp_nonlinearity_v(mV)",
+        "psrr_db(dB)",
+        "line_regulation_v_per_v(V/V)",
+        "startup_time_s(us)",
+        "startup_success",
         "failed_metrics",
         "error_message",
     ]

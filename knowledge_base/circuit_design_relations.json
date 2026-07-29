@@ -73,6 +73,38 @@
         "a correct room-temperature Vref does not guarantee low tempco",
         "residual curvature requires curvature compensation rather than unlimited ratio tuning"
       ]
+    },
+    "ldo_feedback_voltage": {
+      "domain": "ldo",
+      "equation": "Vout ~= Vref*(1 + Rtop/Rbottom)",
+      "assumptions": [
+        "error-amplifier input offset and feedback current are small",
+        "the loop has sufficient DC gain and the pass device has headroom"
+      ],
+      "tradeoffs": [
+        "larger divider resistance lowers quiescent current but raises noise and parasitic sensitivity"
+      ]
+    },
+    "ldo_load_regulation": {
+      "domain": "ldo",
+      "equation": "LDR = abs(delta_Vout/delta_Iload)",
+      "assumptions": [
+        "the regulator remains in closed-loop regulation across the load sweep"
+      ],
+      "tradeoffs": [
+        "higher loop gain and a larger pass device improve load regulation but can increase area and complicate stability"
+      ]
+    },
+    "ldo_loop_stability": {
+      "domain": "ldo",
+      "equation": "PM is measured from Spectre STB loopGain at the first 0 dB crossing",
+      "assumptions": [
+        "the iprobe lies in the intended global feedback loop",
+        "zero-load and external-capacitance corners are evaluated separately"
+      ],
+      "tradeoffs": [
+        "more compensation can improve phase margin while reducing GBW and worsening load-transient recovery"
+      ]
     }
   },
   "topologies": {
@@ -121,7 +153,21 @@
       ],
       "limitations": [
         "the topology uses PDK PNP and poly-resistor devices but dedicated BJT operating-point extraction is not implemented",
-        "dedicated Vref/tempco/line-regulation parsers are not implemented yet"
+        "mismatch, long-term drift, and resistor/BJT statistical models require dedicated Monte Carlo signoff"
+      ]
+    },
+    "capless_ldo": {
+      "domain": "ldo",
+      "architecture": "pmos_pass_hierarchical",
+      "relations": [
+        "ldo_feedback_voltage",
+        "ldo_load_regulation",
+        "ldo_loop_stability"
+      ],
+      "limitations": [
+        "the first version uses an external verified reference input",
+        "the 1.8 V IO model names and voltage limits must come from an external PDK profile",
+        "load and line transient signoff requires package and routing parasitics"
       ]
     }
   }

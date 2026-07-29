@@ -66,9 +66,31 @@ widths, opamp bias, output load, and all child OTA parameters stay fixed.
 - `temperature`: sweep temperature from the PDK minimum to maximum at nominal VDD.
 - `line`: sweep VDD across the active PDK voltage-domain range at 27 C.
 
-当前已生成上述 Spectre testbench，但 tempco、PSRR、line regulation 和 startup
-判据尚未接入专用 PSF parser 与 BO reward。因此原始波形可以用于仿真检查，不能把
-现有运放指标字段当作 Bandgap 签核结果。
+Bandgap targets are stored under `requirements.json -> targets`:
+
+```json
+{
+  "vref_v": 1.2,
+  "vref_tolerance_v": 0.005,
+  "tempco_ppm_per_c": 20,
+  "vref_temp_nonlinearity_v": 0.001,
+  "psrr_db": 50,
+  "line_regulation_v_per_v": 0.001,
+  "startup_time_s": 0.000005
+}
+```
+
+Metric definitions used by BO:
+
+- `vref_v`: final startup output at 27 C; temperature sweep also records the point nearest 27 C.
+- `tempco_ppm_per_c`: peak-to-peak Vref variation divided by nominal Vref and temperature span.
+- `vref_temp_nonlinearity_v`: maximum residual from the best linear fit of Vref versus temperature.
+- `psrr_db`: minimum `-20log10(|Vref/VDD|)` across the PSRR sweep; VDD AC magnitude is 1 V.
+- `line_regulation_v_per_v`: peak-to-peak Vref change divided by the VDD sweep span.
+- `startup_time_s`: time from VDD reaching 1% of final supply until Vref enters and remains within 1% of its final value. Final Vref must also exceed 0.1 V and 10% of VDD to reject the zero-current state.
+
+These metrics participate in target status, gap analysis, BO reward,
+`results.json`, optimization history/CSV, summaries, and PVT rows.
 
 ## Failure Feedback
 

@@ -4,12 +4,58 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from design_flow_graph import run_design_flow
+from models import DesignTarget
+from pdk_profiles import get_pdk_profile
 from topologies import get_topology
 
 
 class DesignFlowGraphTests(unittest.TestCase):
+    def test_explicit_pvt_contract_is_forwarded_and_serialized(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / "outputs" / "proj"
+            project.mkdir(parents=True)
+            netlist = project / "netlist" / "circuit.cir"
+            netlist.parent.mkdir()
+            netlist.write_text(
+                get_topology("5t_ota").generate_circuit(),
+                encoding="utf-8",
+            )
+            (project / "results.json").write_text(
+                json.dumps(
+                    {
+                        "project_name": "proj",
+                        "all_targets_met": True,
+                        "netlist_file": str(netlist),
+                    }
+                ),
+                encoding="utf-8",
+            )
+            targets = DesignTarget(gain_db=55)
+            profile = get_pdk_profile()
+
+            with patch(
+                "design_flow_graph.run_pvt_verification",
+                return_value={"pvt_pass": True},
+            ) as run_pvt:
+                state = run_design_flow(
+                    project,
+                    run_pvt=True,
+                    pvt_targets=targets,
+                    pvt_profile=profile,
+                )
+
+            self.assertTrue(state["pvt_pass"])
+            self.assertIs(run_pvt.call_args.kwargs["targets"], targets)
+            self.assertIs(run_pvt.call_args.kwargs["profile"], profile)
+            persisted = json.loads(
+                (project / "flow" / "flow_state.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(persisted["pvt_targets"]["gain_db"], 55)
+            self.assertEqual(persisted["pvt_profile"]["name"], profile.name)
+
     def test_nominal_pass_runs_pvt_dry_run_and_writes_flow_report(self):
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp) / "outputs" / "proj"

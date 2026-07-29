@@ -1,7 +1,17 @@
 # Hierarchical Optimization
 
 `hierarchical_flow.py` runs a staged flow for topologies that declare child
-blocks: child BO → child PVT → frozen child artifact → parent BO → parent PVT.
+blocks. It owns child-parent dependency order and delegates each BO result to
+`design_flow_graph.py` for Design Audit, Review gating, and PVT:
+
+```text
+child BO -> Audit/Review gate/PVT -> frozen artifact
+         -> parent BO -> Audit/Review gate/PVT
+```
+
+For system-level requests, first run `system_decomposition.py`. It writes
+`system_design.json` for architecture, block graph, budgets and target
+derivations, then generates the parent project and executable `hierarchy.json`.
 
 ## Generate a Parent Project
 
@@ -21,6 +31,14 @@ get_topology('bandgap_ptat').write_project(
     targets=DesignTarget(power_w=1e-3, load_cap_f=1e-12),
 )
 "
+```
+
+Preferred system-level entry:
+
+```bash
+python system_decomposition.py \
+  --requirements bandgap_requirements.json \
+  --project bandgap_project
 ```
 
 ## Run the Staged Flow
@@ -48,10 +66,24 @@ final netlist, results, PDK snapshot, PVT summary, checksums, and interface
 validation metadata. A valid artifact is reused on later runs; use
 `--force-child` to optimize it again.
 
+If qualification stops for nominal failure or a Design Audit blocker, complete
+the explicit Agent Review and candidate simulation, then continue without
+overwriting that output:
+
+```bash
+python hierarchical_flow.py \
+  --project bandgap_project \
+  --resume-qualification \
+  --simulate
+```
+
+`design_flow_graph.py` decides the gate and PVT action; it does not itself write
+the Agent's `patch_plan.json`.
+
 ## Adding a New Parent Topology
 
 Override `BaseTopology.get_hierarchical_blocks()` and return one or more
-`HierarchicalBlockSpec` values. The spec declares the child topology, expected
+`ExecutableChildSpec` values. The spec declares the child topology, expected
 subckt and port order, child targets, and the parent parameters that receive
 the frozen `netlist` and `results` paths. Parent BO must keep the policy as
 `frozen_macro`; do not add child W/L parameters to the parent search space.
@@ -59,3 +91,7 @@ the frozen `netlist` and `results` paths. Parent BO must keep the policy as
 Child and parent must use the same PDK profile and voltage domain. A child that
 fails nominal targets, PVT, profile matching, checksum validation, or the
 declared subckt interface is rejected before parent BO starts.
+
+`ExecutableChildSpec` may declare separate `targets` and `pvt_targets`.
+Nominal BO uses `targets`; child corner acceptance uses `pvt_targets` when
+present, otherwise it falls back to the nominal targets.

@@ -95,6 +95,16 @@ outputs/<project>/
 
 `optimization_metrics.csv` 仅保留为面向人的 BO 指标汇总，不作为 Agent Review 的必读证据，因为它没有对应参数。`AGENT_REVIEW.md` 和 `optimization_review_guide.md` 都不加载给 Agent；模式任务、判断顺序、Patch Plan schema 和安全规则直接写入本轮 `agent_context.md`。
 
+Review 任务和 fallback 规则由 `review_profiles.py` 按 domain/topology 分流：
+
+- 运放：Gain/GBW/PM/SR/settling/power、补偿和 DC 工作点；
+- Bandgap：startup、Vref、tempco/曲率、PSRR、line regulation、BJT/电阻/镜像及 frozen child opamp；
+- Bandgap parent 不执行运放 W/Cc/Gain/GBW fallback 规则。
+
+完整 topology 知识库不复制进 `agent_context.md`；context 写入对应知识文件的绝对路径，Agent 必须读取该文件。`knowledge_analysis.md` 则是 Python 按 topology profile 和本轮结果生成的专用摘要。
+
+Review 同时读取 `metric_goals`：硬约束未满足时优先分析违规 gap；全部可行后，才分析 `minimize`/`maximize`/`target` 软目标是否还有优化空间。策略格式见 `METRIC_GOALS.md`。
+
 ## `circuit_design_relations.json`
 
 该文件是机器可读的电路关系注册表，由 `knowledge_review.py` 加载，不直接整份写入 Agent prompt。每条关系包含：

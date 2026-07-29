@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 from topologies.bandgap_ptat import BandgapPTAT
 from topologies.base import BaseTopology, TopologyMeta
+from topologies.capless_ldo import CaplessLDO
 from topologies.five_t_ota import FiveTOTA
 from topologies.folded_cascode import FoldedCascodeOTA
 from topologies.folded_cascode_two_stage import FoldedCascodeTwoStageOTA
@@ -31,6 +32,7 @@ TOPOLOGY_REGISTRY: dict[str, type[BaseTopology]] = {
     "folded_cascode_two_stage": FoldedCascodeTwoStageOTA,
     "nmcf_three_stage": NMCFThreeStageOTA,
     "bandgap_ptat": BandgapPTAT,
+    "capless_ldo": CaplessLDO,
 }
 
 
@@ -61,6 +63,8 @@ def get_topology_for_targets(targets: DesignTarget) -> str | None:
     topology_hint = (targets.topology_hint or "").lower()
     if "bandgap" in topology_hint or "ptat" in topology_hint:
         return "bandgap_ptat"
+    if "ldo" in topology_hint or "low dropout" in topology_hint:
+        return "capless_ldo"
 
     if "nmcf_three_stage" in TOPOLOGY_REGISTRY:
         very_high_gain = (
@@ -77,6 +81,8 @@ def get_topology_for_targets(targets: DesignTarget) -> str | None:
 
     candidates: list[tuple[int, int, str]] = []  # (score, complexity, name)
     for name, cls in TOPOLOGY_REGISTRY.items():
+        if name in {"bandgap_ptat", "capless_ldo"}:
+            continue
         meta = cls().meta
         score = 0
 

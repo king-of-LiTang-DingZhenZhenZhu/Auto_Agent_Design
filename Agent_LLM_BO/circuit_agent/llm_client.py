@@ -22,7 +22,7 @@ from pathlib import Path
 from openai import OpenAI
 
 from config import Settings
-from models import DesignTarget, ParamSpace, SimResult
+from models import DesignTarget, ParamSpace, SimResult, parse_metric_goals
 from pdk_profiles import get_pdk_profile
 
 logger = logging.getLogger(__name__)
@@ -133,6 +133,13 @@ Extract and output a JSON object with these fields (use null if not specified):
   "load_cap_f": <number or null>,
   "slew_rate_v_per_s": <number or null>,
   "settling_time_s": <number or null>,
+  "vref_v": <number or null>,
+  "vref_tolerance_v": <number or null>,
+  "tempco_ppm_per_c": <number or null>,
+  "vref_temp_nonlinearity_v": <number or null>,
+  "psrr_db": <number or null>,
+  "line_regulation_v_per_v": <number or null>,
+  "startup_time_s": <number or null>,
   "topology_hint": "<string describing topology>",
   "project_name": "<short filesystem-safe name, e.g. 5T_OTA_G40dB_BW500M>"
 }}
@@ -148,6 +155,8 @@ Rules:
 - If user says "CL = 1pF", load_cap_f = 1e-12
 - If user says "SR > 100V/us", slew_rate_v_per_s = 100e6
 - If user says "0.1% settling time < 10ns", settling_time_s = 10e-9
+- For bandgaps, keep tempco in ppm/C, PSRR in dB, and convert Vref tolerance,
+  temperature nonlinearity, and startup time to SI units
 - project_name: short, filesystem-safe, descriptive. Use underscores. Max 40 chars.
 """
 
@@ -166,7 +175,15 @@ Rules:
             load_cap_f=data.get("load_cap_f"),
             slew_rate_v_per_s=data.get("slew_rate_v_per_s"),
             settling_time_s=data.get("settling_time_s"),
+            vref_v=data.get("vref_v"),
+            vref_tolerance_v=data.get("vref_tolerance_v") or 10e-3,
+            tempco_ppm_per_c=data.get("tempco_ppm_per_c"),
+            vref_temp_nonlinearity_v=data.get("vref_temp_nonlinearity_v"),
+            psrr_db=data.get("psrr_db"),
+            line_regulation_v_per_v=data.get("line_regulation_v_per_v"),
+            startup_time_s=data.get("startup_time_s"),
             topology_hint=data.get("topology_hint", ""),
+            metric_goals=parse_metric_goals(data.get("metric_goals")),
         ), project_name
 
     # ------------------------------------------------------------------

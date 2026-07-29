@@ -7,7 +7,12 @@ from typing import Any
 
 from models import CircuitFiles, DesignTarget, ParamDef, ParamSpace, format_spice_value
 from pdk_profiles import get_pdk_profile, get_pdk_profile_for_params, spectre_include_line
-from topologies.base import BaseTopology, HierarchicalBlockSpec, TopologyMeta
+from system_decomposition import (
+    SystemDesignRequest,
+    decompose_bandgap,
+    derive_bandgap_opamp_targets,
+)
+from topologies.base import BaseTopology, ExecutableChildSpec, TopologyMeta
 from topologies.two_stage_ota import TwoStageOTA
 
 
@@ -207,42 +212,21 @@ class BandgapPTAT(BaseTopology):
         self,
         targets: DesignTarget | None = None,
     ) -> DesignTarget:
-        """Derive first-pass two-stage OTA requirements for the child opamp."""
-        custom = dict(targets.custom_specs) if targets else {}
-        power_budget = targets.power_w if targets and targets.power_w else None
-        load_cap = targets.load_cap_f if targets and targets.load_cap_f else None
-        return DesignTarget(
-            gain_db=float(custom.get("opamp_gain_db", 70.0)),
-            bandwidth_hz=float(custom.get("opamp_gbw_hz", 10e6)),
-            phase_margin_deg=float(custom.get("opamp_pm_deg", 60.0)),
-            power_w=float(custom.get("opamp_power_w", power_budget * 0.5))
-            if power_budget
-            else float(custom.get("opamp_power_w", 1e-3)),
-            load_cap_f=float(custom.get("opamp_load_cap_f", load_cap or 1e-12)),
-            topology_hint="two_stage_ota",
-            custom_specs={
-                "derived_from": "bandgap_ptat",
-                "error_amplifier_role": "frozen_macro",
-            },
-        )
+        """Derive child targets through the system decomposition layer."""
+        return derive_bandgap_opamp_targets(targets)
 
     def get_hierarchical_blocks(
         self,
         targets: DesignTarget | None = None,
         params: dict[str, Any] | None = None,
-    ) -> list[HierarchicalBlockSpec]:
-        return [
-            HierarchicalBlockSpec(
-                block_id="opamp",
-                topology_name="two_stage_ota",
-                expected_subckt="two_stage_ota",
-                ports=("vip", "vin", "vout", "ibias", "vdd", "vss"),
-                targets=self.derive_opamp_targets(targets),
-                sizing_policy="frozen_macro",
-                netlist_param="opamp_netlist",
-                results_param="opamp_results",
+    ) -> list[ExecutableChildSpec]:
+        design = decompose_bandgap(
+            SystemDesignRequest(
+                system_type="bandgap",
+                targets=targets or DesignTarget(),
             )
-        ]
+        )
+        return [block.to_executable_child() for block in design.child_blocks()]
 
     def _load_opamp_netlist(self, params: dict[str, Any] | None = None) -> str:
         source = _get_optional_path(params, "opamp_netlist", "OPAMP_NETLIST")

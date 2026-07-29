@@ -5,7 +5,9 @@
 - Codex：解析顶层需求、选择系统架构、分解 child 与指标预算、选择/修改 topology、运行测试/dry-run、分析结果并给出真实仿真命令。
 - `topologies/`：程序化生成 Spectre DUT/testbench；不要手改 rendered `.cir/.scs`。
 - `main.py`：给定 topology 下的 gm/Id、BO、Spectre、解析和结果保存。
-- `hierarchical_flow.py`：child BO/PVT → frozen artifact → parent BO/PVT。
+- `system_decomposition.py`：系统架构、block graph、child 指标/预算与 `system_design.json`。
+- `hierarchical_flow.py`：child-parent 依赖、资格调用、frozen artifact 与嵌入。
+- `design_flow_graph.py`：单个 BO/Review 结果的 Design Audit、Review gate、PVT 和导出。
 - `review_optimization.py`：生成 Review context、校验 patch plan、生成并验证 candidate。
 - 默认不运行真实 Spectre/BO/PVT/Virtuoso；用户明确要求且环境可用时除外。
 
@@ -18,8 +20,8 @@ conda activate Auto_Agent_Design
 
 ## 标准流程
 
-1. 识别设计层级并将指标转换为 SI 单位。
-2. 系统级需求：选择系统架构 → block graph → child targets/接口/预算；叶子模块可直接选择 topology。
+1. 识别设计层级，将指标转换为 SI 单位，并区分硬约束与可选软目标。
+2. 系统级需求通过 `system_decomposition.py` 生成架构、block graph、child targets/接口/预算；叶子模块可直接选择 topology。
 3. 根据知识库、topology registry 和 PDK 约束选择 child topology。
 4. 用 `write_project()` 生成网表、testbench、`requirements.json`；层级项目同时生成 `hierarchy.json`。
 5. 叶子模块运行 `main.py`；层级项目运行 `hierarchical_flow.py`。
@@ -28,6 +30,12 @@ conda activate Auto_Agent_Design
 8. nominal/PVT 合格后用 `export_to_virtuoso.py` 导出。
 
 `main.py` 不自动运行 Review/PVT。`design_flow_graph.py` 负责状态编排，不替代 BO，也不自动填写 `patch_plan.json`。
+
+## 指标策略
+
+- 每项指标通过 `MetricGoal` 声明硬约束：`min`、`max`、`range` 或 `target`；可附加 `minimize`、`maximize` 或 `target` 软目标。
+- BO 采用 feasibility-first：先满足全部硬约束，再在可行解中优化软目标；功耗默认是上限约束并同时最小化。
+- 旧版 `DesignTarget` 字段会自动映射为 `MetricGoal`；显式 `metric_goals` 优先。格式见 `Agent_LLM_BO/circuit_agent/METRIC_GOALS.md`。
 
 ## 系统与层级规则
 
@@ -80,9 +88,11 @@ python main.py \
   --requirements <project>/requirements.json
 ```
 
-- AC testbench 必传；仅在指标包含 SR/ST 时传对应 testbench。
+- 运放必须传 AC testbench；仅在指标包含 SR/ST 时追加对应 testbench。
+- Bandgap 使用 startup、PSRR、temperature/nonlinearity、line-regulation 专用 testbench，不套用运放 AC/SR/ST 链路。
 - 常用参数：`--max-iter`、`--dry-run`、`--verbose`、`--project`、`--gain`、`--gbw`、`--pm`、`--power`、`--load-cap`、`--sr`、`--settling-time`。
-- BO early-stop 要求指标达标、仿真收敛且 critical MOS 不在线性区。
+- 无软目标时，BO early-stop 要求全部硬约束达标、仿真收敛且 critical MOS 不在线性区。
+- 存在软目标时，即使已可行也继续到 `max_iter`，并按软目标在可行解中排序。
 
 ## 结果与 Review
 
@@ -95,6 +105,8 @@ Review 路线：
 
 - `success_audit`：检查 critical OP、尺寸/倍乘数、支路电流、参数贴边和过度设计；无改进证据时 `decision=accept`。
 - `failure_repair`：检查主导 gap、DC OP、topology 知识、理论与参数影响；决定 `modify`、`restart_bo` 或 `change_topology`。
+- Review 必须使用 topology/domain profile：运放关注 Gain/GBW/PM/SR/settling，Bandgap 关注 startup/Vref/tempco/非线性/PSRR/线性调整率/功耗；禁止共用同一套参数建议。
+- Review 直接读取当前 topology 知识库和 `metric_goals`，不把通用说明文档当作电路证据。
 
 ```bash
 python review_optimization.py \
@@ -149,11 +161,15 @@ python -m unittest discover -s tests
 
 ## 文档入口
 
+- 完整项目流程：`FILE_FLOW.md`
 - 系统架构：`knowledge_base/System_knowledge_base/system_architecture_selection_guide.md`
 - 运放 topology：`knowledge_base/Opamp_knowledge_base/topology_selection_guide.md`
 - topology Review：`knowledge_base/Opamp_knowledge_base/topologies/*_optimization.md`
+- Bandgap：`knowledge_base/Bandgap_knowledge_base/topologies/bandgap_ptat_optimization.md`
 - 结构化关系：`knowledge_base/circuit_design_relations.json`
 - PDK：`knowledge_base/PDKs_info/pdk_profiles.md`、`Agent_LLM_BO/circuit_agent/pdk_profiles.py`
 - 层级优化：`Agent_LLM_BO/circuit_agent/HIERARCHICAL_OPTIMIZATION.md`
+- 系统分解：`Agent_LLM_BO/circuit_agent/SYSTEM_DECOMPOSITION.md`
+- 指标策略：`Agent_LLM_BO/circuit_agent/METRIC_GOALS.md`
 - Review：`Agent_LLM_BO/circuit_agent/AGENT_REVIEW.md`
 - gm/Id：`Agent_LLM_BO/circuit_agent/SIZING_MODES.md`

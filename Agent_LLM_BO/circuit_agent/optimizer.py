@@ -64,6 +64,12 @@ class HybridOptimizer:
             "power_w": 0.8,
             "slew_rate_v_per_s": 1.0,
             "settling_time_s": 0.8,
+            "vref_v": 1.5,
+            "tempco_ppm_per_c": 1.5,
+            "vref_temp_nonlinearity_v": 1.0,
+            "psrr_db": 1.0,
+            "line_regulation_v_per_v": 1.2,
+            "startup_time_s": 1.5,
         }
 
     def run_optimization_loop(
@@ -305,67 +311,25 @@ class HybridOptimizer:
 
         violations: list[float] = []
         utility = 0.0
-
-        def lower_bound(value, target, weight, missing=1.0):
-            nonlocal utility
-            if target is None:
-                return
+        objective_utility = 0.0
+        goals = targets.resolved_metric_goals()
+        for name, goal in goals.items():
+            weight = self.weights.get(name, goal.priority)
+            value = result.metric_value(name)
             if value is None:
-                violations.append(missing)
-            elif value < target:
-                violations.append(
-                    (target - value) / max(abs(target), 1e-30) * weight
-                )
+                violations.append(2.0 if name == "gain_db" else 1.0)
+                continue
+            violation = goal.normalized_violation(value)
+            if violation > 0:
+                violations.append(violation * weight)
             else:
                 utility += 10.0 * weight
-
-        def upper_bound(value, target, weight):
-            nonlocal utility
-            if target is None:
-                return
-            if value is None:
-                violations.append(1.0)
-            elif value > target:
-                violations.append(
-                    (value - target) / max(abs(target), 1e-30) * weight
+                objective_utility += 20.0 * goal.priority * goal.objective_score(
+                    value
                 )
-            else:
-                utility += 10.0 * weight
 
-        lower_bound(result.gain_db, targets.gain_db, self.weights["gain_db"], 2.0)
-        lower_bound(
-            result.bandwidth_hz,
-            targets.bandwidth_hz,
-            self.weights["bandwidth_hz"],
-        )
-        lower_bound(
-            result.phase_margin_deg,
-            targets.phase_margin_deg,
-            self.weights["phase_margin_deg"],
-        )
-        upper_bound(result.power_w, targets.power_w, self.weights["power_w"])
-        lower_bound(
-            result.slew_rate_v_per_s,
-            targets.slew_rate_v_per_s,
-            self.weights["slew_rate_v_per_s"],
-        )
-        upper_bound(
-            result.settling_time_s,
-            targets.settling_time_s,
-            self.weights["settling_time_s"],
-        )
-
-        if (
-            targets.phase_margin_deg is not None
-            and result.phase_margin_deg is not None
-            and result.phase_margin_deg > 75.0
-        ):
-            utility -= (
-                (result.phase_margin_deg - 75.0)
-                / 75.0
-                * 30.0
-                * self.weights["phase_margin_deg"]
-            )
+        if "startup_time_s" in goals and result.startup_success is not True:
+            violations.append(2.0 * self.weights["startup_time_s"])
 
         if op_status is not None:
             utility += op_status.penalty
@@ -374,7 +338,7 @@ class HybridOptimizer:
 
         if violations:
             return -1000.0 - 1000.0 * max(violations) - 100.0 * sum(violations)
-        return 1000.0 + utility
+        return 1000.0 + utility + objective_utility
 
     def _evaluate_operating_point(
         self,
@@ -511,11 +475,13 @@ class HybridOptimizer:
         targets: DesignTarget,
         op_status: OperatingPointStatus | None = None,
     ) -> bool:
-        """Only stop when specs pass and no critical MOS is in linear region."""
+        """Stop only when constraints pass and no soft objective remains."""
         all_met, _ = targets.is_satisfied(result)
         if not (all_met and result.converged):
             return False
         if op_status is not None and op_status.critical_linear_count > 0:
+            return False
+        if targets.has_soft_objectives():
             return False
         return True
 
@@ -619,6 +585,21 @@ class HybridOptimizer:
                 "load_cap_f": state.targets.load_cap_f,
                 "slew_rate_v_per_s": state.targets.slew_rate_v_per_s,
                 "settling_time_s": state.targets.settling_time_s,
+                "vref_v": state.targets.vref_v,
+                "vref_tolerance_v": state.targets.vref_tolerance_v,
+                "tempco_ppm_per_c": state.targets.tempco_ppm_per_c,
+                "vref_temp_nonlinearity_v": (
+                    state.targets.vref_temp_nonlinearity_v
+                ),
+                "psrr_db": state.targets.psrr_db,
+                "line_regulation_v_per_v": (
+                    state.targets.line_regulation_v_per_v
+                ),
+                "startup_time_s": state.targets.startup_time_s,
+                "metric_goals": {
+                    name: goal.to_dict()
+                    for name, goal in state.targets.resolved_metric_goals().items()
+                },
             },
             "history": [
                 {
@@ -641,6 +622,17 @@ class HybridOptimizer:
                             r.result.slew_rate_negative_v_per_s
                         ),
                         "settling_time_s": r.result.settling_time_s,
+                        "vref_v": r.result.vref_v,
+                        "tempco_ppm_per_c": r.result.tempco_ppm_per_c,
+                        "vref_temp_nonlinearity_v": (
+                            r.result.vref_temp_nonlinearity_v
+                        ),
+                        "psrr_db": r.result.psrr_db,
+                        "line_regulation_v_per_v": (
+                            r.result.line_regulation_v_per_v
+                        ),
+                        "startup_time_s": r.result.startup_time_s,
+                        "startup_success": r.result.startup_success,
                         "converged": r.result.converged,
                         "error_message": r.result.error_message,
                         "operating_point_status": r.result.operating_point_status,
@@ -676,6 +668,13 @@ class HybridOptimizer:
             "power_w(mW)",
             "slew_rate_v_per_s(V/us)",
             "settling_time_s(ns)",
+            "vref_v(V)",
+            "tempco_ppm_per_c(ppm/C)",
+            "vref_temp_nonlinearity_v(mV)",
+            "psrr_db(dB)",
+            "line_regulation_v_per_v(V/V)",
+            "startup_time_s(us)",
+            "startup_success",
             "op_linear_count",
             "op_near_edge_count",
             "op_min_margin_mv",
@@ -706,6 +705,21 @@ class HybridOptimizer:
                         "settling_time_s(ns)": self._fmt_csv_value(
                             result.settling_time_s, 2, scale=1e9
                         ),
+                        "vref_v(V)": self._fmt_csv_value(result.vref_v, 6),
+                        "tempco_ppm_per_c(ppm/C)": self._fmt_csv_value(
+                            result.tempco_ppm_per_c, 3
+                        ),
+                        "vref_temp_nonlinearity_v(mV)": self._fmt_csv_value(
+                            result.vref_temp_nonlinearity_v, 3, scale=1e3
+                        ),
+                        "psrr_db(dB)": self._fmt_csv_value(result.psrr_db, 2),
+                        "line_regulation_v_per_v(V/V)": self._fmt_csv_value(
+                            result.line_regulation_v_per_v, 6
+                        ),
+                        "startup_time_s(us)": self._fmt_csv_value(
+                            result.startup_time_s, 3, scale=1e6
+                        ),
+                        "startup_success": result.startup_success,
                         "op_linear_count": self._op_field(
                             result, "linear_count", ""
                         ),

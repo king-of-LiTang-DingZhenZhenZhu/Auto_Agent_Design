@@ -291,6 +291,125 @@ class GmidTopologySpec:
 # ======================================================================
 
 
+def _optional_float(value: Any) -> float | None:
+    return None if value is None else float(value)
+
+
+def _clip(value: float, low: float, high: float) -> float:
+    return min(max(float(value), low), high)
+
+
+@dataclass(frozen=True)
+class MetricGoal:
+    """One hard metric constraint with an optional feasible-region objective."""
+
+    constraint: str
+    target: float | None = None
+    low: float | None = None
+    high: float | None = None
+    tolerance: float | None = None
+    objective: str = "none"
+    objective_target: float | None = None
+    priority: float = 1.0
+
+    def __post_init__(self) -> None:
+        if self.constraint not in {"min", "max", "range", "target"}:
+            raise ValueError(f"Unknown metric constraint: {self.constraint}")
+        if self.objective not in {"none", "minimize", "maximize", "target"}:
+            raise ValueError(f"Unknown metric objective: {self.objective}")
+        if self.priority <= 0:
+            raise ValueError("Metric goal priority must be positive")
+        if self.constraint in {"min", "max", "target"} and self.target is None:
+            raise ValueError(f"{self.constraint} constraint requires target")
+        if self.constraint == "range":
+            if self.low is None or self.high is None or self.low > self.high:
+                raise ValueError("range constraint requires low <= high")
+        if self.constraint == "target" and (self.tolerance is None or self.tolerance < 0):
+            raise ValueError("target constraint requires non-negative tolerance")
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "MetricGoal":
+        return cls(
+            constraint=str(data["constraint"]),
+            target=_optional_float(data.get("target")),
+            low=_optional_float(data.get("low")),
+            high=_optional_float(data.get("high")),
+            tolerance=_optional_float(data.get("tolerance")),
+            objective=str(data.get("objective", "none")),
+            objective_target=_optional_float(data.get("objective_target")),
+            priority=float(data.get("priority", 1.0)),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "constraint": self.constraint,
+            "target": self.target,
+            "low": self.low,
+            "high": self.high,
+            "tolerance": self.tolerance,
+            "objective": self.objective,
+            "objective_target": self.objective_target,
+            "priority": self.priority,
+        }
+
+    def gap(self, value: float) -> float:
+        """Return positive constraint margin and negative violation."""
+        if self.constraint == "min" and self.target is not None:
+            return value - self.target
+        if self.constraint == "max" and self.target is not None:
+            return self.target - value
+        if self.constraint == "range" and self.low is not None and self.high is not None:
+            return min(value - self.low, self.high - value)
+        if self.constraint == "target" and self.target is not None:
+            tolerance = self.tolerance or 0.0
+            return tolerance - abs(value - self.target)
+        raise ValueError(f"Invalid metric goal: {self}")
+
+    def normalized_violation(self, value: float) -> float:
+        gap = self.gap(value)
+        if gap >= 0:
+            return 0.0
+        scale_candidates = [
+            abs(number)
+            for number in (self.target, self.low, self.high, self.tolerance)
+            if number not in (None, 0)
+        ]
+        scale = min(scale_candidates) if scale_candidates else 1.0
+        return -gap / max(scale, 1e-30)
+
+    def objective_score(self, value: float) -> float:
+        """Return a clipped dimensionless score inside the feasible region."""
+        if self.objective == "none":
+            return 0.0
+        reference = self.objective_target
+        if reference is None:
+            reference = self.target
+        if reference is None and self.constraint == "range":
+            reference = 0.5 * float(self.low + self.high)
+        if reference is None:
+            return 0.0
+        scale = max(abs(reference), 1e-30)
+        if self.objective == "minimize":
+            return _clip(math.log(scale / max(abs(value), 1e-30)), -5.0, 5.0)
+        if self.objective == "maximize":
+            return _clip(math.log(max(abs(value), 1e-30) / scale), -5.0, 5.0)
+        if self.objective == "target":
+            return _clip(-abs(value - reference) / scale, -5.0, 0.0)
+        raise ValueError(f"Unknown objective direction: {self.objective}")
+
+
+def parse_metric_goals(data: Any) -> dict[str, MetricGoal]:
+    if not isinstance(data, dict):
+        return {}
+    goals: dict[str, MetricGoal] = {}
+    for name, raw in data.items():
+        if isinstance(raw, MetricGoal):
+            goals[str(name)] = raw
+        elif isinstance(raw, dict):
+            goals[str(name)] = MetricGoal.from_dict(raw)
+    return goals
+
+
 @dataclass
 class DesignTarget:
     """User-specified performance targets for the circuit."""
@@ -304,35 +423,77 @@ class DesignTarget:
     load_cap_f: float | None = None  # Load capacitance in Farads
     slew_rate_v_per_s: float | None = None  # Minimum slew rate in V/s
     settling_time_s: float | None = None  # Maximum settling time in seconds
+    vref_v: float | None = None  # Nominal bandgap output voltage
+    vref_tolerance_v: float = 10e-3  # Allowed absolute Vref error
+    tempco_ppm_per_c: float | None = None  # Maximum Vref temperature coefficient
+    vref_temp_nonlinearity_v: float | None = None  # Maximum linear-fit residual
+    psrr_db: float | None = None  # Minimum worst-case PSRR over the AC sweep
+    line_regulation_v_per_v: float | None = None  # Maximum |dVref/dVDD|
+    startup_time_s: float | None = None  # Maximum successful startup time
     topology_hint: str = ""  # e.g., "5T OTA", "two-stage Miller"
     custom_specs: dict[str, Any] = field(default_factory=dict)
+    metric_goals: dict[str, MetricGoal | dict[str, Any]] = field(default_factory=dict)
 
     @property
     def gbw_hz(self) -> float | None:
         """Canonical meaning of the legacy bandwidth_hz field."""
         return self.bandwidth_hz
 
+    def resolved_metric_goals(self) -> dict[str, MetricGoal]:
+        goals: dict[str, MetricGoal] = {}
+
+        def add(name: str, value: float | None, constraint: str, **kwargs) -> None:
+            if value is not None:
+                goals[name] = MetricGoal(
+                    constraint=constraint,
+                    target=float(value),
+                    **kwargs,
+                )
+
+        add("gain_db", self.gain_db, "min")
+        add("bandwidth_hz", self.bandwidth_hz, "min")
+        if self.phase_margin_deg is not None:
+            goals["phase_margin_deg"] = MetricGoal(
+                constraint="min",
+                target=float(self.phase_margin_deg),
+                objective="target",
+                objective_target=max(float(self.phase_margin_deg), 67.5),
+            )
+        add("power_w", self.power_w, "max", objective="minimize", priority=1.0)
+        add("slew_rate_v_per_s", self.slew_rate_v_per_s, "min")
+        add("settling_time_s", self.settling_time_s, "max")
+        if self.vref_v is not None:
+            goals["vref_v"] = MetricGoal(
+                constraint="target",
+                target=float(self.vref_v),
+                tolerance=float(self.vref_tolerance_v),
+            )
+        add("tempco_ppm_per_c", self.tempco_ppm_per_c, "max")
+        add(
+            "vref_temp_nonlinearity_v",
+            self.vref_temp_nonlinearity_v,
+            "max",
+        )
+        add("psrr_db", self.psrr_db, "min")
+        add("line_regulation_v_per_v", self.line_regulation_v_per_v, "max")
+        add("startup_time_s", self.startup_time_s, "max")
+        goals.update(parse_metric_goals(self.metric_goals))
+        return goals
+
+    def has_soft_objectives(self) -> bool:
+        return any(
+            goal.objective != "none"
+            for goal in self.resolved_metric_goals().values()
+        )
+
     def is_satisfied(self, result: SimResult) -> tuple[bool, dict[str, bool]]:
         """Check if all targets are met. Returns (all_pass, per_metric_pass)."""
         status: dict[str, bool] = {}
-        if self.gain_db is not None and result.gain_db is not None:
-            status["gain_db"] = result.gain_db >= self.gain_db
-        if self.bandwidth_hz is not None and result.bandwidth_hz is not None:
-            status["bandwidth_hz"] = result.bandwidth_hz >= self.bandwidth_hz
-        if self.phase_margin_deg is not None and result.phase_margin_deg is not None:
-            status["phase_margin_deg"] = result.phase_margin_deg >= self.phase_margin_deg
-        if self.power_w is not None and result.power_w is not None:
-            status["power_w"] = result.power_w <= self.power_w
-        if self.slew_rate_v_per_s is not None:
-            status["slew_rate_v_per_s"] = (
-                result.slew_rate_v_per_s is not None
-                and result.slew_rate_v_per_s >= self.slew_rate_v_per_s
-            )
-        if self.settling_time_s is not None:
-            status["settling_time_s"] = (
-                result.settling_time_s is not None
-                and result.settling_time_s <= self.settling_time_s
-            )
+        for name, goal in self.resolved_metric_goals().items():
+            value = result.metric_value(name)
+            status[name] = value is not None and goal.gap(value) >= 0
+        if "startup_time_s" in status and result.startup_success is not True:
+            status["startup_time_s"] = False
         all_pass = all(status.values()) if status else False
         return all_pass, status
 
@@ -343,41 +504,15 @@ class DesignTarget:
         For power (lower-is-better), positive = under budget.
         Returns None if either target or result is unavailable.
         """
-        gap: dict[str, float | None] = {}
-
-        if self.gain_db is not None and result.gain_db is not None:
-            gap["gain_db"] = result.gain_db - self.gain_db
-        else:
-            gap["gain_db"] = None
-
-        if self.bandwidth_hz is not None and result.bandwidth_hz is not None:
-            gap["bandwidth_hz"] = result.bandwidth_hz - self.bandwidth_hz
-        else:
-            gap["bandwidth_hz"] = None
-
-        if self.phase_margin_deg is not None and result.phase_margin_deg is not None:
-            gap["phase_margin_deg"] = result.phase_margin_deg - self.phase_margin_deg
-        else:
-            gap["phase_margin_deg"] = None
-
-        if self.power_w is not None and result.power_w is not None:
-            # Power: lower is better, gap = target - actual (positive = under budget)
-            gap["power_w"] = self.power_w - result.power_w
-        else:
-            gap["power_w"] = None
-
-        if self.slew_rate_v_per_s is not None and result.slew_rate_v_per_s is not None:
-            gap["slew_rate_v_per_s"] = result.slew_rate_v_per_s - self.slew_rate_v_per_s
-        else:
-            gap["slew_rate_v_per_s"] = None
-
-        if self.settling_time_s is not None and result.settling_time_s is not None:
-            # Settling time: lower is better
-            gap["settling_time_s"] = self.settling_time_s - result.settling_time_s
-        else:
-            gap["settling_time_s"] = None
-
-        return gap
+        gaps: dict[str, float | None] = {}
+        for name, goal in self.resolved_metric_goals().items():
+            value = result.metric_value(name)
+            gaps[name] = goal.gap(value) if value is not None else None
+        if "startup_time_s" in gaps and result.startup_success is not True:
+            gaps["startup_time_s"] = -abs(
+                self.resolved_metric_goals()["startup_time_s"].target or 1.0
+            )
+        return gaps
 
     def to_requirements_dict(self, original_text: str = "") -> dict:
         """Export as a requirements dict for persistence (requirements.json)."""
@@ -391,8 +526,20 @@ class DesignTarget:
                 "load_cap_f": self.load_cap_f,
                 "slew_rate_v_per_s": self.slew_rate_v_per_s,
                 "settling_time_s": self.settling_time_s,
+                "vref_v": self.vref_v,
+                "vref_tolerance_v": self.vref_tolerance_v,
+                "tempco_ppm_per_c": self.tempco_ppm_per_c,
+                "vref_temp_nonlinearity_v": self.vref_temp_nonlinearity_v,
+                "psrr_db": self.psrr_db,
+                "line_regulation_v_per_v": self.line_regulation_v_per_v,
+                "startup_time_s": self.startup_time_s,
             },
             "topology_hint": self.topology_hint,
+            "custom_specs": self.custom_specs,
+            "metric_goals": {
+                name: goal.to_dict()
+                for name, goal in self.resolved_metric_goals().items()
+            },
         }
 
     def to_prompt_str(self) -> str:
@@ -412,6 +559,25 @@ class DesignTarget:
             lines.append(f"- Slew Rate >= {_eng(self.slew_rate_v_per_s)}V/s")
         if self.settling_time_s is not None:
             lines.append(f"- Settling Time <= {_eng(self.settling_time_s)}s")
+        if self.vref_v is not None:
+            lines.append(
+                f"- Vref = {self.vref_v:g} V ± {self.vref_tolerance_v:g} V"
+            )
+        if self.tempco_ppm_per_c is not None:
+            lines.append(f"- Tempco <= {self.tempco_ppm_per_c:g} ppm/C")
+        if self.vref_temp_nonlinearity_v is not None:
+            lines.append(
+                f"- Vref temperature nonlinearity <= "
+                f"{_eng(self.vref_temp_nonlinearity_v)}V"
+            )
+        if self.psrr_db is not None:
+            lines.append(f"- PSRR >= {self.psrr_db:g} dB")
+        if self.line_regulation_v_per_v is not None:
+            lines.append(
+                f"- Line regulation <= {self.line_regulation_v_per_v:g} V/V"
+            )
+        if self.startup_time_s is not None:
+            lines.append(f"- Startup time <= {_eng(self.startup_time_s)}s")
         if self.topology_hint:
             lines.append(f"- Topology: {self.topology_hint}")
         for k, v in self.custom_specs.items():
@@ -650,10 +816,28 @@ class SimResult:
     slew_rate_positive_v_per_s: float | None = None
     slew_rate_negative_v_per_s: float | None = None
     settling_time_s: float | None = None        # Transient: settling time in seconds
+    vref_v: float | None = None
+    tempco_ppm_per_c: float | None = None
+    vref_temp_nonlinearity_v: float | None = None
+    psrr_db: float | None = None
+    line_regulation_v_per_v: float | None = None
+    startup_time_s: float | None = None
+    startup_success: bool | None = None
     converged: bool = True
     error_message: str = ""
     raw_metrics: dict[str, float] = field(default_factory=dict)
     operating_point_status: dict[str, Any] | None = None
+
+    def metric_value(self, name: str) -> float | None:
+        value = getattr(self, name, None)
+        if value is None:
+            value = self.raw_metrics.get(name)
+        if isinstance(value, bool) or value is None:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
 
     @staticmethod
     def merge(primary: "SimResult", extra: "SimResult") -> "SimResult":
@@ -666,7 +850,7 @@ class SimResult:
             gain_db=primary.gain_db,
             bandwidth_hz=primary.bandwidth_hz,
             phase_margin_deg=primary.phase_margin_deg,
-            power_w=primary.power_w,
+            power_w=primary.power_w if primary.power_w is not None else extra.power_w,
             unity_gain_freq_hz=primary.unity_gain_freq_hz,
             slew_rate_v_per_s=primary.slew_rate_v_per_s or extra.slew_rate_v_per_s,
             slew_rate_positive_v_per_s=(
@@ -678,6 +862,33 @@ class SimResult:
                 or extra.slew_rate_negative_v_per_s
             ),
             settling_time_s=primary.settling_time_s or extra.settling_time_s,
+            vref_v=primary.vref_v if primary.vref_v is not None else extra.vref_v,
+            tempco_ppm_per_c=(
+                primary.tempco_ppm_per_c
+                if primary.tempco_ppm_per_c is not None
+                else extra.tempco_ppm_per_c
+            ),
+            vref_temp_nonlinearity_v=(
+                primary.vref_temp_nonlinearity_v
+                if primary.vref_temp_nonlinearity_v is not None
+                else extra.vref_temp_nonlinearity_v
+            ),
+            psrr_db=primary.psrr_db if primary.psrr_db is not None else extra.psrr_db,
+            line_regulation_v_per_v=(
+                primary.line_regulation_v_per_v
+                if primary.line_regulation_v_per_v is not None
+                else extra.line_regulation_v_per_v
+            ),
+            startup_time_s=(
+                primary.startup_time_s
+                if primary.startup_time_s is not None
+                else extra.startup_time_s
+            ),
+            startup_success=(
+                primary.startup_success
+                if primary.startup_success is not None
+                else extra.startup_success
+            ),
             converged=primary.converged,
             error_message=primary.error_message,
             raw_metrics={**extra.raw_metrics, **primary.raw_metrics},
@@ -708,8 +919,17 @@ class SimResult:
                 "slew_rate_positive_v_per_s": self.slew_rate_positive_v_per_s,
                 "slew_rate_negative_v_per_s": self.slew_rate_negative_v_per_s,
                 "settling_time_s": self.settling_time_s,
+                "vref_v": self.vref_v,
+                "tempco_ppm_per_c": self.tempco_ppm_per_c,
+                "vref_temp_nonlinearity_v": self.vref_temp_nonlinearity_v,
+                "psrr_db": self.psrr_db,
+                "line_regulation_v_per_v": self.line_regulation_v_per_v,
+                "startup_time_s": self.startup_time_s,
+                "startup_success": self.startup_success,
             },
         }
+        for name, value in self.raw_metrics.items():
+            result["metrics"].setdefault(name, value)
 
         if not self.converged:
             result["error_message"] = self.error_message
@@ -750,6 +970,22 @@ class SimResult:
             lines.append(f"SR- = {_eng(self.slew_rate_negative_v_per_s)}V/s")
         if self.settling_time_s is not None:
             lines.append(f"t_settle = {_eng(self.settling_time_s)}s")
+        if self.vref_v is not None:
+            lines.append(f"Vref = {self.vref_v:.6g}V")
+        if self.tempco_ppm_per_c is not None:
+            lines.append(f"Tempco = {self.tempco_ppm_per_c:.3g}ppm/C")
+        if self.vref_temp_nonlinearity_v is not None:
+            lines.append(
+                f"Vref temp nonlinearity = "
+                f"{_eng(self.vref_temp_nonlinearity_v)}V"
+            )
+        if self.psrr_db is not None:
+            lines.append(f"PSRR = {self.psrr_db:.2f}dB")
+        if self.line_regulation_v_per_v is not None:
+            lines.append(f"Line regulation = {self.line_regulation_v_per_v:.3g}V/V")
+        if self.startup_time_s is not None:
+            state = "pass" if self.startup_success else "fail"
+            lines.append(f"Startup = {_eng(self.startup_time_s)}s ({state})")
         if not self.converged:
             lines.append(f"[NOT CONVERGED] {self.error_message}")
         return " | ".join(lines)

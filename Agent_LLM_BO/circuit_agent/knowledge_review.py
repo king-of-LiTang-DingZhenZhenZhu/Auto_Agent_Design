@@ -50,8 +50,10 @@ def build_knowledge_analysis(
             analysis = _analyze_opamp_run(
                 record, run_dir, params, profile, history.get("targets") or {}
             )
-        else:
+        elif profile.get("domain") == "bandgap":
             analysis = _analyze_bandgap_run(record, params, profile)
+        else:
+            analysis = _analyze_ldo_run(record, params)
         run_analyses.append(analysis)
 
     return {
@@ -214,6 +216,7 @@ def _analyze_bandgap_run(
     params: dict[str, float],
     profile: dict[str, Any],
 ) -> dict[str, Any]:
+    result = record.get("result") or {}
     area_ratio = _number(params.get("BJT_AREA_RATIO"))
     r0_length = _number(params.get("R0_SEG_L"))
     r0_width = _number(params.get("R0_SEG_W"))
@@ -222,10 +225,18 @@ def _analyze_bandgap_run(
     derived: dict[str, float] = {}
     diagnoses: list[dict[str, str]] = []
     unavailable = [
-        "temperature sweep Vref(T) needed for tempco diagnosis",
-        "line sweep needed for line-regulation diagnosis",
-        "real PDK BJT operating points needed for physical DeltaVBE validation",
+        "real PDK BJT operating points needed for physical DeltaVBE validation"
     ]
+    metric_messages = {
+        "tempco_ppm_per_c": "temperature sweep Vref(T) needed for tempco diagnosis",
+        "vref_temp_nonlinearity_v": "temperature sweep needed for curvature diagnosis",
+        "line_regulation_v_per_v": "line sweep needed for line-regulation diagnosis",
+        "psrr_db": "PSRR sweep needed for supply-rejection diagnosis",
+        "startup_time_s": "startup transient needed to verify escape from the zero-current state",
+    }
+    for metric, message in metric_messages.items():
+        if result.get(metric) is None:
+            unavailable.append(message)
     if area_ratio and area_ratio > 1:
         derived["delta_vbe_27c_first_order_V"] = (
             THERMAL_VOLTAGE_27C * math.log(area_ratio)
@@ -241,8 +252,83 @@ def _analyze_bandgap_run(
             "tempco requires Vref(T), and residual curvature must not be treated as a simple ratio error"
         ),
     })
+    if result.get("startup_success") is False:
+        diagnoses.append({
+            "confidence": "high",
+            "message": "startup failed to escape or settle outside the zero-current state",
+        })
+    for metric in (
+        "vref_v",
+        "tempco_ppm_per_c",
+        "vref_temp_nonlinearity_v",
+        "psrr_db",
+        "line_regulation_v_per_v",
+        "startup_time_s",
+        "power_w",
+    ):
+        value = _number(result.get(metric))
+        if value is not None:
+            derived[f"measured_{metric}"] = value
     for limitation in profile.get("limitations", []):
         diagnoses.append({"confidence": "high", "message": limitation})
+    return {
+        "iteration": int(record.get("iteration", 0)),
+        "reward": record.get("reward"),
+        "derived": derived,
+        "diagnoses": diagnoses,
+        "unavailable": unavailable,
+    }
+
+
+def _analyze_ldo_run(
+    record: dict[str, Any],
+    params: dict[str, float],
+) -> dict[str, Any]:
+    result = record.get("result") or {}
+    vref = _number(params.get("VREF"))
+    feedback_ratio = _number(params.get("feedback_ratio"))
+    vin = _number(params.get("VIN"))
+    measured_vout = _number(
+        result.get("output_voltage_v")
+        or (result.get("raw_metrics") or {}).get("output_voltage_v")
+    )
+    measured_pm = _number(result.get("phase_margin_deg"))
+    overshoot = _number(
+        result.get("overshoot_v")
+        or (result.get("raw_metrics") or {}).get("overshoot_v")
+    )
+    undershoot = _number(
+        result.get("undershoot_v")
+        or (result.get("raw_metrics") or {}).get("undershoot_v")
+    )
+    derived: dict[str, float | str] = {}
+    diagnoses: list[dict[str, str]] = []
+    unavailable: list[str] = []
+
+    if vref is not None and feedback_ratio is not None:
+        expected_vout = vref * (1.0 + feedback_ratio)
+        derived["feedback_expected_vout_v"] = expected_vout
+        if measured_vout is not None:
+            derived["feedback_output_error_v"] = measured_vout - expected_vout
+    else:
+        unavailable.append("VREF and feedback_ratio for DC feedback estimate")
+    if vin is not None and measured_vout is not None:
+        derived["input_output_headroom_v"] = vin - measured_vout
+    if measured_pm is not None and measured_pm < 60.0:
+        diagnoses.append(
+            {
+                "confidence": "high",
+                "message": (
+                    "zero-load phase margin is below target; inspect the STB "
+                    "loop waveform and compensation poles/zeros before resizing"
+                ),
+            }
+        )
+    if overshoot is not None and undershoot is not None:
+        derived["load_step_worst_excursion_v"] = max(overshoot, undershoot)
+    else:
+        unavailable.append("both load-step overshoot and undershoot metrics")
+
     return {
         "iteration": int(record.get("iteration", 0)),
         "reward": record.get("reward"),

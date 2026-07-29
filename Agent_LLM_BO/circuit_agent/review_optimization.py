@@ -20,8 +20,15 @@ from typing import Any
 
 from config import Settings
 from knowledge_review import build_knowledge_analysis, write_knowledge_analysis
-from models import NetlistTemplate, ParamDef, ParamSpace, SimResult
+from models import (
+    NetlistTemplate,
+    ParamDef,
+    ParamSpace,
+    SimResult,
+    parse_metric_goals,
+)
 from parameter_effects import analyze_history, write_analysis
+from review_profiles import get_review_profile
 from simulator import Simulator
 from summarize_metrics import build_report_from_sim_result
 from topologies import get_topology
@@ -163,6 +170,7 @@ def generate_candidate(
             result=record.get("result", {}),
             targets=history.get("targets", {}),
             param_bounds=param_bounds,
+            topology_name=topology_name,
         )
         adjusted, _, op_reasons = apply_operating_point_review_rules(
             params=adjusted,
@@ -301,8 +309,21 @@ def apply_review_rules(
     result: dict[str, Any],
     targets: dict[str, Any],
     param_bounds: dict[str, ParamDef],
+    topology_name: str = "",
 ) -> tuple[dict[str, float], dict[str, tuple[float, float]]]:
-    """Apply conservative metric-deficit rules to existing netlist params."""
+    """Dispatch conservative fallback rules by topology domain."""
+    if get_review_profile(topology_name).domain == "bandgap":
+        return _apply_bandgap_review_rules(params, result, targets, param_bounds)
+    return _apply_opamp_review_rules(params, result, targets, param_bounds)
+
+
+def _apply_opamp_review_rules(
+    params: dict[str, float],
+    result: dict[str, Any],
+    targets: dict[str, Any],
+    param_bounds: dict[str, ParamDef],
+) -> tuple[dict[str, float], dict[str, tuple[float, float]]]:
+    """Apply conservative opamp metric-deficit rules."""
     adjusted = dict(params)
     changes: dict[str, tuple[float, float]] = {}
 
@@ -346,6 +367,54 @@ def apply_review_rules(
             scale(["Wdp", "Wdiff", "Wdiffp", "Wdiff1"], 1.10)
         elif sr_low:
             scale(["Wcs", "Wgm2", "Wgm3"], 1.10)
+
+    return adjusted, changes
+
+
+def _apply_bandgap_review_rules(
+    params: dict[str, float],
+    result: dict[str, Any],
+    targets: dict[str, Any],
+    param_bounds: dict[str, ParamDef],
+) -> tuple[dict[str, float], dict[str, tuple[float, float]]]:
+    """Apply conservative Bandgap/PTAT parent-level fallback rules."""
+    adjusted = dict(params)
+    changes: dict[str, tuple[float, float]] = {}
+
+    def scale(names: list[str], factor: float) -> None:
+        for name in names:
+            if name not in adjusted:
+                continue
+            old = adjusted[name]
+            new = _clamp_param(name, old * factor, param_bounds)
+            if not math.isclose(old, new, rel_tol=1e-12, abs_tol=0.0):
+                adjusted[name] = new
+                changes[name] = (old, new)
+
+    vref_target = targets.get("vref_v")
+    vref_actual = result.get("vref_v")
+    tolerance = targets.get("vref_tolerance_v") or 10e-3
+    if vref_target is not None and vref_actual is not None:
+        if vref_actual < vref_target - tolerance:
+            scale(["R1_SEG_L"], 1.10)
+        elif vref_actual > vref_target + tolerance:
+            scale(["R1_SEG_L"], 0.90)
+
+    startup_bad = targets.get("startup_time_s") is not None and (
+        result.get("startup_success") is not True
+        or result.get("startup_time_s") is None
+        or result["startup_time_s"] > targets["startup_time_s"]
+    )
+    power_high = _above(result, targets, "power_w")
+    if startup_bad and not power_high:
+        scale(["R0_SEG_L", "R1_SEG_L"], 0.90)
+    elif power_high and not startup_bad:
+        scale(["R0_SEG_L", "R1_SEG_L"], 1.10)
+
+    if _below(result, targets, "psrr_db") or _above(
+        result, targets, "line_regulation_v_per_v"
+    ):
+        scale(["Lmirror_p"], 1.10)
 
     return adjusted, changes
 
@@ -716,23 +785,16 @@ def _build_local_agent_context(
     knowledge_analysis_path: Path,
     design_audit_path: Path,
 ) -> str:
+    profile = get_review_profile(topology_name)
     if review_mode == "success_audit":
-        task = """BO has met its nominal targets. Audit the successful design rather than assuming it is final:
-- inspect critical DC operating points and saturation margins;
-- judge whether transistor dimensions, multiplicities, branch currents, and current ratios are physically reasonable;
-- identify parameters near bounds, excessive area/current, hidden overdesign, and safe power/area optimization opportunities;
-- prefer `decision=accept` with no candidate when no evidence-backed improvement is needed."""
+        task = profile.success_task
         evidence = f"""1. Design audit: `{design_audit_path.resolve()}`
 2. Topology guide: `{topology_guide_path.resolve()}`
 3. Knowledge-driven diagnostics: `{knowledge_analysis_path.resolve()}`
 4. Parameter effects, only for optimization opportunities: `{parameter_effects_path.resolve()}`
 5. Full optimization history: `{history_path.resolve()}`"""
     else:
-        task = """BO has not met all nominal targets. Diagnose before proposing edits:
-- identify the dominant target gap and any conflicting secondary gaps;
-- inspect DC operating points before treating the problem as pure sizing;
-- combine topology knowledge, first-order theory, and empirical parameter effects;
-- propose conservative, evidence-backed candidates or state that the search space/topology should change."""
+        task = profile.failure_task
         evidence = f"""1. Topology guide: `{topology_guide_path.resolve()}`
 2. Parameter effects: `{parameter_effects_path.resolve()}`
 3. Knowledge-driven diagnostics: `{knowledge_analysis_path.resolve()}`
@@ -754,6 +816,10 @@ writing `patch_plan.json` in this directory.
 ## Topology
 
 {topology_name}
+
+## Review Domain
+
+{profile.domain}
 
 ## Required Evidence
 
@@ -786,10 +852,20 @@ Read in this order:
 
 
 def _topology_review_guide_path(topology_name: str) -> Path:
+    knowledge_root = Path(__file__).resolve().parents[2] / "knowledge_base"
+    candidates = sorted(
+        knowledge_root.glob(f"**/topologies/{topology_name}_optimization.md")
+    )
+    if candidates:
+        return candidates[0]
+    domain_directory = (
+        "Bandgap_knowledge_base"
+        if get_review_profile(topology_name).domain == "bandgap"
+        else "Opamp_knowledge_base"
+    )
     return (
-        Path(__file__).resolve().parents[2]
-        / "knowledge_base"
-        / "Opamp_knowledge_base"
+        knowledge_root
+        / domain_directory
         / "topologies"
         / f"{topology_name}_optimization.md"
     )
@@ -841,11 +917,36 @@ def _result_meets_targets(
 def _compute_target_gaps(
     result: dict[str, Any], targets: dict[str, Any]
 ) -> dict[str, float]:
+    metric_goals = parse_metric_goals(targets.get("metric_goals"))
+    if metric_goals:
+        gaps: dict[str, float] = {}
+        for name, goal in metric_goals.items():
+            actual = result.get(name)
+            if actual is None:
+                continue
+            try:
+                gaps[name] = goal.gap(float(actual))
+            except (TypeError, ValueError):
+                continue
+        if "startup_time_s" in metric_goals and result.get(
+            "startup_success"
+        ) is not True:
+            target = metric_goals["startup_time_s"].target or 1.0
+            gaps["startup_time_s"] = -abs(target)
+        return gaps
+
     gaps: dict[str, float] = {}
-    lower_better = {"power_w", "settling_time_s"}
+    lower_better = {
+        "power_w",
+        "settling_time_s",
+        "tempco_ppm_per_c",
+        "vref_temp_nonlinearity_v",
+        "line_regulation_v_per_v",
+        "startup_time_s",
+    }
     aliases = {"bandwidth_hz": ("bandwidth_hz", "gbw_hz")}
     for name, target in targets.items():
-        if target is None or name == "load_cap_f":
+        if target is None or name in {"load_cap_f", "vref_tolerance_v"}:
             continue
         keys = aliases.get(name, (name,))
         actual = next((result.get(key) for key in keys if result.get(key) is not None), None)
@@ -856,11 +957,19 @@ def _compute_target_gaps(
             actual_value = float(actual)
         except (TypeError, ValueError):
             continue
-        gaps[name] = (
-            target_value - actual_value
-            if name in lower_better
-            else actual_value - target_value
-        )
+        if name == "vref_v":
+            tolerance = float(targets.get("vref_tolerance_v") or 10e-3)
+            gaps[name] = tolerance - abs(actual_value - target_value)
+        else:
+            gaps[name] = (
+                target_value - actual_value
+                if name in lower_better
+                else actual_value - target_value
+            )
+    if targets.get("startup_time_s") is not None and result.get(
+        "startup_success"
+    ) is not True:
+        gaps["startup_time_s"] = -abs(float(targets["startup_time_s"]))
     return gaps
 
 

@@ -2,6 +2,8 @@
 
 本文档用于系统级模拟/混合信号设计的架构选择、模块分解和指标预算。
 `AGENTS.md` 与 `CLAUDE.md` 只定义 Agent 的工作流程；具体电路类别的设计知识应维护在本知识库中。
+可执行的数据结构、CLI 和扩展接口见
+`Agent_LLM_BO/circuit_agent/SYSTEM_DECOMPOSITION.md`。
 
 ## 通用决策顺序
 
@@ -23,6 +25,11 @@
 - child topology selection 在局部指标确定后进行，例如为 residue amplifier 选择 5T、两级 Miller 或 folded-cascode OTA。
 - parent 验证失败时，先检查接口、测试平台和预算假设，再检查 child 裕量，最后才更换 child topology 或系统架构。
 - v1 使用分阶段冻结策略，不把所有 child 的 W/L 展开到 parent 做 joint BO。
+
+当前由 `system_decomposition.py` 把系统需求转换为 `system_design.json`：
+记录架构、block graph、接口、预算、child topology 候选、指标推导来源、
+nominal/PVT target、假设和未决需求。只有 `hierarchical_child` 会进一步写入
+`hierarchy.json` 并进入 child BO/PVT；`parent_internal` 保留在 parent topology。
 
 ## Child Target 要求
 
@@ -75,7 +82,8 @@ ADC 总周期不能直接作为运放建立时间，必须扣除采样、非重�
 
 error amplifier 的增益、输入共模、失调、输出摆幅、GBW、负载和功耗应由 bandgap 环路和误差预算派生，而不是直接套用通用运放指标。
 
-当前代码中的 `bandgap_ptat` 已接入 frozen child opamp 流程。ADC 架构、ADC 专用指标预算器和 ADC topologies 尚未实现。
+当前代码中的 `bandgap_ptat` 已接入系统分解层和 frozen child opamp 流程。
+LDO、ADC 架构规则、专用指标预算器和对应 parent topologies 尚未实现。
 
 ## 扩展约定
 

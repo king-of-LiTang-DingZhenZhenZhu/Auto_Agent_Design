@@ -3,13 +3,16 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 
 from models import DesignTarget, NetlistTemplate, format_spice_value, split_width
 from config import Settings
 from pdk_profiles import get_pdk_profile
 from simulator import Simulator
 from topologies import get_topology, get_topology_for_targets, list_topologies
+from topologies.capless_ldo import default_ldo_targets
 
 
 class SpectreTopologyTest(unittest.TestCase):
@@ -46,6 +49,73 @@ class SpectreTopologyTest(unittest.TestCase):
             "bandgap_ptat",
         )
 
+    def test_ldo_hint_selects_capless_ldo_topology(self):
+        self.assertEqual(
+            get_topology_for_targets(DesignTarget(topology_hint="cap-less LDO")),
+            "capless_ldo",
+        )
+
+    def test_capless_ldo_requires_verified_1p8v_io_domain(self):
+        topology = get_topology("capless_ldo")
+
+        self.assertIn("1.8 V IO voltage domain", topology.availability_error())
+        with self.assertRaisesRegex(ValueError, "1.8 V IO voltage domain"):
+            topology.generate_circuit()
+
+    def test_capless_ldo_generates_dedicated_hierarchical_project(self):
+        io_pdk = replace(
+            get_pdk_profile(),
+            vdd=1.8,
+            vdd_min=1.62,
+            vdd_max=1.98,
+            active_voltage_domain="",
+        )
+        with patch(
+            "topologies.capless_ldo.get_pdk_profile_for_params",
+            return_value=io_pdk,
+        ), patch(
+            "topologies.two_stage_ota.get_pdk_profile_for_params",
+            return_value=io_pdk,
+        ), tempfile.TemporaryDirectory() as tmp:
+            topology = get_topology("capless_ldo")
+            circuit = topology.generate_circuit()
+            files = topology.get_circuit_files()
+            project = topology.write_project(
+                Path(tmp) / "ldo",
+                targets=default_ldo_targets(),
+                params={"VOLTAGE_DOMAIN": "io_1p8"},
+            )
+            hierarchy = json.loads(
+                (project / "hierarchy.json").read_text(encoding="utf-8")
+            )
+
+        self.assertRegex(
+            circuit,
+            r"(?m)^subckt capless_ldo \(vin vref vout ibias vss\)",
+        )
+        self.assertIn("Mpass (vout vg vin vin)", circuit)
+        self.assertIn("CffDev (vout vfb) capacitor c=Cff", circuit)
+        self.assertIn("Iloop (vfb vfb_ea) iprobe", circuit)
+        self.assertIn(
+            "XerrorAmp (vfb_ea vref vea ibias vin vss)",
+            circuit,
+        )
+        self.assertIn("subckt two_stage_ota", circuit)
+        self.assertEqual(
+            files.testbench_suffixes,
+            ["loop", "load", "psr", "load_tran"],
+        )
+        self.assertIn("ldoLoopStb stb", files.testbenches[0])
+        self.assertIn("loadSweep dc", files.testbenches[1])
+        self.assertIn("ldoPsrAC ac", files.testbenches[2])
+        self.assertEqual(files.testbenches[2].count("VINsrc (vin 0)"), 1)
+        self.assertIn("loadTran tran", files.testbenches[3])
+        self.assertEqual(hierarchy["blocks"][0]["block_id"], "error_amp")
+        self.assertEqual(
+            hierarchy["blocks"][0]["netlist_param"],
+            "error_amp_netlist",
+        )
+
     def test_all_topologies_generate_native_spectre_projects(self):
         forbidden = [".lib ", ".options ", ".param ", ".subckt ", ".meas "]
         pdk = get_pdk_profile()
@@ -54,6 +124,8 @@ class SpectreTopologyTest(unittest.TestCase):
             root = Path(tmp)
             for meta in list_topologies():
                 topo = get_topology(meta.name)
+                if topo.availability_error():
+                    continue
                 project = topo.write_project(root / meta.name)
                 circuit = (project / f"{meta.name}.cir").read_text(encoding="utf-8")
                 file_names = [path.name for path in project.iterdir()]

@@ -359,6 +359,19 @@ class Simulator:
         if "settling_time" in result.raw_metrics:
             result.settling_time_s = result.raw_metrics["settling_time"]
 
+        for metric in (
+            "vref_v",
+            "tempco_ppm_per_c",
+            "vref_temp_nonlinearity_v",
+            "psrr_db",
+            "line_regulation_v_per_v",
+            "startup_time_s",
+        ):
+            if metric in result.raw_metrics:
+                setattr(result, metric, result.raw_metrics[metric])
+        if "startup_success" in result.raw_metrics:
+            result.startup_success = bool(result.raw_metrics["startup_success"])
+
         # Check if any .meas FAILED
         if re.search(r"FAILED|failed\s+to\s+find", log_content):
             failed_meas = re.findall(

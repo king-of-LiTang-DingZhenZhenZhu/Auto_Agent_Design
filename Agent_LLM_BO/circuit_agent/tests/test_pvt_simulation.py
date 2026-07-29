@@ -104,6 +104,23 @@ tempOption options temp=27
         self.assertIn("parameters VDD=1.1 VCM=0.3 CL=1p", patched)
         self.assertIn("tempOption options temp=125", patched)
 
+    def test_patch_testbench_replaces_ldo_vin_without_adding_vdd(self):
+        corner = PVTCorner("ss", "top_ss", "vmin", 1.62, -40)
+        tb = """
+include "circuit.cir"
+parameters VIN=1.8 VREF=0.45 CL_NOLOAD=1p
+tempOption options temp=27
+"""
+
+        patched = patch_testbench_for_corner(tb, corner)
+
+        self.assertIn(
+            "parameters VIN=1.62 VREF=0.45 CL_NOLOAD=1p",
+            patched,
+        )
+        self.assertNotIn("parameters VDD=", patched)
+        self.assertIn("tempOption options temp=-40", patched)
+
     def test_summarize_pvt_reports_failures_and_worst_metrics(self):
         rows = [
             {

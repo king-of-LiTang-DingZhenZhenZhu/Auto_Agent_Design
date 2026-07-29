@@ -1,1162 +1,493 @@
-# 电路设计项目文件流说明
+# 项目流程与文件流
 
-本文说明从用户提出设计要求开始，项目如何生成电路网表和仿真网表，`main.py` 如何读取并渲染这些文件，Spectre 实际仿真使用哪些文件，以及 BO 优化结束后如何生成最终网表和结果文件。
+本文是当前项目的总流程说明，覆盖叶子电路、系统级电路、BO、Review、
+PVT、层级工件和 Virtuoso 导出。操作约束分别见 `AGENTS.md` 和
+`CLAUDE.md`；具体模块细节见文末链接。
 
-本文描述的是当前代码的实际行为。涉及的主要模块如下：
-
-| 模块 | 作用 |
-|------|------|
-| `topologies/*.py` | 根据选定拓扑生成初始 DUT 网表、testbench 和需求文件 |
-| `topologies/base.py` | 提供 `write_project()`，统一写出项目输入文件 |
-| `main.py` | 读取输入文件，建立参数空间，启动初始仿真和 BO 优化，保存最终结果 |
-| `netlist.py` | 解析参数声明并把参数模板渲染成实际器件尺寸 |
-| `gmid_lookup.py` | 在 gm/Id 模式下把 gm/Id 设计变量换算成实际 W/L |
-| `simulator.py` | 为每轮仿真建立运行目录、写入实际网表、调用 Spectre 并组织结果解析 |
-| `psf_results.py` | 读取 PSF ASCII 数据并计算 AC、DC、TRAN 指标 |
-| `optimizer.py` | 执行 BO 循环，提出参数、运行仿真、计算 reward 并记录历史 |
-
----
-
-## 1. 三类网表文件
-
-理解整个流程时，首先要区分三类文件。
-
-### 1.1 项目输入模板
-
-由 `topologies/` 中的 Python 拓扑脚本生成，例如：
+## 1. 分层架构
 
 ```text
-folded_cascode/
-├── folded_cascode.cir
-├── tb_folded_cascode_ac.scs
-├── tb_folded_cascode_sr.scs
-├── tb_folded_cascode_st.scs
-└── requirements.json
+设计决策层
+  system_decomposition.py
+  决定系统架构、block graph、预算、child targets 和 child topology
+
+执行编排层
+  hierarchical_flow.py / design_flow_graph.py
+  前者组织 child-parent 依赖，后者统一执行 Audit-Review gate-PVT-Export
+
+电路优化层
+  main.py + optimizer.py + simulator.py
+  在固定 topology 内执行 gm/Id sizing、BO、Spectre 和结果解析
+
+硬约束生成层
+  topologies/
+  程序化生成 DUT 和 testbench，不让 Agent 直接手写最终网表
 ```
 
-这些文件是后续所有仿真的源文件。
+`system_decomposition.py` 与 `hierarchical_flow.py` 不重复：
 
-- `folded_cascode.cir` 是 DUT 子电路模板。
-- `tb_folded_cascode_ac.scs` 是 AC 仿真模板。
-- `tb_folded_cascode_sr.scs` 是大信号压摆率仿真模板。
-- `tb_folded_cascode_st.scs` 是 0.1% 建立时间仿真模板。
-- `requirements.json` 保存用户要求和拓扑信息。
+- 前者回答“系统怎么拆、指标怎么分、选择什么 child”。
+- 后者回答“已确定的 child 以什么顺序完成 BO/PVT、冻结和嵌入”。
+- `SystemBlockSpec.to_executable_child()` 把设计决策转换为
+  `ExecutableChildSpec` 执行合约。
 
-DUT 网表中的 W/L 通常仍然使用参数名，例如：
-
-```spectre
-parameters Wdiff=10u Ldiff=120n
-
-Mdiff1 (nout vip ntail vdd) pch_lvt_mac w=Wdiff l=Ldiff nf=1
-Mdiff2 (nfold vin ntail vdd) pch_lvt_mac w=Wdiff l=Ldiff nf=1
-```
-
-因此它是一个可渲染模板，不是某一轮 BO 最终送入 Spectre 的固定尺寸网表。
-
-testbench 中包含激励、负载、反馈网络、分析语句等。当前 AC testbench 保留拓扑脚本原本定义的共模源、单端 AC 激励和反馈网络，例如：
-
-```spectre
-VCM (vcm 0) vsource dc=VCM
-VIPsrc (vinp vcm) vsource dc=0 type=sine mag=1
-VINsrc (vinn 0) vsource dc=VCM
-Rfb (vout vinn) resistor r=1G
-Cfb (vinn 0) capacitor c=1
-```
-
-### 1.2 单轮实际仿真网表
-
-每次初始仿真或 BO 迭代都会在 `workspace/run_xxx/` 下生成一组实际文件：
+## 2. 总入口判断
 
 ```text
-workspace/
-└── run_003/
-    ├── circuit.cir
-    ├── tb.scs
-    ├── tb_1.scs
-    ├── sim.log
-    └── raw/
+用户需求
+  |
+  +-- 叶子模块，例如 OTA/运放
+  |     -> 选择 topology
+  |     -> write_project()
+  |     -> main.py
+  |
+  +-- 系统级电路，例如 Bandgap/LDO/ADC
+        -> system_decomposition.py
+        -> system_design.json
+        -> parent project + hierarchy.json
+        -> hierarchical_flow.py
 ```
 
-其中：
+当前已经接入系统分解层的系统是：
 
-- `circuit.cir` 已经写入该轮的实际 W/L/nf。
-- `tb.scs` 是该轮调用的主 testbench。
-- `tb_1.scs` 等是额外 testbench。
-- `sim.log` 是 Spectre 标准输出和错误输出。
-- `raw/` 是 Spectre PSF 原始数据目录。
+- `bandgap`：Bandgap core + frozen `two_stage_ota`；
+- `ldo`：PMOS-pass cap-less LDO + frozen `two_stage_ota`。
 
-Spectre 实际运行的是这里的 `tb.scs`，不是项目目录中的原始 testbench。
+ADC 尚未注册系统规则或 parent topology。
 
-### 1.3 BO 最终输出网表
+## 3. 叶子模块流程
 
-优化结束后，`main.py` 会把选择出的最佳参数重新渲染，并写入：
+### 3.1 需求与指标
 
-```text
-outputs/<project_name>/
-├── netlist/
-│   └── circuit.cir
-├── simulation/
-│   ├── tb_circuit.scs
-│   └── tb_circuit_1.scs
-├── data/
-│   ├── sim.log
-│   └── raw/
-├── results.json
-├── summary_report.txt
-├── optimization_log.json
-└── virtuoso/
-    ├── import_schematic.il
-    └── export_report.json
-```
+Agent 将用户要求转换为 SI 单位的 `DesignTarget` 和 `MetricGoal`：
 
-`outputs/<project_name>/netlist/circuit.cir` 是供查看、复现和导入 Virtuoso 使用的最终 DUT 网表。
+- 硬约束：`min`、`max`、`range`、`target`。
+- 可行域软目标：`minimize`、`maximize`、`target`。
+- BO 使用 feasibility-first：先满足全部硬约束，再比较软目标。
+- 例如功耗默认同时是“不得超过上限”和“在可行域内尽量降低”。
 
----
+### 3.2 选择 topology
 
-## 2. 总体文件流
+Agent 结合：
 
-```text
-用户自然语言要求
-        |
-        v
-Codex 解析指标并选择 topology
-        |
-        v
-topologies/<name>.py
-        |
-        | topo.write_project(...)
-        v
-项目输入目录
-├── <name>.cir
-├── tb_<name>_ac.scs
-├── tb_<name>_sr.scs
-├── tb_<name>_st.scs
-└── requirements.json
-        |
-        | python main.py --netlist ... --testbench ...
-        v
-main.py 读取输入文件和参数空间
-        |
-        +--> 普通模式：BO 直接优化 W/L 等物理参数
-        |
-        +--> gm/Id 模式：BO 优化 gm/Id、支路电流、L 等设计变量
-                         GmidSizer 再换算成实际 W/L
-        |
-        v
-NetlistTemplate.render(physical_params)
-        |
-        v
-workspace/run_xxx/
-├── circuit.cir
-└── tb.scs
-        |
-        | spectre tb.scs +aps -raw raw
-        v
-sim.log + raw/ + 仿真指标
-        |
-        | optimizer 计算 reward，向 BO 回传结果
-        v
-下一组参数，重复渲染和仿真
-        |
-        v
-选择最佳 iteration
-        |
-        v
-outputs/<project_name>/
-├── netlist/circuit.cir
-├── simulation/*.scs
-├── results.json
-└── optimization_log.json
-```
+- topology registry 的能力范围；
+- 对应电路知识库；
+- PDK profile、电压域和器件类型；
+- 复杂度最低优先原则；
 
----
+选择固定 topology。BO 默认不会在运行中自动升级 topology。
 
-## 3. 从用户要求生成初始项目
-
-### 3.1 解析用户要求
-
-用户可能输入：
-
-```text
-设计一个 folded cascode，增益大于 65 dB，
-GBW 大于 300 MHz，相位裕度大于 60 度，功耗小于 2 mW。
-```
-
-需要提取为结构化指标：
+### 3.3 生成项目
 
 ```python
-DesignTarget(
-    gain_db=65,
-    bandwidth_hz=300e6,
-    phase_margin_deg=60,
-    power_w=2e-3,
-)
-```
-
-随后根据知识库和能力范围选择拓扑，例如 `folded_cascode`。
-
-### 3.2 调用拓扑库
-
-典型调用方式：
-
-```python
-from topologies import get_topology
 from models import DesignTarget
+from topologies import get_topology
 
-topo = get_topology("folded_cascode")
 targets = DesignTarget(
-    gain_db=65,
-    bandwidth_hz=300e6,
+    gain_db=60,
+    bandwidth_hz=100e6,
     phase_margin_deg=60,
-    power_w=2e-3,
+    power_w=1e-3,
 )
-
-topo.write_project(
-    "folded_cascode",
+get_topology("two_stage_ota").write_project(
+    "two_stage_project",
     targets=targets,
-    original_requirement="设计一个 folded cascode ...",
+    original_requirement="two-stage OTA example",
 )
 ```
 
-调用链为：
+典型输出：
 
 ```text
-get_topology("folded_cascode")
-    -> FoldedCascodeTopology
-    -> BaseTopology.write_project()
-    -> topology.get_circuit_files()
-    -> 写出 DUT、testbench 和 requirements.json
+two_stage_project/
+├── two_stage_ota.cir
+├── tb_two_stage_ota_ac.scs
+├── tb_two_stage_ota_sr.scs
+├── tb_two_stage_ota_st.scs
+└── requirements.json
 ```
 
-`write_project()` 只负责生成项目输入模板，不会在此时运行 Spectre，也不会运行 BO。
+运放使用 AC，并按需求追加 SR/ST testbench。Bandgap 使用 startup、PSRR、
+temperature 和 line-regulation。Cap-less LDO 使用 zero-load STB、DC load
+regulation、near-DC PSR 和 10 ns load transient 四套专用 testbench。
 
-### 3.3 DUT 网表如何生成
-
-每个拓扑脚本负责定义：
-
-- 子电路端口。
-- MOS、R、C 等器件及连接关系。
-- 可调参数的默认值。
-- 器件模型名。
-- W/L 的拓扑级硬约束和默认范围。
-- gm/Id 分组信息（如果该拓扑支持）。
-
-生成的 `.cir` 使用 Spectre syntax，典型结构为：
-
-```spectre
-simulator lang=spectre
-
-parameters Wdiff=10u Ldiff=120n
-parameters Wtail=8u Ltail=200n
-
-subckt folded_cascode vip vin vout ibias vdd vss
-Mdiff1 (...) pch_lvt_mac w=Wdiff l=Ldiff nf=1
-Mdiff2 (...) pch_lvt_mac w=Wdiff l=Ldiff nf=1
-...
-ends folded_cascode
-```
-
-这里的 `Wdiff`、`Ldiff` 等参数同时承担两项作用：
-
-1. 给项目提供一组初始尺寸。
-2. 让 `ParamSpace.from_netlist()` 自动发现可优化参数。
-
-### 3.4 testbench 如何生成
-
-拓扑类还会生成一到多个 `.scs`：
-
-```text
-tb_folded_cascode_ac.scs
-tb_folded_cascode_sr.scs
-tb_folded_cascode_st.scs
-```
-
-testbench 通常包含：
-
-- `include "circuit.cir"`。
-- DUT 实例化。
-- 电源和输入源。
-- 负载。
-- 反馈或测试网络。
-- `dc`、`ac`、`tran` 等分析声明。
-- Spectre 保存选项。
-
-当前 testbench 在分析语句前加入：
-
-```spectre
-outOpts options rawfmt=psfascii
-```
-
-因此 Spectre 的 `raw/` 结果使用 PSF ASCII，而不是默认的 PSF binary。
-Python 使用 `psf_utils` 直接读取这些文件，不需要为每轮仿真启动
-Virtuoso 或 OCEAN。
-
-testbench 中的固定测试条件，例如 VDD、VCM、负载电容和扫频范围，是在项目生成时根据拓扑默认值或用户要求写入的。
-
-当前渲染流程会把同一轮参数应用到 DUT 和 testbench 的 `parameters`
-声明。只有进入 BO 参数空间的变量会变化，因此负载、电源和分析设置
-在一次优化任务中通常保持不变。
-
-5T OTA 的 `VBIAS` 是 testbench 所有的优化参数：DUT 只接收 `vbias`
-端口，不在 `.cir` 中重复声明 `VBIAS`。每轮 BO 会同时渲染所有
-testbench 的：
-
-```spectre
-parameters VBIAS=...
-VBIASsrc (vbias 0) vsource type=dc dc=VBIAS
-```
-
-因此 `VBIAS` 会随 trial 改变，而 `VDD`、`VCM`、`CL` 和输入阶跃幅度
-仍保持项目生成时的固定测试条件。
-
-### 3.5 requirements.json 的作用
-
-当 `write_project()` 收到 `targets` 时，会生成 `requirements.json`，其中包括：
-
-```json
-{
-  "original_requirement": "用户原始要求",
-  "targets": {
-    "gain_db": 65,
-    "bandwidth_hz": 300000000,
-    "phase_margin_deg": 60,
-    "power_w": 0.002
-  },
-  "topology_name": "folded_cascode",
-  "topology_display_name": "Folded Cascode OTA"
-}
-```
-
-`topology_name` 不只是说明信息。当前 `main.py` 会使用它判断是否能为该拓扑启用 gm/Id sizing。
-
----
-
-## 4. main.py 如何读取项目
-
-典型命令：
+### 3.4 运行 BO
 
 ```bash
+cd Agent_LLM_BO/circuit_agent
 conda activate Auto_Agent_Design
 
-cd Agent_LLM_BO/circuit_agent
-
 python main.py \
-  --netlist folded_cascode/folded_cascode.cir \
-  --testbench folded_cascode/tb_folded_cascode_ac.scs \
-              folded_cascode/tb_folded_cascode_sr.scs \
-              folded_cascode/tb_folded_cascode_st.scs \
-  --requirements folded_cascode/requirements.json
+  --netlist two_stage_project/two_stage_ota.cir \
+  --testbench two_stage_project/tb_two_stage_ota_ac.scs \
+              two_stage_project/tb_two_stage_ota_sr.scs \
+              two_stage_project/tb_two_stage_ota_st.scs \
+  --requirements two_stage_project/requirements.json
 ```
 
-### 4.1 读取输入文件
+默认协作中，真实 Spectre 命令由用户在 Cadence 环境执行；Codex 主要运行
+单元测试和 `--dry-run`。
 
-`main.py` 会读取：
+## 4. 单次 BO 内部流程
 
 ```text
---netlist
-    -> DUT 模板文本
-
---testbench
-    -> 一个或多个 testbench 模板文本
-
---requirements
-    -> 指标、原始要求和 topology_name
-
---params（可选）
-    -> 手工指定的参数空间
+requirements.json + DUT/testbench templates
+  -> 构造 DesignTarget / MetricGoal
+  -> 读取 topology 参数空间
+  -> 可选 gm/Id sizing spec
+  -> 初始参数仿真
+  -> Optuna 提出 trial
+  -> gm/Id/电流/L 映射为物理 W/L/nf/m
+  -> 渲染 workspace/run_xxx/
+  -> Spectre
+  -> PSF 解析
+  -> 指标 + DC OP 状态
+  -> feasibility-first reward
+  -> 下一 trial
+  -> 保存最佳结果
 ```
 
-读取后会建立 `CircuitFiles`，在内存中保存：
-
-- DUT 文件名和文本。
-- 主 testbench 文件名和文本。
-- 额外 testbench 的文件名和文本。
-
-### 4.2 参数空间的来源
-
-参数空间有两条来源。
-
-#### 路径 A：显式 params.json
-
-如果传入 `--params`：
+### 4.1 每轮工作目录
 
 ```text
-params.json
-    -> ParamSpace.from_dict()
-```
-
-此时以文件中定义的上下界、步长和参数类型为准。
-
-#### 路径 B：从 DUT 自动提取
-
-如果没有传入 `--params`：
-
-```text
-<topology>.cir
-    -> ParamSpace.from_netlist()
-```
-
-解析器扫描 Spectre `parameters` 声明，并根据参数名判断类型：
-
-- `W...`：晶体管宽度。
-- `L...`：晶体管长度。
-- 其他参数：按通用连续参数处理。
-
-然后为它们分配搜索边界和量化步长。
-
-### 4.3 普通 W/L 模式与 gm/Id 模式
-
-#### 普通模式
-
-BO 的变量直接是物理参数：
-
-```text
-Wdiff, Ldiff, Wtail, Ltail, ...
-```
-
-BO 提出的参数可以直接交给 `NetlistTemplate.render()`。
-
-#### gm/Id 模式
-
-如果 `requirements.json` 中包含有效的 `topology_name`，并且该拓扑提供 `get_gmid_spec()`，`main.py` 会尝试创建：
-
-```text
-gm/Id lookup table
-    + topology gm/Id spec
-    -> GmidSizer
-```
-
-此时 BO 搜索的变量会变成类似：
-
-```text
-gmid_input
-gmid_load
-gmid_bias
-id_input
-id_bias
-L_input
-L_load
-...
-```
-
-对于 5T OTA，`VBIAS` 不再是 gm/Id 模式中的独立 BO 参数。每轮 sizing
-使用尾 PMOS 的 `gm_id_tail_pmos`、`L_tail_pmos`、`Vds=0.2 V` 和
-`Vbs=0 V` 查询 lookup table 的 VGS，并计算：
-
-```text
-VBIAS = VDD - abs(VGS_lookup)
-```
-
-这样目标尾电流、尾管尺寸和偏置电压来自同一个 lookup 工作点。
-
-当用户同时提供 GBW 和负载电容 CL 时，5T OTA 还会用单极点近似限制
-尾电流搜索下界。GBW 使用 Hz，因此：
-
-```text
-gm_required = 2 * pi * GBW * CL
-I_tail_min  = gm_required / ((gm/Id)_max * 0.5)
-```
-
-其中 `0.5` 表示差分对每支管约承载一半尾电流。该约束只抬高
-`I_tail` 下界，不改变上界；如果推导下界超过配置上界，gm/Id sizing
-会明确报告该 GBW/CL 组合超出当前 5T 参数空间。
-
-两级 Miller OTA 使用 `Cc_est = 0.5 * CL` 做初步估算：
-
-```text
-gm1_required = 2 * pi * GBW * Cc_est
-x            = gm1_required / (gm/Id_input)_max
-I_tail_min   = 2x
-I_cs_min     = 4x
-```
-
-其中 `x` 是第一级差分对单管电流；第二级最小电流按第一级差分对总
-电流的两倍估算。
-
-Folded-cascode 二级 OTA 使用相同的 `Cc_est` 和 `gm1_required`，并按：
-
-```text
-x          = gm1_required / (gm/Id_input)_max
-I_tail_min = 2x
-I_fold_min = 2x  // 每侧 folded branch
-I_cs_min   = 4x
-I_total_min = I_tail + 2*I_fold + I_cs = 10x
-```
-
-这些关系是用于缩小 BO 搜索空间的电流预算启发式，不是精确的小信号
-传递函数；最终 GBW、功耗和支路工作点仍以 Spectre 结果为准。
-
-在每轮仿真前执行：
-
-```text
-BO gm/Id 参数
-    -> GmidSizer.size()
-    -> 实际 W/L 参数
-    -> NetlistTemplate.render()
-```
-
-因此 gm/Id 参数不会直接写入 MOS 网表。Spectre 最终看到的仍然是实际 `w`、`l` 和 `nf`。
-
----
-
-## 5. main.py 建立工作区模板
-
-开始仿真前，`main.py` 会把原始输入文件复制到工作区：
-
-```text
-workspace/
-├── circuit_template.cir
-├── tb_template.scs
-└── tb_template_1.scs
-```
-
-这些文件主要用于：
-
-- 保留本次运行使用的原始模板快照。
-- 方便排查本次优化究竟从什么输入开始。
-- 避免直接修改用户生成的项目输入目录。
-
-`main.py` 后续渲染的是内存中的 `NetlistTemplate`。项目目录下原始 `.cir` 和 `.scs` 不会随着每轮 BO 被覆盖。
-
----
-
-## 6. DUT 网表如何被渲染
-
-### 6.1 渲染入口
-
-核心调用关系为：
-
-```text
-main.py / optimizer.py
-    -> Simulator.render_circuit_and_testbench()
-    -> NetlistTemplate.render()
-    -> workspace/run_xxx/circuit.cir
-```
-
-输入包括：
-
-- 原始 DUT 模板。
-- 当前轮物理参数。
-- `ParamSpace` 中的范围、finger 和网格信息。
-
-### 6.2 参数替换
-
-假设模板包含：
-
-```spectre
-parameters Wtail=8u Ltail=200n
-Mtail (...) nch_lvt_mac w=Wtail l=Ltail nf=1
-```
-
-当前轮物理参数为：
-
-```python
-{
-    "Wtail": 12e-6,
-    "Ltail": 300e-9,
-}
-```
-
-渲染器会：
-
-1. 检查参数是否在允许范围内。
-2. 把 W/L 量化到工艺网格。
-3. 根据总宽度确定 finger 数。
-4. 把总 W 转换成单 finger W。
-5. 更新 `parameters` 声明。
-6. 把 MOS 行中的符号参数展开成实际数值。
-7. 更新 MOS 的 `nf`。
-
-例如总宽度 `Wtail=12u` 被拆为 4 个 finger 时，实际文件可能成为：
-
-```spectre
-parameters Wtail=3u Ltail=300n
-Mtail (...) nch_lvt_mac w=3u l=300n nf=4
-```
-
-这里需要注意：
-
-- BO 或 gm/Id sizing 给出的 W 通常表示总有效宽度。
-- 写入单个 MOS `w` 的值是每个 finger 的宽度。
-- 总有效宽度约等于 `w * nf`。
-- 最终网表中的 `w` 不能脱离 `nf` 单独解释。
-
-### 6.3 testbench 的处理
-
-`Simulator.render_circuit_and_testbench()` 会把 testbench 文本写入当前运行目录：
-
-```text
-项目输入 tb_folded_cascode_ac.scs
-    -> workspace/run_003/tb.scs
-```
-
-testbench 本身当前不经过 `NetlistTemplate.render()` 的参数替换。
-
-testbench 通过相对路径包含同一运行目录中的 DUT：
-
-```spectre
-include "circuit.cir"
-```
-
-所以当 Spectre 在 `workspace/run_003/` 中执行 `tb.scs` 时，会自然加载该轮对应的 `workspace/run_003/circuit.cir`。
-
----
-
-## 7. 初始仿真
-
-在正式 BO 之前，`main.py` 会进行一次初始仿真。
-
-### 7.1 初始参数
-
-普通模式：
-
-```text
-ParamSpace.get_initial_params()
-    -> 初始物理 W/L
-```
-
-gm/Id 模式：
-
-```text
-gm/Id 参数默认值
-    -> GmidSizer.size()
-    -> 初始物理 W/L
-```
-
-### 7.2 初始运行目录
-
-初始仿真写入：
-
-```text
-workspace/run_000/
+workspace/run_003/
 ├── circuit.cir
 ├── tb.scs
 ├── tb_1.scs
 ├── sim.log
-└── raw/
+├── raw/
+└── diagnostics/
+    ├── dc_operating_points.csv
+    ├── ac_response.csv
+    └── diagnostics_summary.txt
 ```
 
-初始仿真的目的包括：
+Spectre 在该 run 目录执行 testbench；实际入口是本目录内的 `tb.scs`，
+它包含同目录的 `circuit.cir`。
 
-- 验证当前模板能否运行。
-- 得到一组基准指标。
-- 在 BO 开始前尽早暴露模型路径、语法或收敛问题。
+### 4.2 gm/Id 模式
 
-当前实现中，BO 的第 0 次迭代也使用 `run_000`。因此 BO 开始后，初始仿真的 `run_000` 文件可能被第 0 次 BO 仿真覆盖。详见本文末尾的“当前实现注意事项”。
+BO 搜索 gm/Id、支路电流、L、整数镜像倍率和少量 pass-through 参数；
+`GmidSizer` 再通过 PDK lookup table 得到实际 W/L。最终 Spectre 网表只
+包含物理尺寸，不包含 gm/Id 变量。
 
----
+### 4.3 DC 工作点约束
 
-## 8. Spectre 实际调用过程
+每轮解析 critical MOS 的 `|vds|-|vdsat|`：
 
-对主 testbench，`Simulator.run_spectre()` 会在当前 run 目录中执行类似：
+- critical MOS 在线性区会进入 reward 强惩罚；
+- critical MOS 仍在线性区时，即使性能指标达标也不会成功早停；
+- noncritical/bias MOS 主要记录 warning。
+
+### 4.4 早停
+
+- 没有软目标：硬约束全部达标、仿真收敛且 critical OP 合格时可早停。
+- 存在软目标：达到可行域后继续优化到 `max_iter`，再在可行结果中按
+  软目标选择。
+
+## 5. BO 输出
+
+```text
+outputs/<project>/
+├── initial_default/
+├── initial_gmid/
+├── netlist/circuit.cir
+├── simulation/tb_circuit*.scs
+├── data/
+│   ├── sim.log
+│   └── raw/
+├── diagnostics/
+├── results.json
+├── summary_report.txt
+├── optimization_log.json
+├── optimization_metrics.csv
+├── parameter_analysis/
+├── agent_review/
+├── design_audit/
+├── pvt/
+└── virtuoso/
+```
+
+优先读取：
+
+```text
+results.json
+  -> optimization_log.json
+  -> diagnostics/diagnostics_summary.txt
+  -> workspace/run_xxx/sim.log
+  -> raw/
+```
+
+`results.json` 的关键字段：
+
+- `all_targets_met`
+- `target_status`
+- `gap`
+- `metrics`
+- `params`
+- `metric_goals`
+- `operating_point_status`
+
+## 6. BO 后 Review
+
+`main.py` 不自动运行 Review 或 PVT。
+
+### 6.1 BO 达标：success_audit
+
+```text
+BO nominal 达标
+  -> Design Audit
+  -> 检查 critical OP、尺寸、倍乘数、支路电流、参数贴边和过度设计
+  |
+  +-- 无 blocker、无明确修改证据 -> 接受并进入 PVT
+  +-- 有 blocker 或明确优化证据 -> Agent Review candidate
+```
+
+### 6.2 BO 未达标：failure_repair
+
+```text
+BO nominal 未达标
+  -> 分析主导 gap
+  -> 检查 DC OP
+  -> 读取 topology/domain 知识
+  -> 对照参数影响和一阶关系
+  -> modify / restart_bo / change_topology
+```
+
+Review 按 domain 分流：
+
+- 运放关注 Gain/GBW/PM/SR/settling/power。
+- Bandgap 关注 startup/Vref/tempco/曲率/PSRR/line regulation/power。
+
+Agent 只填写结构化 `patch_plan.json`；Python 校验参数、clamp、渲染和
+仿真 candidate。`AGENT_REVIEW.md` 是人类操作说明，不作为 Agent evidence。
+
+## 7. PVT 与导出
+
+推荐门槛：
+
+```text
+BO best 或 Review candidate nominal 达标
+  -> Design Audit 无 blocker
+  -> PVT
+  -> Virtuoso 导出
+```
+
+PVT 默认矩阵：
+
+```text
+tt/ss/ff × VDD(min/typ/max) × temp(-40/27/125)
+```
 
 ```bash
-spectre tb.scs +aps -raw raw
+python pvt_simulation.py \
+  --results outputs/<project>/results.json \
+  --simulate
 ```
 
-同时把输出写入：
+PVT 通过后：
 
-```text
-sim.log
+```bash
+python export_to_virtuoso.py \
+  --results outputs/<project>/results.json \
+  --lib BO_Designs \
+  --tech-lib <tech_lib>
 ```
 
-关键点如下：
+默认只生成 SKILL 和报告；只有用户显式要求时才使用 `--run-virtuoso`。
 
-1. Spectre 的入口是 `tb.scs`。
-2. `tb.scs` 通过 `include "circuit.cir"` 加载同一轮 DUT。
-3. `circuit.cir` 已经包含这一轮实际 W/L/nf。
-4. PSF 数据写入该轮的 `raw/`。
-5. 日志写入该轮的 `sim.log`。
-6. `psf_results.py` 从 `raw/` 读取当前 testbench 的 analysis 数据。
+`design_flow_graph.py` 可以读取 BO/Review/Audit/PVT 状态并给出下一步，
+但不替代 `main.py`，也不会自动填写 Agent patch plan。
 
-如果存在多个 testbench，优化器会依次运行主 testbench和额外 testbench，再合并可用指标。
+## 8. 系统级分解流程
 
----
-
-## 9. BO 每一轮发生什么
-
-`HybridOptimizer` 的单轮流程可以概括为：
-
-```text
-Optuna study.ask()
-        |
-        v
-得到一组搜索变量
-        |
-        +-- 普通模式：已经是物理 W/L
-        |
-        +-- gm/Id 模式：GmidSizer -> 物理 W/L
-        |
-        v
-可选的 LLM 参数物理可行性检查
-        |
-        v
-渲染 workspace/run_<iteration>/circuit.cir
-        |
-        v
-写入该轮 tb.scs
-        |
-        v
-运行 Spectre
-        |
-        v
-从 PSF ASCII 计算 gain / GBW / PM / power 等指标
-        |
-        v
-根据目标计算 reward
-        |
-        v
-study.tell(trial, reward)
-        |
-        v
-写入 IterationRecord
-```
-
-当前默认关闭 stagnation 自动升级拓扑：
-
-```text
-enable_topology_escalation = False
-```
-
-因此一次 BO 任务始终使用启动时选定的 topology，直到全部指标达标或
-达到最大迭代次数。`stagnation_window` 检测和 topology escalation
-路径仍保留在代码中，但只有显式开启该配置后才会执行。
-
-### 9.1 每轮目录
-
-例如：
-
-```text
-workspace/
-├── run_000/
-├── run_001/
-├── run_002/
-└── run_003/
-```
-
-每个目录都应当能够反映该轮实际送入 Spectre 的 DUT 和 testbench。
-
-### 9.2 指标如何从 raw 数据得到
-
-AC testbench 保存 `vout`，且当前 AC 输入源幅度为 1。Python 从
-`raw/ac1.ac` 读取频率轴和复数输出波形，并计算：
-
-```text
-gain_db(f) = 20 * log10(abs(vout(f)))
-gain_dc    = 最低仿真频点的 gain_db
-gbw_hz     = gain_db 第一次由正值穿过 0 dB 的频率
-PM         = 180 + UGF 处的输出相位
-```
-
-DC analysis 保存 `VDDsrc:p`。Python 从 `raw/op1.dc` 读取电源功率并取
-绝对值，得到 `power_w`。
-
-Transient testbench 保存 `vinp` 和 `vout`。Python 从 `raw/tran1.tran`
-读取时间、输入和输出波形，用输入的 50% 交越划分上升/下降响应窗口，
-并只在输出的 10%-90% 电平区间计算：
-
-```text
-SR+ = max(dVout/dt)
-SR- = abs(min(dVout/dt))
-SR  = min(SR+, SR-)
-```
-
-BO 使用较差方向的 `SR` 判断是否达标，同时在结果中保留独立的
-`slew_rate_positive_v_per_s` 和 `slew_rate_negative_v_per_s`。
-
-建立时间 testbench 使用 10 mV 小信号阶跃，analysis 名为 `stTran`。
-Python 用输入的 50% 交越作为响应起点，以每个响应窗口最后 10% 波形
-的中位数作为稳态输出，并采用统一的 0.1% 误差带：
-
-```text
-error_band = 0.001 * input_step
-```
-
-输出最后一次离开误差带之后的第一个采样点定义为建立完成。上升沿和
-下降沿分别计算，`settling_time_s` 保存二者较大值，BO 按
-`settling_time_s <= target` 判断是否达标。
-
-当前结果读取顺序为：
-
-```text
-PSF ASCII raw/
-    -> 成功：直接形成 SimResult
-    -> 失败或 psf_utils 不可用：退回 sim.log / *.measure 文本解析
-```
-
-### 9.3 仿真失败时
-
-如果某轮 Spectre 出错或没有解析到有效结果：
-
-- 该轮会记录失败状态和错误信息。
-- optimizer 会给该 trial 一个失败或惩罚 reward。
-- BO 使用其他成功和失败样本继续建立搜索模型。
-- 后续 iteration 仍会提出新的参数。
-
-因此单次仿真失败通常不会终止整个优化，但大量连续失败会显著降低 BO 的有效信息量。
-
-### 9.4 优化历史
-
-每轮记录会保存到工作区历史文件，并最终复制为：
-
-```text
-outputs/<project_name>/optimization_log.json
-```
-
-普通模式下，一轮记录的 `params` 就是实际物理参数。
-
-gm/Id 模式下：
-
-- `params` 保存 BO 使用的 gm/Id 搜索变量。
-- `physical_params` 保存该轮实际渲染网表使用的 W/L。
-
-这两个字段在 gm/Id 模式下不能混用。
-
----
-
-## 10. 如何选出 BO 最佳结果
-
-optimizer 会根据每轮 reward 和目标完成情况选择最佳记录。
-
-最佳记录通常包含：
-
-```text
-iteration
-params
-physical_params（gm/Id 模式）
-metrics
-reward
-success
-error
-```
-
-指标可能包括：
-
-```text
-gain_db
-bandwidth_hz
-phase_margin_deg
-power_w
-```
-
-`main.py` 使用最佳记录生成：
-
-- 最终网表。
-- 结构化结果。
-- 人类可读报告。
-- 完整优化历史。
-- Virtuoso 导入脚本。
-
----
-
-## 11. BO 结束后的最终文件
-
-最终保存逻辑位于 `main.py` 的 `_save_final_output()`。
-
-### 11.1 最终 DUT
-
-```text
-outputs/<project_name>/netlist/circuit.cir
-```
-
-该文件不是简单复制某个 `workspace/run_xxx/circuit.cir`，而是：
-
-```text
-原始 NetlistTemplate
-    + 最佳参数
-    -> 再次调用 render()
-    -> outputs/.../netlist/circuit.cir
-```
-
-理想情况下，它应与最佳 iteration 的实际 DUT 尺寸一致。
-
-### 11.2 最终 testbench
-
-```text
-outputs/<project_name>/simulation/tb_circuit.scs
-outputs/<project_name>/simulation/tb_circuit_1.scs
-```
-
-这些文件由最初读取的 `CircuitFiles` testbench 文本写出。当前实现不是直接复制最佳 `run_xxx/` 中的 testbench。
-
-由于 testbench 当前不会随 BO 参数变化，所以正常情况下二者内容应相同。
-
-### 11.3 最佳仿真数据
-
-```text
-outputs/<project_name>/data/sim.log
-outputs/<project_name>/data/raw/
-```
-
-保存逻辑会根据历史记录中的最佳 iteration，尝试从对应的：
-
-```text
-workspace/run_<best_iteration>/
-```
-
-复制日志和 PSF 数据。
-
-这些文件用于：
-
-- 排查最佳仿真的收敛情况。
-- 查看 Spectre 输出。
-- 后续从 PSF 中提取曲线。
-- 复核最终结果。
-
-### 11.4 results.json
-
-`results.json` 是程序和其他工具读取的主要输出，内容包括：
+### 8.1 输入
 
 ```json
 {
-  "converged": true,
-  "all_targets_met": true,
-  "metrics": {
-    "gain_db": 67.2,
-    "bandwidth_hz": 340000000,
-    "phase_margin_deg": 63.1,
-    "power_w": 0.0018
-  },
-  "params": {},
-  "target_status": {},
-  "gap": {},
-  "netlist_file": "outputs/.../netlist/circuit.cir",
-  "project_name": "..."
+  "system_type": "bandgap",
+  "original_requirement": "1.2 V bandgap reference",
+  "targets": {
+    "vref_v": 1.2,
+    "tempco_ppm_per_c": 20,
+    "psrr_db": 50,
+    "line_regulation_v_per_v": 0.001,
+    "startup_time_s": 0.000005,
+    "power_w": 0.0002
+  }
 }
 ```
 
-其中：
+### 8.2 设计决策
 
-- `metrics`：最佳仿真的指标。
-- `params`：保存时传入的最佳参数。
-- `target_status`：每项指标是否达标。
-- `gap`：指标与目标的差值。
-- `netlist_file`：最终 DUT 路径。
-
-### 11.5 summary_report.txt
-
-这是面向用户阅读的摘要，通常包含：
-
-- 是否收敛。
-- 是否全部达标。
-- 最佳指标。
-- 指标 gap。
-- 最佳参数。
-- 最终文件位置。
-
-### 11.6 optimization_log.json
-
-保存完整 BO 历史，可用于：
-
-- 画优化曲线。
-- 比较每轮参数和指标。
-- 定位失败 iteration。
-- 复查最佳 iteration。
-- 分析 gm/Id 参数与物理 W/L 的关系。
-
-### 11.7 Virtuoso 导出
-
-如果最终网表能够被 Virtuoso exporter 解析，还会生成：
-
-```text
-outputs/<project_name>/virtuoso/import_schematic.il
-outputs/<project_name>/virtuoso/export_report.json
+```bash
+python system_decomposition.py \
+  --requirements bandgap_requirements.json \
+  --project bandgap_project
 ```
 
-导出器读取的是最终：
+生成：
 
 ```text
-outputs/<project_name>/netlist/circuit.cir
+bandgap_project/
+├── system_design.json
+├── requirements.json
+├── hierarchy.json
+├── bandgap_ptat.cir
+└── tb_bandgap_ptat_*.scs
 ```
 
-而不是最初带符号参数的 DUT 模板。这样 Virtuoso 中得到的器件尺寸应当对应 BO 最终选择的实际 W/L/nf。
+`system_design.json` 记录：
 
----
+- 系统架构及选择理由；
+- block graph 和依赖关系；
+- `parent_internal` 与 `hierarchical_child`；
+- child topology 候选和当前选择；
+- 功耗/误差等预算；
+- nominal/PVT targets；
+- 指标来源、推导规则、假设和裕量；
+- 未明确的顶层需求。
 
-## 12. 文件是否会被修改
+`hierarchy.json` 只保留执行所需的 `ExecutableChildSpec`：
 
-| 文件位置 | 是否被 BO 覆盖 | 说明 |
-|----------|----------------|------|
-| `<project>/<topology>.cir` | 否 | 原始 DUT 模板 |
-| `<project>/tb_*.scs` | 否 | 原始 testbench |
-| `<project>/requirements.json` | 否 | 原始设计要求 |
-| `workspace/circuit_template.cir` | 每次任务重建 | 本次任务输入快照 |
-| `workspace/run_xxx/circuit.cir` | 对应 iteration 可重建 | 该轮实际 DUT |
-| `workspace/run_xxx/tb.scs` | 对应 iteration 可重建 | 该轮 Spectre 入口 |
-| `outputs/<project>/netlist/circuit.cir` | 每次最终保存时重建 | 最终最佳 DUT |
-| `outputs/<project>/results.json` | 每次最终保存时重建 | 最终结构化结果 |
+- child topology；
+- subckt/端口；
+- nominal/PVT targets；
+- frozen artifact 策略；
+- parent netlist/results 注入参数。
 
----
+## 9. 层级执行流程
 
-## 13. 推荐的排查顺序
+```bash
+python hierarchical_flow.py \
+  --project bandgap_project \
+  --max-iter 50 \
+  --simulate
+```
 
-当结果异常时，建议按文件流从前到后检查。
-
-### 13.1 检查项目输入
+执行顺序：
 
 ```text
-<project>/<topology>.cir
-<project>/tb_<topology>_ac.scs
-requirements.json
+读取 hierarchy.json
+  -> child nominal BO
+  -> design_flow_graph child qualification
+       -> nominal/review candidate 检查
+       -> Design Audit
+       -> blocker 时停止并要求 Agent Review
+       -> Audit 合格后执行 child PVT targets
+  -> 校验 PDK/voltage domain/subckt/ports
+  -> 冻结 child artifact
+  -> 注入 parent
+  -> parent BO
+  -> design_flow_graph parent qualification
+       -> Design Audit / Review gate
+       -> parent PVT
 ```
 
-确认：
-
-- 拓扑和端口正确。
-- `parameters` 声明完整。
-- testbench 包含正确的 DUT。
-- 指标单位使用 SI 单位。
-
-### 13.2 检查工作区模板
+child artifact：
 
 ```text
-workspace/circuit_template.cir
-workspace/tb_template.scs
+bandgap_project/child_blocks/<id>/artifact/
+├── circuit.cir
+├── results.json
+├── pdk_profile_used.json
+├── artifact.json
+└── pvt/
 ```
 
-确认 `main.py` 实际读取的是预期文件，而不是旧项目或错误路径。
+`artifact.json` 保存文件哈希、接口、PDK、nominal/Audit/PVT 状态和
+qualification target contract。目标、接口、PDK 或文件哈希变化时，
+旧 artifact 不会复用；`--force-child` 可强制重新优化。
 
-### 13.3 检查某轮实际网表
+### Review 后恢复
+
+`design_flow_graph.py` 负责判断是否需要 Review，但 Agent Review 仍是
+需要 Agent 填写 patch plan 并验证 candidate 的显式阶段。层级流程遇到
+nominal failure 或 Audit blocker 时会停止并返回 `next_action`。
+
+Review candidate 验证完成后使用：
+
+```bash
+python hierarchical_flow.py \
+  --project bandgap_project \
+  --resume-qualification \
+  --simulate
+```
+
+该模式复用已有 BO/Review 输出，从 Audit/PVT/freeze 继续，不重新运行 BO
+覆盖 candidate。若希望放弃 candidate 并重跑 child BO，使用
+`--force-child` 且不要使用 `--resume-qualification`。
+
+## 10. Bandgap 当前实例
 
 ```text
-workspace/run_005/circuit.cir
-workspace/run_005/tb.scs
+Bandgap system targets
+  -> architecture: opamp_assisted_pnp_bandgap
+  |
+  +-- core: parent_internal
+  +-- bias: parent_internal
+  +-- startup: parent_internal
+  +-- opamp: hierarchical_child
+        -> two_stage_ota
+        -> nominal BO
+        -> independent PVT targets
+        -> frozen artifact
+  -> bandgap parent BO
+  -> startup/PSRR/temperature/line simulations
+  -> bandgap PVT
 ```
 
-确认：
+当前 opamp 默认目标是保守的系统规则，并非由完整小信号环路自动提取；
+用户可通过 `custom_specs` 覆盖。缺失的顶层指标写入
+`unresolved_requirements`，不会静默伪造。
 
-- W/L 是否处于约束范围。
-- `w * nf` 是否等于期望的总有效宽度。
-- gm/Id sizing 后的物理参数是否合理。
-- `tb.scs` 是否 include 当前目录的 `circuit.cir`。
+## 11. 排错顺序
 
-### 13.4 检查 Spectre 输出
+### BO 或单轮 Spectre 失败
 
 ```text
-workspace/run_005/sim.log
-workspace/run_005/raw/
+pdk_profile_used.json
+  -> workspace/run_xxx/sim.log
+  -> workspace/run_xxx/diagnostics/
+  -> workspace/run_xxx/circuit.cir 与 tb*.scs
+  -> raw/
 ```
 
-确认：
-
-- 模型库是否成功加载。
-- 是否存在语法错误。
-- 是否存在收敛错误。
-- 分析是否真正执行。
-- PSF 数据是否生成。
-
-### 13.5 检查优化记录
+### BO 未达标
 
 ```text
-workspace/history.json
-outputs/<project>/optimization_log.json
+results.json gap
+  -> operating_point_status
+  -> optimization_log.json 参数与指标
+  -> parameter_effects.md
+  -> topology/domain 知识库
 ```
 
-确认：
-
-- 最佳 iteration 是哪一轮。
-- 该轮是否成功。
-- gm/Id `params` 和 `physical_params` 是否匹配。
-- reward 是否与指标改善方向一致。
-
-### 13.6 检查最终输出
-
-对比：
+### 层级项目失败
 
 ```text
-workspace/run_<best_iteration>/circuit.cir
-outputs/<project>/netlist/circuit.cir
+接口/testbench
+  -> child target 推导与预算假设
+  -> child nominal/PVT 裕量
+  -> child topology
+  -> parent architecture
 ```
 
-二者的器件尺寸应当一致。如果不一致，应优先检查最终保存时传入的是搜索参数还是物理参数。
+## 12. 当前自动化边界
 
----
+- Agent 负责需求理解、架构/拓扑决策、代码和 Review 判断。
+- topology Python 代码负责网表结构硬约束。
+- BO 只在固定 topology 和参数空间内优化。
+- `system_decomposition.py` 当前只有 Bandgap 规则。
+- LDO/ADC 的系统规则、预算器和 parent topology 尚未实现。
+- 默认不由 Codex 直接运行真实 Spectre、PVT 或 Virtuoso。
 
-## 14. 当前实现注意事项
+## 13. 相关文档
 
-以下内容是当前代码中需要特别留意的实际问题。
-
-### 14.1 PSF ASCII 读取依赖
-
-当前 Python 结果提取依赖：
-
-```text
-numpy
-psf_utils
-```
-
-依赖已写入 `requirements.txt`。运行环境中必须安装 `psf_utils`，否则
-程序会退回旧的 `sim.log / *.measure` 文本解析。由于新的纯 Spectre
-testbench 不生成 HSPICE 风格 `.measure`，缺少 `psf_utils` 时通常无法
-得到完整的 gain、GBW、PM 和 power。
-
-不同 Spectre/PDK 环境可能使用不同的 PSF 信号名称。当前解析器兼容
-`vout`、`V(vout)`、`/vout`，以及常见的 `VDDsrc:p` 功率名称。第一次在
-真实 Cadence 环境运行时，应查看 `psf.all_signals()`，确认实际名称。
-
-### 14.2 gm/Id 模式的最终网表参数需要使用 physical_params
-
-当前 optimizer 在 gm/Id 模式下分别保存：
-
-```text
-best.params
-    -> gm/Id 搜索变量
-
-best.physical_params
-    -> 实际用于 Spectre 的 W/L
-```
-
-最终网表渲染使用 `best.physical_params`，其中包含实际 W/L、nf 和
-lookup 自动派生的偏置参数；普通模式则回退使用 `best.params`。
-
-在修正前，gm/Id 模式必须对比：
-
-```text
-workspace/run_<best_iteration>/circuit.cir
-outputs/<project>/netlist/circuit.cir
-```
-
-### 14.3 初始仿真和 BO iteration 0 使用相同目录
-
-当前初始仿真使用：
-
-```text
-workspace/run_000/
-```
-
-BO 第 0 轮也使用：
-
-```text
-workspace/run_000/
-```
-
-因此初始仿真的文件会被 BO 第 0 轮覆盖。若需要长期保存初始基准，应把初始仿真改到独立目录，例如：
-
-```text
-workspace/initial/
-```
-
-### 14.4 最终 DUT 是重新渲染的，不是直接复制最佳 DUT
-
-最终 `circuit.cir` 通过“模板 + 最佳参数”重新生成。这样设计便于形成统一输出，但要求最终保存参数与最佳仿真的物理参数完全一致。
-
-如果未来渲染逻辑发生变化，或者 gm/Id 参数传递错误，最终网表可能与最佳 run 不一致。更稳妥的复现策略是同时：
-
-- 复制最佳 run 的实际 `circuit.cir`；并且
-- 保存用于生成它的参数和模板版本。
-
----
-
-## 15. 一句话总结
-
-整个文件流可以概括为：
-
-```text
-topologies 生成带参数的 DUT 和固定测试条件的 testbench
-    -> main.py 读取模板和设计指标
-    -> 普通 BO 或 gm/Id sizing 得到每轮实际 W/L
-    -> netlist.py 展开参数并拆分 finger
-    -> simulator.py 在 workspace/run_xxx 中生成实际网表并调用 Spectre
-    -> optimizer.py 根据仿真指标更新 BO
-    -> main.py 用最佳参数生成 outputs 下的最终网表、报告和 Virtuoso 导入文件
-```
+- 系统分解：`Agent_LLM_BO/circuit_agent/SYSTEM_DECOMPOSITION.md`
+- 层级优化：`Agent_LLM_BO/circuit_agent/HIERARCHICAL_OPTIMIZATION.md`
+- BO 指标策略：`Agent_LLM_BO/circuit_agent/METRIC_GOALS.md`
+- gm/Id：`Agent_LLM_BO/circuit_agent/SIZING_MODES.md`
+- Review：`Agent_LLM_BO/circuit_agent/AGENT_REVIEW.md`
+- 系统架构知识：`knowledge_base/System_knowledge_base/system_architecture_selection_guide.md`
+- Bandgap 知识：`knowledge_base/Bandgap_knowledge_base/topologies/bandgap_ptat_optimization.md`

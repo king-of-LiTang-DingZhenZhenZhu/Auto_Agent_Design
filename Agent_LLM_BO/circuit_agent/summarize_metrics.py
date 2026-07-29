@@ -152,6 +152,13 @@ def _metric_lines(metrics: dict[str, Any]) -> list[str]:
         ("slew_rate_positive_v_per_s", "SR+", "V/s"),
         ("slew_rate_negative_v_per_s", "SR-", "V/s"),
         ("settling_time_s", "Settling Time 0.1%", "s"),
+        ("vref_v", "Vref", "V"),
+        ("tempco_ppm_per_c", "Tempco", "ppm/C"),
+        ("vref_temp_nonlinearity_v", "Vref Temp Nonlinearity", "V"),
+        ("psrr_db", "Worst-case PSRR", "dB"),
+        ("line_regulation_v_per_v", "Line Regulation", "V/V"),
+        ("startup_time_s", "Startup Time", "s"),
+        ("startup_success", "Startup Success", ""),
     ]
     lines = ["", "Metrics:"]
     seen: set[str] = set()
