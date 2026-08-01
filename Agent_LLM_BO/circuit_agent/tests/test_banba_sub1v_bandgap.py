@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from knowledge_review import build_knowledge_analysis
-from models import DesignTarget
+from models import DesignTarget, NetlistTemplate
 from pdk_profiles import get_pdk_profile
 from topologies import get_topology, get_topology_for_targets
 
@@ -27,8 +27,15 @@ class BanbaSub1VBandgapTest(unittest.TestCase):
             circuit,
             r"(?m)^subckt banba_sub1v_bandgap \(vref vdd vss\)",
         )
-        self.assertIn("parameters R12=2.063meg R3=393k R4=884k", circuit)
-        self.assertIn("DIODE_AREA_RATIO=100", circuit)
+        self.assertIn(
+            "parameters R12=2.063meg PTAT_WEIGHT=11.1612 VREF_SCALE=412m",
+            circuit,
+        )
+        self.assertIn(
+            "parameters R3=R12/PTAT_WEIGHT R4=R12*VREF_SCALE "
+            "DIODE_AREA_RATIO=8",
+            circuit,
+        )
         self.assertIn("P1 (va vg vdd vdd)", circuit)
         self.assertIn("P2 (vb vg vdd vdd)", circuit)
         self.assertIn("P3 (vref vg vdd vdd)", circuit)
@@ -59,7 +66,7 @@ class BanbaSub1VBandgapTest(unittest.TestCase):
         self.assertIsNone(topology.get_gmid_spec())
         self.assertEqual(
             [param.name for param in topology.get_param_space().params],
-            ["R12", "R3", "R4", "Lmirror_p"],
+            ["R12", "PTAT_WEIGHT", "VREF_SCALE", "Lmirror_p"],
         )
         self.assertEqual(
             files.testbench_suffixes,
@@ -74,6 +81,30 @@ class BanbaSub1VBandgapTest(unittest.TestCase):
         self.assertIn("psrrAC ac", files.testbenches[1])
         self.assertIn("tempSweep dc", files.testbenches[2])
         self.assertIn("lineSweep dc", files.testbenches[3])
+
+    def test_bo_render_preserves_derived_resistor_relations(self):
+        topology = get_topology("banba_sub1v_bandgap")
+        rendered = NetlistTemplate.from_netlist(
+            topology.generate_circuit()
+        ).render(
+            {
+                "R12": 2e6,
+                "PTAT_WEIGHT": 12.0,
+                "VREF_SCALE": 0.4,
+                "Lmirror_p": 500e-9,
+            },
+            param_space=topology.get_param_space(),
+        )
+
+        self.assertIn(
+            "parameters R12=2meg PTAT_WEIGHT=12 VREF_SCALE=0.4",
+            rendered,
+        )
+        self.assertIn(
+            "parameters R3=R12/PTAT_WEIGHT R4=R12*VREF_SCALE "
+            "DIODE_AREA_RATIO=8",
+            rendered,
+        )
 
     def test_project_records_nmos_input_child_contract(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -116,10 +147,10 @@ class BanbaSub1VBandgapTest(unittest.TestCase):
             records=[{
                 "iteration": 1,
                 "params": {
-                    "DIODE_AREA_RATIO": 100,
+                    "DIODE_AREA_RATIO": 8,
                     "R12": 2.063e6,
-                    "R3": 393e3,
-                    "R4": 884e3,
+                    "PTAT_WEIGHT": 11.1612,
+                    "VREF_SCALE": 0.412,
                 },
                 "result": {},
             }],
@@ -129,15 +160,15 @@ class BanbaSub1VBandgapTest(unittest.TestCase):
         derived = analysis["run_analyses"][0]["derived"]
         self.assertAlmostEqual(
             derived["delta_vbe_27c_first_order_V"],
-            25.852e-3 * 4.605170186,
+            25.852e-3 * 2.079441542,
         )
         self.assertAlmostEqual(
             derived["r4_over_r12_first_order"],
-            884e3 / 2.063e6,
+            0.412,
         )
         self.assertAlmostEqual(
             derived["r12_over_r3_first_order"],
-            2.063e6 / 393e3,
+            11.1612,
         )
 
 

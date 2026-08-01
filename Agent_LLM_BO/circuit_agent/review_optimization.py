@@ -312,8 +312,11 @@ def apply_review_rules(
     topology_name: str = "",
 ) -> tuple[dict[str, float], dict[str, tuple[float, float]]]:
     """Dispatch conservative fallback rules by topology domain."""
-    if get_review_profile(topology_name).domain == "bandgap":
+    domain = get_review_profile(topology_name).domain
+    if domain == "bandgap":
         return _apply_bandgap_review_rules(params, result, targets, param_bounds)
+    if domain == "comparator":
+        return dict(params), {}
     return _apply_opamp_review_rules(params, result, targets, param_bounds)
 
 

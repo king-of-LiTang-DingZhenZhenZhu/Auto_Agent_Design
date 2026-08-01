@@ -35,23 +35,35 @@ I2 = Vf1/R12 + DeltaVf/R3
 Vref = R4*(Vf1/R12 + DeltaVf/R3)
 ```
 
-The published test-chip starting values are `R12=2.063 Mohm`, `R3=393 kohm`,
-`R4=884 kohm`, and `N=100`. They target approximately 0.515 V. These values are
-electrical resistances, not portable resistor geometries.
+This implementation starts with `N=8`. Ignoring resistor TC and using
+`dVBE/dT ~= -2 mV/degC`, the first-order zero-TC condition is:
+
+```text
+K_PTAT = R12/R3
+K_PTAT = -(dVBE/dT)/((k/q)*ln(N)) ~= 11.16
+R3 = R12/K_PTAT
+```
+
+With `R12=2.063 Mohm`, this gives `R3 ~= 184.8 kohm`. The output scale is
+represented independently as `VREF_SCALE=R4/R12`. For `VBE(27 degC) ~= 0.65 V`
+and a 0.515 V target, the first-order starting value is approximately 0.412,
+giving `R4 ~= 850 kohm`. The PDK BJT's actual VBE slope, resistor TC, opamp
+offset, and curvature require temperature-sweep calibration rather than treating
+11.16 as an exact signoff value.
 
 ## Parent Search Space
 
 The first parent-level BO pass changes only:
 
-- `R12`: CTAT-current scale while preserving `R1=R2`;
-- `R3`: PTAT-current scale;
-- `R4`: output-voltage scale;
+- `R12`: absolute current-density scale while preserving `R1=R2`;
+- `PTAT_WEIGHT=R12/R3`: PTAT/CTAT balance and first-order temperature slope;
+- `VREF_SCALE=R4/R12`: output-voltage scale with the resistor relation preserved;
 - `Lmirror_p`: current-source output resistance and headroom tradeoff.
 
-Keep `DIODE_AREA_RATIO=100` fixed for the first pass. Change it only when the
-available PNP model, area, or matching budget makes the published ratio
-impractical. Mirror widths, startup devices, compensation, and child-opamp
-parameters remain fixed until diagnostics identify them as the limiting factor.
+Keep `DIODE_AREA_RATIO=8` fixed for the first pass. `R3` and `R4` are derived in
+the Spectre netlist and must not become independent BO parameters. Mirror widths,
+startup devices, compensation, and child-opamp parameters remain fixed until
+diagnostics identify them as the limiting factor.
 
 ## Diagnosis Order
 
@@ -60,8 +72,10 @@ parameters remain fixed until diagnostics identify them as the limiting factor.
 3. Confirm the NMOS-input child opamp supports 0.65-0.75 V common mode across
    temperature; child nominal qualification uses 0.70 V and parent PVT checks
    the actual diode-node movement.
-4. Correct room-temperature `Vref` primarily with `R4`.
-5. Correct temperature slope with `R3/R12`; smaller `R3` increases PTAT weight.
+4. Correct temperature slope with `PTAT_WEIGHT`; increasing it increases the
+   PTAT contribution. Re-run the full temperature sweep after each change.
+5. Once the slope is centered, correct room-temperature `Vref` primarily with
+   `VREF_SCALE`; then recheck slope because nonideal resistor/BJT effects couple.
 6. Treat residual curvature separately from first-order slope.
 7. Re-run PSRR and line regulation after any mirror-length or child-opamp change.
 

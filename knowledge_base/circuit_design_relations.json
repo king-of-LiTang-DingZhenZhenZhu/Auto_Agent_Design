@@ -105,6 +105,42 @@
       "tradeoffs": [
         "more compensation can improve phase margin while reducing GBW and worsening load-transient recovery"
       ]
+    },
+    "strongarm_amplification": {
+      "domain": "comparator",
+      "equation": "Av ~= gm_input*VTHN/ICM",
+      "assumptions": [
+        "P and Q begin precharged to VDD",
+        "the latch devices remain off during the initial amplification phase"
+      ],
+      "tradeoffs": [
+        "larger input devices can increase gm but also raise input capacitance and kickback",
+        "more tail current can reduce delay while increasing energy and supply transients"
+      ]
+    },
+    "strongarm_regeneration": {
+      "domain": "comparator",
+      "equation": "tau_reg ~= CXY/(gm_latch*(1-CXY/CPQ))",
+      "assumptions": [
+        "the cross-coupled NMOS transconductance is approximately constant",
+        "the small-signal regeneration model is used only after latch turn-on"
+      ],
+      "tradeoffs": [
+        "larger latch gm shortens regeneration but adds capacitance",
+        "larger output load increases delay and energy"
+      ]
+    },
+    "strongarm_dynamic_energy": {
+      "domain": "comparator",
+      "equation": "Pavg ~= fclk*(2*CPQ+CXY)*VDD^2",
+      "assumptions": [
+        "static power is negligible after regeneration",
+        "dynamic charge and discharge dominate average power"
+      ],
+      "tradeoffs": [
+        "larger devices improve matching or speed but increase switched capacitance",
+        "low average power does not imply low peak supply current"
+      ]
     }
   },
   "topologies": {
@@ -167,6 +203,21 @@
       "limitations": [
         "the paper's native-NMOS implementation is mapped to the active PDK LVT models and must be revalidated for input common-mode and startup headroom",
         "the schematic uses ideal resistor values to preserve the published ratios; PDK resistor mapping and Monte Carlo mismatch require signoff"
+      ]
+    },
+    "strongarm_latch": {
+      "domain": "comparator",
+      "architecture": "modified_strongarm_four_switch",
+      "input_instances": ["M1", "M2"],
+      "relations": [
+        "strongarm_amplification",
+        "strongarm_regeneration",
+        "strongarm_dynamic_energy"
+      ],
+      "limitations": [
+        "random offset and input-referred noise require mismatch Monte Carlo and transient-noise simulation",
+        "kickback and peak supply current require source impedance and interconnect parasitics",
+        "reset-state DC operating regions do not qualify dynamic regeneration"
       ]
     },
     "capless_ldo": {

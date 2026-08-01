@@ -215,6 +215,45 @@ def parse_psf_results(raw_dir: Path, testbench_content: str) -> SimResult | None
         if tran_path:
             try:
                 tran_psf = PSF(str(tran_path))
+                if tran_name.lower().startswith("decision"):
+                    time, clock = _signal_axis(
+                        tran_psf, ("clk", "V(clk)", "/clk")
+                    )
+                    _outp_time, outp = _signal_axis(
+                        tran_psf, ("outp", "V(outp)", "/outp")
+                    )
+                    _outn_time, outn = _signal_axis(
+                        tran_psf, ("outn", "V(outn)", "/outn")
+                    )
+                    _vdd_time, vdd = _signal_axis(
+                        tran_psf, ("vdd", "V(vdd)", "/vdd")
+                    )
+                    _power_time, supply_power = _signal_axis(
+                        tran_psf,
+                        ("VDDsrc:p", "VDDsrc:pwr", "VDDsrc:power"),
+                    )
+                    positive = "pos" in tran_name.lower()
+                    margin, delay, energy, average_power = (
+                        calculate_comparator_decision_metrics(
+                            time,
+                            clock,
+                            outp,
+                            outn,
+                            vdd,
+                            supply_power,
+                            expect_positive=positive,
+                        )
+                    )
+                    polarity = "positive" if positive else "negative"
+                    result.raw_metrics.update({
+                        f"decision_{polarity}_margin_v": margin,
+                        f"propagation_delay_{polarity}_s": delay,
+                    })
+                    if positive:
+                        result.raw_metrics["energy_per_decision_j"] = energy
+                        result.power_w = average_power
+                        result.raw_metrics["power_total"] = average_power
+                    return result
                 if tran_name.lower().startswith("startup"):
                     time, vdd = _signal_axis(
                         tran_psf, ("vdd", "V(vdd)", "/vdd")
@@ -307,6 +346,83 @@ def parse_psf_results(raw_dir: Path, testbench_content: str) -> SimResult | None
                 )
 
     return result if found_metrics else None
+
+
+def calculate_comparator_decision_metrics(
+    time: Any,
+    clock: Any,
+    outp: Any,
+    outn: Any,
+    supply_voltage: Any,
+    supply_power: Any,
+    *,
+    expect_positive: bool,
+) -> tuple[float, float, float, float]:
+    """Return decision margin, clock-to-decision delay, energy, and power.
+
+    The decision margin is sampled near the end of the first evaluation phase.
+    Delay is measured from the first rising clock midpoint to a differential
+    output of half the supply. Energy is integrated over one complete clock
+    period so that both evaluation and the following precharge are included.
+    """
+    t, clk, vp, vn, vdd, power = _matching_real_arrays(
+        time, clock, outp, outn, supply_voltage, supply_power
+    )
+    if np.any(np.diff(t) <= 0):
+        raise ValueError("Comparator transient time must be strictly increasing")
+
+    clock_midpoint = 0.5 * (float(np.min(clk)) + float(np.max(clk)))
+    rising_edges = np.flatnonzero(
+        (clk[:-1] < clock_midpoint) & (clk[1:] >= clock_midpoint)
+    )
+    falling_edges = np.flatnonzero(
+        (clk[:-1] >= clock_midpoint) & (clk[1:] < clock_midpoint)
+    )
+    if not rising_edges.size or not falling_edges.size:
+        raise ValueError("Comparator clock needs rising and falling edges")
+
+    rise_index = int(rising_edges[0])
+    following_falls = falling_edges[falling_edges > rise_index]
+    if not following_falls.size:
+        raise ValueError("Comparator evaluation phase has no falling clock edge")
+    fall_index = int(following_falls[0])
+    if fall_index - rise_index < 3:
+        raise ValueError("Comparator evaluation phase has too few samples")
+
+    signed_difference = vp - vn if expect_positive else vn - vp
+    tail_count = max(3, int(np.ceil(0.1 * (fall_index - rise_index))))
+    decision_margin = float(np.median(
+        signed_difference[fall_index - tail_count : fall_index + 1]
+    ))
+
+    clock_edge_time = _interpolate_midpoint_crossing(
+        t[rise_index],
+        t[rise_index + 1],
+        clk[rise_index],
+        clk[rise_index + 1],
+        clock_midpoint,
+    )
+    decision_threshold = 0.5 * float(np.median(vdd[rise_index:fall_index + 1]))
+    crossings = np.flatnonzero(
+        signed_difference[rise_index + 1 : fall_index + 1]
+        >= decision_threshold
+    )
+    if crossings.size:
+        decision_index = rise_index + 1 + int(crossings[0])
+        propagation_delay = max(0.0, float(t[decision_index] - clock_edge_time))
+    else:
+        propagation_delay = float(t[fall_index] - clock_edge_time)
+
+    later_rises = rising_edges[rising_edges > rise_index]
+    cycle_stop = int(later_rises[0] + 1) if later_rises.size else fall_index + 1
+    cycle_time = t[rise_index:cycle_stop]
+    cycle_power = np.abs(power[rise_index:cycle_stop])
+    if cycle_time.size < 2:
+        raise ValueError("Comparator energy window has too few samples")
+    energy = float(np.trapezoid(cycle_power, cycle_time))
+    period = float(cycle_time[-1] - cycle_time[0])
+    average_power = energy / period if period > 0 else float("inf")
+    return decision_margin, propagation_delay, energy, average_power
 
 
 def calculate_startup_metrics(

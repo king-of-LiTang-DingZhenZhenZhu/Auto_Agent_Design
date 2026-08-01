@@ -52,6 +52,8 @@ def build_knowledge_analysis(
             )
         elif profile.get("domain") == "bandgap":
             analysis = _analyze_bandgap_run(record, params, profile)
+        elif profile.get("domain") == "comparator":
+            analysis = _analyze_comparator_run(record, params, profile)
         else:
             analysis = _analyze_ldo_run(record, params)
         run_analyses.append(analysis)
@@ -250,6 +252,12 @@ def _analyze_bandgap_run(
     r12 = _number(params.get("R12"))
     r3 = _number(params.get("R3"))
     r4 = _number(params.get("R4"))
+    ptat_weight = _number(params.get("PTAT_WEIGHT"))
+    vref_scale = _number(params.get("VREF_SCALE"))
+    if r12 and not r3 and ptat_weight:
+        r3 = r12 / ptat_weight
+    if r12 and not r4 and vref_scale:
+        r4 = r12 * vref_scale
     if r12 and r3 and r4:
         derived["r4_over_r12_first_order"] = r4 / r12
         derived["r12_over_r3_first_order"] = r12 / r3
@@ -341,6 +349,94 @@ def _analyze_ldo_run(
     else:
         unavailable.append("both load-step overshoot and undershoot metrics")
 
+    return {
+        "iteration": int(record.get("iteration", 0)),
+        "reward": record.get("reward"),
+        "derived": derived,
+        "diagnoses": diagnoses,
+        "unavailable": unavailable,
+    }
+
+
+def _analyze_comparator_run(
+    record: dict[str, Any],
+    params: dict[str, float],
+    profile: dict[str, Any],
+) -> dict[str, Any]:
+    result = record.get("result") or {}
+    raw = result.get("raw_metrics") or result.get("metrics") or {}
+    derived: dict[str, float] = {}
+    diagnoses: list[dict[str, str]] = []
+    unavailable: list[str] = []
+
+    metric_names = (
+        "decision_positive_margin_v",
+        "decision_negative_margin_v",
+        "propagation_delay_positive_s",
+        "propagation_delay_negative_s",
+        "energy_per_decision_j",
+        "power_w",
+    )
+    for name in metric_names:
+        value = _number(result.get(name, raw.get(name)))
+        if value is None:
+            unavailable.append(f"{name} transient metric")
+        else:
+            derived[f"measured_{name}"] = value
+
+    positive_margin = _number(
+        result.get("decision_positive_margin_v", raw.get("decision_positive_margin_v"))
+    )
+    negative_margin = _number(
+        result.get("decision_negative_margin_v", raw.get("decision_negative_margin_v"))
+    )
+    if positive_margin is not None and negative_margin is not None:
+        derived["decision_margin_asymmetry_v"] = abs(
+            positive_margin - negative_margin
+        )
+        if min(positive_margin, negative_margin) <= 0:
+            diagnoses.append({
+                "confidence": "high",
+                "message": "at least one input polarity resolves incorrectly",
+            })
+
+    positive_delay = _number(
+        result.get(
+            "propagation_delay_positive_s",
+            raw.get("propagation_delay_positive_s"),
+        )
+    )
+    negative_delay = _number(
+        result.get(
+            "propagation_delay_negative_s",
+            raw.get("propagation_delay_negative_s"),
+        )
+    )
+    if positive_delay is not None and negative_delay is not None:
+        derived["propagation_delay_worst_s"] = max(
+            positive_delay, negative_delay
+        )
+        derived["propagation_delay_asymmetry_s"] = abs(
+            positive_delay - negative_delay
+        )
+
+    input_width = _number(params.get("Winput_n"))
+    latch_n_width = _number(params.get("Wlatch_n"))
+    latch_p_width = _number(params.get("Wlatch_p"))
+    if input_width and latch_n_width:
+        derived["input_to_n_latch_width_ratio"] = input_width / latch_n_width
+    if latch_p_width and latch_n_width:
+        derived["p_to_n_latch_width_ratio"] = latch_p_width / latch_n_width
+
+    diagnoses.append({
+        "confidence": "high",
+        "message": (
+            "nominal deterministic decisions do not validate random offset, "
+            "metastability probability, input-referred noise, or kickback"
+        ),
+    })
+    for limitation in profile.get("limitations", []):
+        diagnoses.append({"confidence": "high", "message": limitation})
     return {
         "iteration": int(record.get("iteration", 0)),
         "reward": record.get("reward"),

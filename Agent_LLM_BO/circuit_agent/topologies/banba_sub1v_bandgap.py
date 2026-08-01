@@ -33,12 +33,13 @@ class BanbaSub1VBandgap(BandgapPTAT):
     )
 
     DEFAULT_PARAMS: dict[str, float] = {
-        # Fig. 5 resistor values. R1 and R2 are constrained to the same R12.
+        # R1 and R2 are constrained to the same R12.  For N=8, the first-order
+        # zero-TC condition with dVBE/dT ~= -2 mV/C gives R12/R3 ~= 11.16.
         "R12": 2.063e6,
-        "R3": 393e3,
-        "R4": 884e3,
-        # The test chip used one diode against an array of 100 equal diodes.
-        "DIODE_AREA_RATIO": 100,
+        "PTAT_WEIGHT": 11.1612,
+        # R4/R12 ~= 0.412 gives about 0.515 V for VBE(27 C) ~= 0.65 V.
+        "VREF_SCALE": 0.412,
+        "DIODE_AREA_RATIO": 8,
         # Equal-size P1/P2/P3 current-mirror devices.
         "Wmirror_p": 6e-6,
         "Lmirror_p": 600e-9,
@@ -65,8 +66,8 @@ class BanbaSub1VBandgap(BandgapPTAT):
             nmos_lvt_model=pdk.nmos_lvt_model,
             pnp_model=pdk.resolve_model("pnp"),
             R12=_fmt(p["R12"]),
-            R3=_fmt(p["R3"]),
-            R4=_fmt(p["R4"]),
+            PTAT_WEIGHT=_fmt(p["PTAT_WEIGHT"]),
+            VREF_SCALE=_fmt(p["VREF_SCALE"]),
             DIODE_AREA_RATIO=int(round(p["DIODE_AREA_RATIO"])),
             Wmirror_p=_fmt(p["Wmirror_p"]),
             Lmirror_p=_fmt(p["Lmirror_p"]),
@@ -97,8 +98,14 @@ class BanbaSub1VBandgap(BandgapPTAT):
     def get_param_space(self) -> ParamSpace:
         return self._apply_param_space_overrides(ParamSpace(params=[
             ParamDef("R12", low=0.5e6, high=5e6, log_scale=True, unit="Ohm"),
-            ParamDef("R3", low=100e3, high=1e6, log_scale=True, unit="Ohm"),
-            ParamDef("R4", low=200e3, high=2e6, log_scale=True, unit="Ohm"),
+            ParamDef(
+                "PTAT_WEIGHT", low=8.0, high=15.0,
+                log_scale=False, unit="x",
+            ),
+            ParamDef(
+                "VREF_SCALE", low=0.3, high=0.5,
+                log_scale=False, unit="x",
+            ),
             ParamDef(
                 "Lmirror_p", low=300e-9, high=1e-6,
                 log_scale=True, unit="m",
@@ -196,7 +203,8 @@ simulator lang=spectre insensitive=yes
 
 {spectre_include}
 
-parameters R12={R12} R3={R3} R4={R4} DIODE_AREA_RATIO={DIODE_AREA_RATIO}
+parameters R12={R12} PTAT_WEIGHT={PTAT_WEIGHT} VREF_SCALE={VREF_SCALE}
+parameters R3=R12/PTAT_WEIGHT R4=R12*VREF_SCALE DIODE_AREA_RATIO={DIODE_AREA_RATIO}
 parameters Wmirror_p={Wmirror_p} Lmirror_p={Lmirror_p} Iopbias={Iopbias}
 parameters C1={C1} C2={C2} Wstart_n={Wstart_n} Lstart_n={Lstart_n}
 parameters Rstart={Rstart} Cstart={Cstart} Cload={Cload}

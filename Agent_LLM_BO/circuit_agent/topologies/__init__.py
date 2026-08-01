@@ -22,6 +22,7 @@ from topologies.mnmc_three_stage import MNMCThreeStageOTA
 from topologies.nmcnr_three_stage import NMCNRThreeStageOTA
 from topologies.nmcf_three_stage import NMCFThreeStageOTA
 from topologies.pmos_input_two_stage_ota import PMOSInputTwoStageOTA
+from topologies.strongarm_latch import StrongARMLatch
 from topologies.two_stage_ota import TwoStageOTA
 
 if TYPE_CHECKING:
@@ -41,6 +42,7 @@ TOPOLOGY_REGISTRY: dict[str, type[BaseTopology]] = {
     "nmcnr_three_stage": NMCNRThreeStageOTA,
     "mnmc_three_stage": MNMCThreeStageOTA,
     "nmcf_three_stage": NMCFThreeStageOTA,
+    "strongarm_latch": StrongARMLatch,
     "bandgap_ptat": BandgapPTAT,
     "banba_sub1v_bandgap": BanbaSub1VBandgap,
     "leung_mok_sub1v_bandgap": LeungMokSub1VBandgap,
@@ -74,6 +76,10 @@ def get_topology_for_targets(targets: DesignTarget) -> str | None:
     Returns None only when no topology can plausibly meet the targets.
     """
     topology_hint = (targets.topology_hint or "").lower()
+    if "strongarm" in topology_hint or (
+        "comparator" in topology_hint and "latch" in topology_hint
+    ):
+        return "strongarm_latch"
     if (
         "leung" in topology_hint
         or "mok" in topology_hint
@@ -131,6 +137,7 @@ def get_topology_for_targets(targets: DesignTarget) -> str | None:
     for name, cls in TOPOLOGY_REGISTRY.items():
         if name in {
             "bandgap_ptat", "banba_sub1v_bandgap", "leung_mok_sub1v_bandgap",
+            "strongarm_latch",
             "capless_ldo", "dfc_capless_ldo",
         }:
             continue

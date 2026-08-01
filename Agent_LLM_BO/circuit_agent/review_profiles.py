@@ -60,8 +60,24 @@ _LDO_PROFILE = ReviewProfile(
 - propose a conservative local candidate, child error-amplifier rerun, search-space restart, or LDO architecture change.""",
 )
 
+_COMPARATOR_PROFILE = ReviewProfile(
+    domain="comparator",
+    audit_repair_task="""BO met its nominal targets, but Design Audit blocked this dynamic comparator:
+- verify reset, amplification, regeneration, and output-restoration phases from transient waveforms;
+- inspect decision polarity, clock-to-decision delay, energy per decision, output loading, and peak supply current;
+- treat reset-state DC operating regions as non-evidence for dynamic latch correctness;
+- review input-pair matching, latch balance, clock edge assumptions, and kickback risk before resizing.""",
+    failure_task="""BO has not met all nominal dynamic-comparator targets:
+- confirm both input polarities resolve correctly before optimizing speed or energy;
+- separate insufficient input-pair gain from slow regeneration and weak precharge;
+- use positive/negative delay, decision margin, energy, clock, and load evidence together;
+- request transient diagnostics or a local perturbation when offset, kickback, or metastability dominates.""",
+)
+
 
 def get_review_profile(topology_name: str) -> ReviewProfile:
+    if topology_name == "strongarm_latch":
+        return _COMPARATOR_PROFILE
     if topology_name in {
         "bandgap_ptat",
         "banba_sub1v_bandgap",

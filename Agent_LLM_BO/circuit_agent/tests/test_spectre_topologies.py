@@ -290,6 +290,14 @@ class SpectreTopologyTest(unittest.TestCase):
                         }.issubset(file_names)
                     )
                     continue
+                if meta.name == "strongarm_latch":
+                    self.assertIn(
+                        "tb_strongarm_latch_decision_pos.scs", file_names
+                    )
+                    self.assertIn(
+                        "tb_strongarm_latch_decision_neg.scs", file_names
+                    )
+                    continue
                 self.assertIn(f"tb_{meta.name}_sr.scs", file_names)
                 self.assertIn(f"tb_{meta.name}_st.scs", file_names)
 
