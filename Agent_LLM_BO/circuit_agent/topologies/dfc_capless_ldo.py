@@ -70,7 +70,7 @@ class DFCCaplessLDO(BaseTopology):
         "CL": 200e-12,
         "ILOAD_MIN": 10e-3,
         "ILOAD_MAX": 100e-3,
-        "LOAD_EDGE": 10e-9,
+        "LOAD_EDGE": 1e-6,
     }
 
     def availability_error(
@@ -97,11 +97,11 @@ class DFCCaplessLDO(BaseTopology):
                 f"active device-domain limit {max_device_voltage:g} V."
             )
         if (
-            pdk.nmos_model != "nch_25od33_mac"
-            or pdk.pmos_model != "pch_25od33_mac"
+            pdk.nmos_model != "nch_25ud18_mac"
+            or pdk.pmos_model != "pch_25ud18_mac"
         ):
             return (
-                "dfc_capless_ldo requires nch_25od33_mac/pch_25od33_mac. "
+                "dfc_capless_ldo requires nch_25ud18_mac/pch_25ud18_mac. "
                 "Select the TSMC28 io_1p8 voltage domain."
             )
         return None
@@ -320,9 +320,9 @@ def default_dfc_ldo_targets() -> DesignTarget:
             "load_current_min_a": 10e-3,
             "load_current_max_a": 100e-3,
             "load_cap_max_f": 200e-12,
-            "load_edge_s": 10e-9,
+            "load_edge_s": 1e-6,
             "required_voltage_domain": "tsmc28/io_1p8",
-            "required_models": "nch_25od33_mac/pch_25od33_mac",
+            "required_models": "nch_25ud18_mac/pch_25ud18_mac",
         },
         metric_goals={
             "output_voltage_v": MetricGoal(
@@ -415,8 +415,8 @@ RfbBottom (vfb vss) resistor r=Rfb_bottom
 Cf1Dev (vout vfb) capacitor c=Cf1
 Iloop (vfb vfb_ea) iprobe
 
-// Paper compensation: Cm1 Miller path and Cm2 DFC path.
-Cm1Dev (n_stage1 n_gate) capacitor c=Cm1
+// Cm1 is the global Miller path; Cm2 is the DFC path.
+Cm1Dev (n_stage1 vout) capacitor c=Cm1
 Cm2Dev (n_stage1 n_dfc_out) capacitor c=Cm2
 ends dfc_capless_ldo
 """
@@ -511,5 +511,5 @@ outOpts options rawfmt=psfascii soft_bin=allmodels
 loadTran tran stop=18u maxstep=1n
 
 save vout
-save ILOADsrc:p
+save ILOADsrc:i
 """.replace("{common}", _TB_COMMON)

@@ -12,6 +12,7 @@ import numpy as np
 
 from models import DesignTarget, MetricGoal, SimResult, parse_metric_goals
 from psf_results import (
+    _find_analysis_file,
     calculate_ac_metrics,
     calculate_dc_psr_db,
     calculate_line_regulation,
@@ -27,6 +28,70 @@ from psf_results import (
 
 
 class PsfResultMathTest(unittest.TestCase):
+    def test_analysis_file_discovery_accepts_spectre_double_tran_suffix(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            raw_dir = Path(tmp)
+            transient = raw_dir / "loadTran.tran.tran"
+            transient.touch()
+
+            found = _find_analysis_file(raw_dir, "loadTran", "tran")
+
+        self.assertEqual(found, transient)
+
+    def test_stb_parser_prefers_spectre_native_phase_margin(self):
+        frequency = np.array([1.0, 10.0, 100.0])
+        loop_gain = np.array(
+            [
+                100.0 * np.exp(-1j * np.deg2rad(20.0)),
+                1.0 * np.exp(-1j * np.deg2rad(120.0)),
+                0.01 * np.exp(-1j * np.deg2rad(160.0)),
+            ]
+        )
+        datasets = {
+            "loop.stb": (frequency, {"loopGain": loop_gain}),
+            "loop.margin.stb": (
+                np.array([0.0]),
+                {"phaseMargin": np.array([125.994])},
+            ),
+        }
+
+        class FakeSignal:
+            def __init__(self, name, ordinate):
+                self.name = name
+                self.ordinate = ordinate
+
+        class FakePSF:
+            def __init__(self, path):
+                self.axis, values = datasets[Path(path).name]
+                self.signals = {
+                    name: FakeSignal(name, ordinate)
+                    for name, ordinate in values.items()
+                }
+
+            def get_sweep(self):
+                return SimpleNamespace(abscissa=self.axis)
+
+            def all_signals(self):
+                return list(self.signals.values())
+
+            def get_signal(self, name):
+                return self.signals[name]
+
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+            sys.modules, {"psf_utils": SimpleNamespace(PSF=FakePSF)}
+        ):
+            raw_dir = Path(tmp)
+            (raw_dir / "loop.stb").touch()
+            (raw_dir / "loop.margin.stb").touch()
+            result = parse_psf_results(
+                raw_dir,
+                "loop stb start=1 stop=100 dec=10 probe=Iloop",
+            )
+
+        self.assertIsNotNone(result)
+        self.assertAlmostEqual(result.phase_margin_deg, 125.994)
+        self.assertAlmostEqual(result.raw_metrics["phase_margin"], 125.994)
+
     def test_metric_goals_round_trip_through_requirements(self):
         targets = DesignTarget(
             gain_db=60,

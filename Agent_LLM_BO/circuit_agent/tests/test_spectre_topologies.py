@@ -136,8 +136,8 @@ class SpectreTopologyTest(unittest.TestCase):
             r"(?m)^subckt dfc_capless_ldo "
             r"\(vin vref vb1 vb2 vb4 vout vss\)",
         )
-        self.assertIn("nch_25od33_mac", circuit)
-        self.assertIn("pch_25od33_mac", circuit)
+        self.assertIn("nch_25ud18_mac", circuit)
+        self.assertIn("pch_25ud18_mac", circuit)
         self.assertIn(
             "M17 (n_stage1_inv n_stage1 vss vss)",
             circuit,
@@ -180,7 +180,7 @@ class SpectreTopologyTest(unittest.TestCase):
             circuit,
         )
         self.assertIn(
-            "Cm1Dev (n_stage1 n_gate) capacitor c=Cm1",
+            "Cm1Dev (n_stage1 vout) capacitor c=Cm1",
             circuit,
         )
         self.assertIn(
@@ -224,6 +224,7 @@ class SpectreTopologyTest(unittest.TestCase):
             "val0=ILOAD_MIN val1=ILOAD_MAX",
             files.testbenches[3],
         )
+        self.assertIn("save ILOADsrc:i", files.testbenches[3])
         self.assertIn("rise=LOAD_EDGE fall=LOAD_EDGE", files.testbenches[3])
 
     def test_dfc_ldo_project_records_paper_targets(self):
@@ -250,6 +251,10 @@ class SpectreTopologyTest(unittest.TestCase):
         self.assertEqual(
             requirements["custom_specs"]["reference_voltage_v"],
             0.1,
+        )
+        self.assertEqual(
+            requirements["custom_specs"]["load_edge_s"],
+            1e-6,
         )
 
     def test_all_topologies_generate_native_spectre_projects(self):

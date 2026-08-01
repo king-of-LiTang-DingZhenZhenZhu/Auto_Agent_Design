@@ -62,6 +62,24 @@ def parse_psf_results(raw_dir: Path, testbench_content: str) -> SimResult | None
                         "phase_margin": phase_margin_deg,
                     }
                 )
+                margin_path = _find_analysis_file(
+                    raw_dir, stb_name, "margin.stb"
+                )
+                if margin_path:
+                    try:
+                        margin_psf = PSF(str(margin_path))
+                        phase_margin_deg = _scalar_signal(
+                            margin_psf,
+                            ("phaseMargin", "phase_margin"),
+                        )
+                        result.phase_margin_deg = phase_margin_deg
+                        result.raw_metrics["phase_margin"] = phase_margin_deg
+                    except Exception as exc:
+                        logger.warning(
+                            "Failed to parse native STB margin %s: %s",
+                            margin_path,
+                            exc,
+                        )
                 return result
             except Exception as exc:
                 logger.warning("Failed to parse STB result %s: %s", stb_path, exc)
@@ -819,7 +837,10 @@ def _find_analysis_file(
     if exact.exists():
         return exact
     matches = list(raw_dir.rglob(f"{analysis_name}.{suffix}"))
-    return matches[0] if matches else None
+    if matches:
+        return matches[0]
+    duplicated_suffix = raw_dir / f"{analysis_name}.{suffix}.{suffix}"
+    return duplicated_suffix if duplicated_suffix.exists() else None
 
 
 def _signal_axis(psf: Any, candidates: tuple[str, ...]) -> tuple[Any, Any]:

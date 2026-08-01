@@ -174,8 +174,8 @@ PDK_PROFILES: dict[str, PDKProfile] = {
                 max_device_voltage=3.3,
                 min_l=300e-9,
                 model_flavors={
-                    "nmos": {"svt": "nch_25od33_mac"},
-                    "pmos": {"svt": "pch_25od33_mac"},
+                    "nmos": {"svt": "nch_25ud18_mac"},
+                    "pmos": {"svt": "pch_25ud18_mac"},
                 },
             ),
         },

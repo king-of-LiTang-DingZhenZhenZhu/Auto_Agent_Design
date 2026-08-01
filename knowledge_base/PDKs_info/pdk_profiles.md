@@ -229,8 +229,8 @@ python pdk_profiles.py --validate --require-gmid --require-virtuoso
 内置 `tsmc28` profile 提供 `io_1p8` voltage domain：
 
 - 默认/允许电源：`1.8 V`，范围 `1.62–1.98 V`
-- NMOS：`nch_25od33_mac`
-- PMOS：`pch_25od33_mac`
+- NMOS：`nch_25ud18_mac`
+- PMOS：`pch_25ud18_mac`
 - 最小沟道长度：`300 nm`
 
 项目参数或环境变量使用 `VOLTAGE_DOMAIN=io_1p8` 选择该域。当前 gm/Id lookup table 不包含这两个 IO model，因此使用它们的拓扑采用物理 W/L 参数 BO，而不调用 core-device gm/Id 表。
