@@ -13,6 +13,7 @@ from pdk_profiles import get_pdk_profile
 from simulator import Simulator
 from topologies import get_topology, get_topology_for_targets, list_topologies
 from topologies.capless_ldo import default_ldo_targets
+from topologies.dfc_capless_ldo import default_dfc_ldo_targets
 
 
 class SpectreTopologyTest(unittest.TestCase):
@@ -53,6 +54,14 @@ class SpectreTopologyTest(unittest.TestCase):
         self.assertEqual(
             get_topology_for_targets(DesignTarget(topology_hint="cap-less LDO")),
             "capless_ldo",
+        )
+
+    def test_dfc_ldo_hint_selects_paper_topology(self):
+        self.assertEqual(
+            get_topology_for_targets(
+                DesignTarget(topology_hint="DFC capacitor-free LDO")
+            ),
+            "dfc_capless_ldo",
         )
 
     def test_capless_ldo_requires_verified_1p8v_io_domain(self):
@@ -116,6 +125,133 @@ class SpectreTopologyTest(unittest.TestCase):
             "error_amp_netlist",
         )
 
+    def test_dfc_ldo_reproduces_confirmed_figure_four_connections(self):
+        topology = get_topology("dfc_capless_ldo")
+        params = {"VOLTAGE_DOMAIN": "io_1p8"}
+        circuit = topology.generate_circuit(params)
+        files = topology.get_circuit_files(params)
+
+        self.assertRegex(
+            circuit,
+            r"(?m)^subckt dfc_capless_ldo "
+            r"\(vin vref vb1 vb2 vb4 vout vss\)",
+        )
+        self.assertIn("nch_25od33_mac", circuit)
+        self.assertIn("pch_25od33_mac", circuit)
+        self.assertIn(
+            "M17 (n_stage1_inv n_stage1 vss vss)",
+            circuit,
+        )
+        self.assertIn(
+            "M18 (n_stage1_inv n_stage1_inv vss vss)",
+            circuit,
+        )
+        self.assertIn(
+            "M21 (n_stage2_mirror n_stage1 vss vss)",
+            circuit,
+        )
+        self.assertIn("m=k_gm*m_Wboostn", circuit)
+        self.assertIn(
+            "MD1 (n_dfc_out n_stage1 vss vss)",
+            circuit,
+        )
+        self.assertIn(
+            "MD2 (n_dfc_tail vb2 vss vss)",
+            circuit,
+        )
+        self.assertIn(
+            "MD3 (n_dfc_diode7 n_dfc_out n_dfc_tail vss)",
+            circuit,
+        )
+        self.assertIn(
+            "MD4 (n_dfc_diode6 vb4 n_dfc_tail vss)",
+            circuit,
+        )
+        self.assertIn(
+            "MD5 (n_dfc_out n_dfc_diode6 vin vin)",
+            circuit,
+        )
+        self.assertIn(
+            "Cf1Dev (vout vfb) capacitor c=Cf1",
+            circuit,
+        )
+        self.assertIn(
+            "Iloop (vfb vfb_ea) iprobe",
+            circuit,
+        )
+        self.assertIn(
+            "Cm1Dev (n_stage1 n_gate) capacitor c=Cm1",
+            circuit,
+        )
+        self.assertIn(
+            "Cm2Dev (n_stage1 n_dfc_out) capacitor c=Cm2",
+            circuit,
+        )
+        self.assertIn(
+            "parameters Cm1=Ccomp_total*cm1_fraction",
+            circuit,
+        )
+        self.assertIn(
+            "parameters Cm2=Ccomp_total*(1-cm1_fraction)"
+            "*cm2_remaining_fraction",
+            circuit,
+        )
+        self.assertIn(
+            "parameters Cf1=Ccomp_total*(1-cm1_fraction)"
+            "*(1-cm2_remaining_fraction)",
+            circuit,
+        )
+        param_space = {
+            param.name: param for param in topology.get_param_space().params
+        }
+        self.assertLess(param_space["Ccomp_total"].high, 12e-12)
+        self.assertNotIn("Cm1", param_space)
+        self.assertNotIn("Cm2", param_space)
+        self.assertNotIn("Cf1", param_space)
+        self.assertEqual(param_space["feedback_ratio"].low, 7.5)
+        self.assertEqual(param_space["feedback_ratio"].high, 8.5)
+        self.assertEqual(
+            files.testbench_suffixes,
+            ["loop", "load", "psr", "load_tran"],
+        )
+        self.assertIn("dc=ILOAD_MIN", files.testbenches[0])
+        self.assertIn(
+            "start=ILOAD_MIN stop=ILOAD_MAX",
+            files.testbenches[1],
+        )
+        self.assertIn("ldoPsrAC ac", files.testbenches[2])
+        self.assertIn(
+            "val0=ILOAD_MIN val1=ILOAD_MAX",
+            files.testbenches[3],
+        )
+        self.assertIn("rise=LOAD_EDGE fall=LOAD_EDGE", files.testbenches[3])
+
+    def test_dfc_ldo_project_records_paper_targets(self):
+        topology = get_topology("dfc_capless_ldo")
+        with tempfile.TemporaryDirectory() as tmp:
+            project = topology.write_project(
+                Path(tmp) / "dfc_ldo",
+                targets=default_dfc_ldo_targets(),
+                params={"VOLTAGE_DOMAIN": "io_1p8"},
+            )
+            requirements = json.loads(
+                (project / "requirements.json").read_text(encoding="utf-8")
+            )
+
+        self.assertEqual(requirements["topology_hint"], "dfc_capless_ldo")
+        self.assertEqual(
+            requirements["custom_specs"]["load_current_min_a"],
+            10e-3,
+        )
+        self.assertEqual(
+            requirements["custom_specs"]["load_current_max_a"],
+            100e-3,
+        )
+        self.assertEqual(
+            requirements["custom_specs"]["reference_voltage_v"],
+            0.1,
+        )
+
     def test_all_topologies_generate_native_spectre_projects(self):
         forbidden = [".lib ", ".options ", ".param ", ".subckt ", ".meas "]
         pdk = get_pdk_profile()
@@ -140,13 +276,17 @@ class SpectreTopologyTest(unittest.TestCase):
 
                 self.assertTrue(any(name.endswith(".scs") for name in file_names))
                 self.assertFalse(any(name.endswith(".sp") for name in file_names))
-                if meta.name == "bandgap_ptat":
+                if meta.name in {
+                    "bandgap_ptat",
+                    "banba_sub1v_bandgap",
+                    "leung_mok_sub1v_bandgap",
+                }:
                     self.assertTrue(
                         {
-                            "tb_bandgap_ptat_startup.scs",
-                            "tb_bandgap_ptat_psrr.scs",
-                            "tb_bandgap_ptat_temperature.scs",
-                            "tb_bandgap_ptat_line.scs",
+                            f"tb_{meta.name}_startup.scs",
+                            f"tb_{meta.name}_psrr.scs",
+                            f"tb_{meta.name}_temperature.scs",
+                            f"tb_{meta.name}_line.scs",
                         }.issubset(file_names)
                     )
                     continue

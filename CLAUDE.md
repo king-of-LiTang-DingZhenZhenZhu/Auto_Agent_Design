@@ -23,7 +23,7 @@ conda activate Auto_Agent_Design
 3. 按知识库、topology registry 和 PDK 约束选择 child topology。
 4. 用 `write_project()` 生成项目；层级项目同时生成 `hierarchy.json`。
 5. 叶子模块运行 `main.py`；层级项目运行 `hierarchical_flow.py`。
-6. 读取 `results.json`，进入 `success_audit` 或 `failure_repair`。
+6. 读取 `results.json`：达标则执行 Design Audit，未达标则进入 `failure_repair`；Audit blocker 进入 `audit_repair`。
 7. nominal、Design Audit 和 PVT 合格后导出 Virtuoso。（待定，尚未完善）
 
 `main.py` 不自动运行 Review/PVT。`design_flow_graph.py` 不自动填写 `patch_plan.json`。
@@ -101,7 +101,7 @@ python main.py \
 
 先读取 `outputs/<project>/results.json` 的 `all_targets_met`、`target_status`、`gap`、`metrics`、`params` 和 `operating_point_status`。
 
-- `success_audit`：检查 critical OP、尺寸/倍乘数、支路电流、参数贴边和过度设计；无证据支持修改时 `decision=accept`。
+- `audit_repair`：BO 已达标但 Design Audit 有 blocker；针对 blocker 检查 critical OP、尺寸/倍乘数、支路电流和参数边界。
 - `failure_repair`：检查主导 gap、DC OP、topology 知识、理论与参数影响；决定 `modify`、`restart_bo` 或 `change_topology`。
 - Review 必须使用 topology/domain profile：运放关注 Gain/GBW/PM/SR/settling，Bandgap 关注 startup/Vref/tempco/非线性/PSRR/线性调整率/功耗；禁止共用同一套参数建议。
 - Review 直接读取当前 topology 知识库和 `metric_goals`，不把通用说明文档当作电路证据。
@@ -134,7 +134,7 @@ python review_optimization.py \
 ```
 
 - Design Audit blocker 阻止 PVT；warning 当前只记录。
-- `design_flow_graph.py` 只在 BO 未达标或 audit blocker 时提示 Review；成功结果需显式准备完整 Review。
+- `design_flow_graph.py` 只在 BO 未达标或 Audit blocker 时提示 Review；Audit 无 blocker 的成功结果直接进入 PVT。
 - candidate 进入 PVT 前必须检查 diagnostics。
 
 ## PVT

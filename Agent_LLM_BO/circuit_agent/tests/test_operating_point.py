@@ -86,6 +86,5 @@ class OperatingPointEvaluatorTest(unittest.TestCase):
             self.assertEqual(status.penalty, 0.0)
             self.assertTrue(status.passed)
 
-
 if __name__ == "__main__":
     unittest.main()

@@ -82,7 +82,7 @@ ADC 总周期不能直接作为运放建立时间，必须扣除采样、非重�
 
 error amplifier 的增益、输入共模、失调、输出摆幅、GBW、负载和功耗应由 bandgap 环路和误差预算派生，而不是直接套用通用运放指标。
 
-当前代码中的 `bandgap_ptat` 已接入系统分解层和 frozen child opamp 流程。
+当前代码中的 `bandgap_ptat` 已接入系统分解层和 frozen child opamp 流程；`banba_sub1v_bandgap` 实现 Banba 电流求和结构；`leung_mok_sub1v_bandgap` 则直接实现 Leung/Mok 2002 Fig. 3 的完整低压放大器、体偏置和启动电路，不再分解 generic opamp child。
 LDO、ADC 架构规则、专用指标预算器和对应 parent topologies 尚未实现。
 
 ## 扩展约定

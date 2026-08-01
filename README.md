@@ -48,7 +48,7 @@ Auto_Agent_Design/
   |     -> 选择 topology
   |     -> write_project()
   |     -> main.py: gm/Id + BO + Spectre
-  |     -> success_audit 或 failure_repair
+  |     -> Design Audit / audit_repair 或 failure_repair
   |     -> PVT
   |     -> Virtuoso 导出
   |
@@ -266,6 +266,10 @@ child nominal/PVT targets 和 `hierarchy.json`，再把内部运放单独优化�
 级 BO 不展开 child 运放内部 W/L。相关规则见
 `knowledge_base/Bandgap_knowledge_base/topologies/bandgap_ptat_optimization.md`。
 
+论文专用低压基准还包括 `banba_sub1v_bandgap` 和
+`leung_mok_sub1v_bandgap`；后者实现 Leung/Mok 2002 Fig. 3 的完整
+603 mV 架构，并使用独立的启动、温度、PSRR 和线性调整率测试平台。
+
 ## gm/Id 设计方法
 
 系统使用 gm/Id 查找表将目标跨导和电流映射为器件尺寸：
@@ -314,7 +318,7 @@ python Agent_LLM_BO/circuit_agent/pdk_profiles.py --validate --require-gmid --re
 
 VDD 使用优先级：单次 `params["VDD"]` 最高，其次 `.env`/环境变量 `VDD`，最后才是 profile 默认值。profile 中的 `VDD_MIN/VDD_MAX` 记录该工艺允许范围，例如 TSMC28 当前为 `0.9~1.1V`；如果希望 BO 搜索 VDD，应在 topology 的 `get_param_space()` 或显式 `params.json` 中加入 `VDD`，范围不要超过 profile 允许值。
 
-晶体管类型由 topology 选择 profile 字段：`five_t_ota`、`two_stage_ota`、`nmcf_three_stage` 使用 `nmos_model/pmos_model`；`folded_cascode` 与 `folded_cascode_two_stage` 使用 `nmos_lvt_model/pmos_lvt_model`。换 PDK 时改 profile，不要在 topology 模板里硬编码 model 名。
+晶体管类型由 topology 选择 profile 字段：`five_t_ota`、`two_stage_ota` 使用 `nmos_model/pmos_model`；`nmcnr_three_stage`、`mnmc_three_stage`、`nmcf_three_stage`、`folded_cascode` 与 `folded_cascode_two_stage` 使用 `nmos_lvt_model/pmos_lvt_model`。换 PDK 时改 profile，不要在 topology 模板里硬编码 model 名。
 
 初始参数使用规则：每个 topology 仍保留通用 `DEFAULT_PARAMS` 作为 fallback；如果当前 profile 的 `topology_presets` 中提供了该 topology 的 `default_params`、`testbench_defaults` 或 `param_space_overrides`，生成网表、初始仿真、普通 BO 和 gm/Id pass-through 都优先使用 profile preset。`topology_presets` 是可选校准层，不是新增 PDK 时必须为所有拓扑填写的表；只有某个拓扑在新工艺/型号下初始工作点明显不可用或搜索范围需要微调时，才为该拓扑补 preset。换工艺或换器件型号时，应优先在 PDK profile 里新增/修改 topology preset，不要直接改 topology 源码默认值。
 

@@ -9,7 +9,7 @@
 - `hierarchical_flow.py`：child-parent 依赖、资格调用、frozen artifact 与嵌入。
 - `design_flow_graph.py`：单个 BO/Review 结果的 Design Audit、Review gate、PVT 和导出。
 - `review_optimization.py`：生成 Review context、校验 patch plan、生成并验证 candidate。
-- 默认不运行真实 Spectre/BO/PVT/Virtuoso；用户明确要求且环境可用时除外。
+
 
 运行项目命令前：
 
@@ -18,6 +18,16 @@ cd Agent_LLM_BO/circuit_agent
 conda activate Auto_Agent_Design
 ```
 
+## Spectre 仿真主机访问
+
+运行真实 Spectre/BO/PVT 仿真前，先根据当前所在机器选择入口；不要假设本机已经安装 Cadence 或挂载 PDK。
+
+- 从本地电脑运行：先执行 `ssh ic-vm` 进入本地虚拟机，再在虚拟机内进入项目目录、激活 `Auto_Agent_Design` 环境并运行仿真。
+- 从机房服务器运行：先执行 `ssh chenhaonan@10.131.254.102`，登录后再进入项目目录、激活环境并运行仿真。
+- 登录密码等敏感信息只记录在仓库根目录的 `LOCAL_SIMULATION_ACCESS.md`。该文件必须保持 Git ignored；若文件不存在或凭据失效，向用户确认，不要猜测。
+- 密码仅在 SSH 的交互式提示中输入；不要把密码拼进 shell 命令、脚本、日志、测试输出或提交内容，也不要使用 `sshpass`/`expect` 自动注入密码。
+- 登录后先用 `hostname`、`pwd` 确认目标机器和项目目录，再运行 `python pdk_profiles.py --validate --require-gmid --require-virtuoso --check-files`；验证通过后才开始真实仿真。
+
 ## 标准流程
 
 1. 识别设计层级，将指标转换为 SI 单位，并区分硬约束与可选软目标。
@@ -25,7 +35,7 @@ conda activate Auto_Agent_Design
 3. 根据知识库、topology registry 和 PDK 约束选择 child topology。
 4. 用 `write_project()` 生成网表、testbench、`requirements.json`；层级项目同时生成 `hierarchy.json`。
 5. 叶子模块运行 `main.py`；层级项目运行 `hierarchical_flow.py`。
-6. 读取 `results.json`，进入 `success_audit` 或 `failure_repair`。
+6. 读取 `results.json`：达标则执行 Design Audit，未达标则进入 `failure_repair`；Audit blocker 进入 `audit_repair`。
 7. nominal 与 Design Audit 合格后运行 PVT；parent gap 必要时回传并重分配 child targets。
 8. nominal/PVT 合格后用 `export_to_virtuoso.py` 导出。
 
@@ -103,7 +113,7 @@ python main.py \
 
 Review 路线：
 
-- `success_audit`：检查 critical OP、尺寸/倍乘数、支路电流、参数贴边和过度设计；无改进证据时 `decision=accept`。
+- `audit_repair`：BO 已达标但 Design Audit 有 blocker；针对 blocker 检查 critical OP、尺寸/倍乘数、支路电流和参数边界。
 - `failure_repair`：检查主导 gap、DC OP、topology 知识、理论与参数影响；决定 `modify`、`restart_bo` 或 `change_topology`。
 - Review 必须使用 topology/domain profile：运放关注 Gain/GBW/PM/SR/settling，Bandgap 关注 startup/Vref/tempco/非线性/PSRR/线性调整率/功耗；禁止共用同一套参数建议。
 - Review 直接读取当前 topology 知识库和 `metric_goals`，不把通用说明文档当作电路证据。
@@ -128,7 +138,7 @@ python review_optimization.py \
 - Agent 只能对已有参数使用 `scale/set`；Python 负责校验和 clamp。
 - `decision` 当前不是执行器硬分支；`restart_bo/change_topology` 不会自动执行。
 - Design Audit blocker 阻止 PVT；warning 当前只记录。
-- `design_flow_graph.py` 只在 BO 未达标或 audit blocker 时提示 Review；成功结果需显式执行 `--prepare-agent-review` 才进入完整 Agent Review。
+- `design_flow_graph.py` 只在 BO 未达标或 Audit blocker 时提示 Review；Audit 无 blocker 的成功结果直接进入 PVT。
 - Review candidate 进入 PVT 前必须检查 diagnostics。
 
 ## PVT 与导出

@@ -217,7 +217,9 @@ def _analyze_bandgap_run(
     profile: dict[str, Any],
 ) -> dict[str, Any]:
     result = record.get("result") or {}
-    area_ratio = _number(params.get("BJT_AREA_RATIO"))
+    area_ratio = _number(
+        params.get("BJT_AREA_RATIO", params.get("DIODE_AREA_RATIO"))
+    )
     r0_length = _number(params.get("R0_SEG_L"))
     r0_width = _number(params.get("R0_SEG_W"))
     r1_length = _number(params.get("R1_SEG_L"))
@@ -245,6 +247,16 @@ def _analyze_bandgap_run(
         r0_geometry = 2.0 * r0_length / r0_width
         r1_geometry = 4.0 * r1_length / r1_width
         derived["r1_over_r0_first_order"] = r1_geometry / r0_geometry
+    r12 = _number(params.get("R12"))
+    r3 = _number(params.get("R3"))
+    r4 = _number(params.get("R4"))
+    if r12 and r3 and r4:
+        derived["r4_over_r12_first_order"] = r4 / r12
+        derived["r12_over_r3_first_order"] = r12 / r3
+        if area_ratio and area_ratio > 1:
+            derived["ptat_current_27c_first_order_A"] = (
+                THERMAL_VOLTAGE_27C * math.log(area_ratio) / r3
+            )
     diagnoses.append({
         "confidence": "high",
         "message": (

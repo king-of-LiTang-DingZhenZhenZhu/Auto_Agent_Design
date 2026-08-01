@@ -50,15 +50,34 @@
 
 ### NMCF Three-Stage OTA
 
-- **结构**: PMOS 输入第一级 + NMOS 共源第二级 + PMOS 共源输出级 + Nested Miller 补偿
+- **结构**: PMOS 输入第一级 + PMOS/NMOS-mirror 第二级 + NMOS/PMOS-FTS push-pull 输出级 + NMCF 补偿
 - **增益**: 75-115 dB
-- **带宽**: 通常低于单级/两级高速 OTA，依赖 Cc1/Cc2/Rz1 与负载；适合高增益、较大负载场景
-- **相位裕度**: 强依赖 nested Miller 补偿网络，优化时需要同时搜索 Cc1、Cc2、Rz1
+- **带宽**: 通常低于单级/两级高速 OTA，依赖 `Cc1/Cc2`、`gmf2/gm2` 与负载；适合高增益、较大负载场景
+- **相位裕度**: 强依赖 `Cc1/Cc2`、`gmf2/gm2` 与输出级 `gmL`；无 `Rz1`
 - **功耗**: 高于 folded_cascode（三个增益级 + 偏置网络）
 - **适用场景**: 极高增益、大负载、两级/折叠 Cascode 优化后仍不达标
 - **复杂度**: 4
 - **升级路径**: 无（当前最高复杂度）
 - **偏置设计**: `nmcf_three_stage` 拓扑端口顺序为 `vip vin vout ibias vdd vss`。外部输入参考电流 `ibias`，内部偏置网络生成 PMOS tail/load 偏置和 NMOS load 偏置。
+
+### MNMC Three-Stage OTA
+
+- **结构**: 标准三级 NMC 主通路 + 输入到三级输入节点的差分前馈跨导级
+- **拓扑名**: `mnmc_three_stage`
+- **补偿**: `Cc1: s1_out-vout`、`Cc2: s2_out-vout`；FTS 输出接 `s2_out`，不直接接 `vout`
+- **特点**: 通过多路径 LHP 零点抵消较低的非主极点，带宽潜力高于普通 NMC，但增加功耗、复杂度和 pole-zero doublet 风险
+- **适用场景**: 明确要求 MNMC，或三级 NMC 的 nesting bandwidth reduction 是主导瓶颈
+- **关键关系**: 论文近似条件下 `gmf1=4.45gm2`，并要求 `gmL >> gm1,gm2`
+- **偏置设计**: 端口顺序为 `vip vin vout ibias vdd vss`，FTS 使用独立可优化支路电流/尺寸
+
+### NMCNR Three-Stage OTA
+
+- **结构**: 标准三级 NMC 主通路，内层补偿采用 `Cc2` 与 `Rm` 串联
+- **拓扑名**: `nmcnr_three_stage`
+- **补偿连接**: `Cc1: s1_out-vout`；`s2_out-Cc2-n_rm-Rm-vout`
+- **特点**: `Rm` 将 NMC 的低频 RHP 零点推向高频；不增加前馈跨导级及其静态功耗
+- **关键关系**: `Rm≈1/gmL`、`kg=gm2/gmL<1`
+- **适用场景**: 明确要求 NMCNR，或普通 NMC 受 RHP 零点限制但不希望增加 FTS 功耗
 
 ---
 
@@ -66,6 +85,8 @@
 
 ```
 需求分析 → 
+├─ 明确要求 NMCNR / nested-Miller nulling resistor → nmcnr_three_stage
+├─ 明确要求 MNMC / multipath NMC → mnmc_three_stage
 ├─ gain ≥ 85 dB 或大负载高增益 → nmcf_three_stage
 │
 ├─ gain ≥ 60 dB → 两级架构

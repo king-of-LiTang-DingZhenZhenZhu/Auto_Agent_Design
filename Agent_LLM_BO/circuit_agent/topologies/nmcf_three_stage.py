@@ -1,4 +1,4 @@
-"""NMCF Three-Stage OTA -- PMOS-input three-stage Miller-compensated amplifier.
+"""NMCF three-stage OTA based on Leung and Mok Fig. 1(h).
 
 Reference inspiration:
   /Users/hnchen/Desktop/LLM_Task/AnalogGym/AnalogGym/Amplifier/spectre_netlist/Leung_NMCF_Pin_3
@@ -9,14 +9,17 @@ Topology:
       PMOS differential pair with PMOS tail and NMOS mirror load.
 
   Stage 2:
-      NMOS common-source gain stage with PMOS current-source load.
+      PMOS common-source gain device drives an NMOS current mirror.
+      A PMOS current-source load converts the mirrored current to voltage.
 
-  Stage 3:
-      PMOS common-source output stage with NMOS current-source load.
+  Output stage:
+      NMOS common-source output device driven by stage 2.
+      PMOS feedforward transconductance device driven by stage 1.
+      Together they form the push-pull output stage used in Fig. 7(b).
 
   Compensation:
-      Cc1 + Rz1 : Miller compensation between stage1_out and stage2_out
-      Cc2        : Miller/output compensation between stage2_out and vout
+      Cc1 : stage1_out to vout
+      Cc2 : stage2_out to vout
 
 Bias simplification:
   The external ibias pin provides a reference current.  A compact internal
@@ -34,11 +37,11 @@ from pdk_profiles import get_pdk_profile, get_pdk_profile_for_params, spectre_in
 
 
 class NMCFThreeStageOTA(BaseTopology):
-    """Three-stage OTA with nested Miller compensation.
+    """Three-stage NMCF OTA with a stage-1-to-output feedforward path.
 
-    The first stage is PMOS-input, followed by an NMOS gain stage and a PMOS
-    output stage.  Compared with the two-stage and folded-cascode topologies,
-    this is the highest-gain and highest-complexity option in the current
+    The PMOS input stage drives a PMOS/NMOS-mirror intermediate stage.  An
+    NMOS output device and PMOS feedforward device form the push-pull output.
+    This is the highest-gain and highest-complexity option in the current
     opamp library.
     """
 
@@ -46,9 +49,9 @@ class NMCFThreeStageOTA(BaseTopology):
         name="nmcf_three_stage",
         display_name="NMCF Three-Stage OTA",
         description=(
-            "Three-stage OTA with PMOS input differential pair, NMOS intermediate "
-            "gain stage, PMOS output stage, and nested Miller compensation. "
-            "Targeted at very high gain and heavy-load applications."
+            "Three-stage OTA with a PMOS input stage, PMOS/NMOS-mirror "
+            "intermediate stage, push-pull NMCF output, and nested Miller "
+            "compensation for high gain and heavy loads."
         ),
         min_gain_db=75,
         max_gain_db=115,
@@ -67,9 +70,11 @@ class NMCFThreeStageOTA(BaseTopology):
             "Mload1a",
             "Mload1b",
             "Mgm2",
-            "Mload2",
+            "Mmirror2a",
+            "Mmirror2b",
+            "Msource2",
             "Mgm3",
-            "Mload3",
+            "Mgmf2",
         }
 
     DEFAULT_PARAMS: dict[str, float] = {
@@ -80,16 +85,18 @@ class NMCFThreeStageOTA(BaseTopology):
         "Ldiff1": 80e-9,
         "Wload1": 10e-6,
         "Lload1": 100e-9,
-        # Stage 2: NMOS gain stage + PMOS load
+        # Stage 2: PMOS gm2 + NMOS mirror + PMOS source load
         "Wgm2": 14e-6,
         "Lgm2": 80e-9,
-        "Wload2": 16e-6,
-        "Lload2": 120e-9,
-        # Stage 3: PMOS output stage + NMOS load
+        "Wmirror2": 10e-6,
+        "Lmirror2": 200e-9,
+        "Wsource2": 16e-6,
+        "Lsource2": 200e-9,
+        # Push-pull output: NMOS gmL + PMOS feedforward gmf2
         "Wgm3": 24e-6,
         "Lgm3": 100e-9,
-        "Wload3": 12e-6,
-        "Lload3": 180e-9,
+        "Wgmf2": 24e-6,
+        "Lgmf2": 100e-9,
         # Internal bias generator
         "Wbiasn": 4e-6,
         "Lbiasn": 200e-9,
@@ -97,9 +104,11 @@ class NMCFThreeStageOTA(BaseTopology):
         "Lbiasp": 200e-9,
         # Compensation
         "Cc1": 800e-15,
-        "Rz1": 1000.0,
         "Cc2": 500e-15,
     }
+
+    def required_model_roles(self) -> tuple[str, ...]:
+        return ("nmos_lvt", "pmos_lvt")
 
     def generate_circuit(self, params: dict[str, float] | None = None) -> str:
         """Generate the DUT .cir subcircuit netlist."""
@@ -108,8 +117,8 @@ class NMCFThreeStageOTA(BaseTopology):
 
         return _CIRCUIT_TEMPLATE.format(
             spectre_include=spectre_include_line(pdk),
-            nmos_model=pdk.nmos_model,
-            pmos_model=pdk.pmos_model,
+            nmos_lvt_model=pdk.nmos_lvt_model,
+            pmos_lvt_model=pdk.pmos_lvt_model,
             Wtail1=_fmt(p["Wtail1"]),
             Ltail1=_fmt(p["Ltail1"]),
             Wdiff1=_fmt(p["Wdiff1"]),
@@ -118,18 +127,19 @@ class NMCFThreeStageOTA(BaseTopology):
             Lload1=_fmt(p["Lload1"]),
             Wgm2=_fmt(p["Wgm2"]),
             Lgm2=_fmt(p["Lgm2"]),
-            Wload2=_fmt(p["Wload2"]),
-            Lload2=_fmt(p["Lload2"]),
+            Wmirror2=_fmt(p["Wmirror2"]),
+            Lmirror2=_fmt(p["Lmirror2"]),
+            Wsource2=_fmt(p["Wsource2"]),
+            Lsource2=_fmt(p["Lsource2"]),
             Wgm3=_fmt(p["Wgm3"]),
             Lgm3=_fmt(p["Lgm3"]),
-            Wload3=_fmt(p["Wload3"]),
-            Lload3=_fmt(p["Lload3"]),
+            Wgmf2=_fmt(p["Wgmf2"]),
+            Lgmf2=_fmt(p["Lgmf2"]),
             Wbiasn=_fmt(p["Wbiasn"]),
             Lbiasn=_fmt(p["Lbiasn"]),
             Wbiasp=_fmt(p["Wbiasp"]),
             Lbiasp=_fmt(p["Lbiasp"]),
             Cc1=_fmt(p["Cc1"]),
-            Rz1=_fmt(p["Rz1"]),
             Cc2=_fmt(p["Cc2"]),
         )
 
@@ -199,27 +209,14 @@ class NMCFThreeStageOTA(BaseTopology):
     # ------------------------------------------------------------------
 
     def get_gmid_spec(self, targets=None):
-        """Return gm/Id spec for NMCF three-stage OTA — reduces 17 → 25 params.
-
-        Three independent branch currents:
-        - I_tail1: Stage 1 PMOS tail current
-        - I_s2: Stage 2 NMOS gain + PMOS load bias current
-        - I_s3: Stage 3 PMOS output + NMOS load bias current
-
-        Bias transistors (Wbiasn, Wbiasp) remain at DEFAULT_PARAMS — not
-        part of the gm/Id search space.  They are small fixed-size devices
-        that generate vbiasn/vbiasp from the external ibias current.
-        """
+        """Return the gm/Id sizing contract for the NMCF signal path."""
         from models import BranchCurrentSpec, GmidTopologySpec, TransistorSpec
+
         pdk = get_pdk_profile()
         pass_through_space = self._apply_param_space_overrides(ParamSpace(params=[
             ParamDef(
                 name="Cc1", low=0.05e-12, high=10e-12,
                 log_scale=True, unit="F",
-            ),
-            ParamDef(
-                name="Rz1", low=1.0, high=100e3,
-                log_scale=True, unit="Ohm",
             ),
             ParamDef(
                 name="Cc2", low=0.05e-12, high=10e-12,
@@ -244,7 +241,7 @@ class NMCFThreeStageOTA(BaseTopology):
                 TransistorSpec(
                     role="stage1_tail_pmos",
                     w_param="Wtail1", l_param="Ltail1",
-                    model=pdk.pmos_model,
+                    model=pdk.pmos_lvt_model,
                     current_source="I_tail1", current_fraction=1.0,
                     gm_id_low=5, gm_id_high=20, gm_id_default=8,
                     L_low=200e-9, L_high=600e-9, L_default=200e-9,
@@ -254,61 +251,71 @@ class NMCFThreeStageOTA(BaseTopology):
                 TransistorSpec(
                     role="stage1_diff_pmos",
                     w_param="Wdiff1", l_param="Ldiff1",
-                    model=pdk.pmos_model,
+                    model=pdk.pmos_lvt_model,
                     current_source="I_tail1", current_fraction=0.5,
                     gm_id_low=10, gm_id_high=24, gm_id_default=14,
                     L_low=60e-9, L_high=500e-9, L_default=80e-9,
-                    Vds_estimate=0.25, multiplicity=2,
+                    Vds_estimate=0.25, Vbs=-0.2, multiplicity=2,
                 ),
                 # -- Stage 1: NMOS current mirror load (each I_tail1/2) --
                 TransistorSpec(
                     role="stage1_load_nmos",
                     w_param="Wload1", l_param="Lload1",
-                    model=pdk.nmos_model,
+                    model=pdk.nmos_lvt_model,
                     current_source="I_tail1", current_fraction=0.5,
                     gm_id_low=8, gm_id_high=24, gm_id_default=12,
                     L_low=200e-9, L_high=600e-9, L_default=200e-9,
                     Vds_estimate=0.3, multiplicity=2,
                 ),
-                # -- Stage 2: NMOS common-source gain stage (gate=s1_out) --
+                # -- Stage 2: PMOS common-source gain device --
                 TransistorSpec(
-                    role="stage2_gain_nmos",
+                    role="stage2_gain_pmos",
                     w_param="Wgm2", l_param="Lgm2",
-                    model=pdk.nmos_model,
+                    model=pdk.pmos_lvt_model,
                     current_source="I_s2", current_fraction=1.0,
                     gm_id_low=10, gm_id_high=24, gm_id_default=15,
                     L_low=60e-9, L_high=500e-9, L_default=80e-9,
                     Vds_estimate=0.3,
                 ),
-                # -- Stage 2: PMOS current-source load (gate=vbiasp) --
+                # -- Stage 2: NMOS current mirror --
                 TransistorSpec(
-                    role="stage2_load_pmos",
-                    w_param="Wload2", l_param="Lload2",
-                    model=pdk.pmos_model,
+                    role="stage2_mirror_nmos",
+                    w_param="Wmirror2", l_param="Lmirror2",
+                    model=pdk.nmos_lvt_model,
+                    current_source="I_s2", current_fraction=1.0,
+                    gm_id_low=8, gm_id_high=20, gm_id_default=12,
+                    L_low=200e-9, L_high=600e-9, L_default=200e-9,
+                    Vds_estimate=0.3, multiplicity=2,
+                ),
+                # -- Stage 2: PMOS current-source load at s2_out --
+                TransistorSpec(
+                    role="stage2_source_pmos",
+                    w_param="Wsource2", l_param="Lsource2",
+                    model=pdk.pmos_lvt_model,
                     current_source="I_s2", current_fraction=1.0,
                     gm_id_low=5, gm_id_high=20, gm_id_default=8,
                     L_low=200e-9, L_high=600e-9, L_default=200e-9,
                     Vds_estimate=0.4,
                 ),
-                # -- Stage 3: PMOS common-source output (gate=s2_out) --
+                # -- Output stage: NMOS gmL driven by s2_out --
                 TransistorSpec(
-                    role="stage3_gain_pmos",
+                    role="stage3_gain_nmos",
                     w_param="Wgm3", l_param="Lgm3",
-                    model=pdk.pmos_model,
+                    model=pdk.nmos_lvt_model,
                     current_source="I_s3", current_fraction=1.0,
                     gm_id_low=8, gm_id_high=22, gm_id_default=12,
                     L_low=60e-9, L_high=300e-9, L_default=100e-9,
-                    Vds_estimate=0.55,
+                    Vds_estimate=0.45,
                 ),
-                # -- Stage 3: NMOS current-source load (gate=vbiasn=ibias) --
+                # -- Feedforward PMOS gmf2 driven directly by s1_out --
                 TransistorSpec(
-                    role="stage3_load_nmos",
-                    w_param="Wload3", l_param="Lload3",
-                    model=pdk.nmos_model,
+                    role="feedforward_gain_pmos",
+                    w_param="Wgmf2", l_param="Lgmf2",
+                    model=pdk.pmos_lvt_model,
                     current_source="I_s3", current_fraction=1.0,
-                    gm_id_low=5, gm_id_high=20, gm_id_default=8,
-                    L_low=200e-9, L_high=600e-9, L_default=200e-9,
-                    Vds_estimate=0.35,
+                    gm_id_low=8, gm_id_high=22, gm_id_default=12,
+                    L_low=60e-9, L_high=300e-9, L_default=100e-9,
+                    Vds_estimate=0.45,
                 ),
             ],
             pass_through_params=pass_through_space.params,
@@ -353,11 +360,19 @@ class NMCFThreeStageOTA(BaseTopology):
                     log_scale=True, unit="m",
                 ),
                 ParamDef(
-                    name="Wload2", low=0.5e-6, high=200e-6,
+                    name="Wmirror2", low=0.5e-6, high=200e-6,
                     log_scale=True, unit="m", max_per_finger=2.6e-6,
                 ),
                 ParamDef(
-                    name="Lload2", low=200e-9, high=600e-9,
+                    name="Lmirror2", low=200e-9, high=600e-9,
+                    log_scale=True, unit="m",
+                ),
+                ParamDef(
+                    name="Wsource2", low=0.5e-6, high=200e-6,
+                    log_scale=True, unit="m", max_per_finger=2.6e-6,
+                ),
+                ParamDef(
+                    name="Lsource2", low=200e-9, high=600e-9,
                     log_scale=True, unit="m",
                 ),
                 ParamDef(
@@ -369,11 +384,11 @@ class NMCFThreeStageOTA(BaseTopology):
                     log_scale=True, unit="m",
                 ),
                 ParamDef(
-                    name="Wload3", low=0.5e-6, high=200e-6,
+                    name="Wgmf2", low=0.5e-6, high=200e-6,
                     log_scale=True, unit="m", max_per_finger=2.6e-6,
                 ),
                 ParamDef(
-                    name="Lload3", low=200e-9, high=600e-9,
+                    name="Lgmf2", low=30e-9, high=900e-9,
                     log_scale=True, unit="m",
                 ),
                 ParamDef(
@@ -397,10 +412,6 @@ class NMCFThreeStageOTA(BaseTopology):
                     log_scale=True, unit="F",
                 ),
                 ParamDef(
-                    name="Rz1", low=1.0, high=100e3,
-                    log_scale=True, unit="Ohm",
-                ),
-                ParamDef(
                     name="Cc2", low=0.05e-12, high=10e-12,
                     log_scale=True, unit="F",
                 ),
@@ -416,33 +427,36 @@ simulator lang=spectre insensitive=yes
 
 parameters Wtail1={Wtail1} Ltail1={Ltail1} Wdiff1={Wdiff1} Ldiff1={Ldiff1}
 parameters Wload1={Wload1} Lload1={Lload1} Wgm2={Wgm2} Lgm2={Lgm2}
-parameters Wload2={Wload2} Lload2={Lload2} Wgm3={Wgm3} Lgm3={Lgm3}
-parameters Wload3={Wload3} Lload3={Lload3}
+parameters Wmirror2={Wmirror2} Lmirror2={Lmirror2} Wsource2={Wsource2} Lsource2={Lsource2}
+parameters Wgm3={Wgm3} Lgm3={Lgm3} Wgmf2={Wgmf2} Lgmf2={Lgmf2}
 parameters Wbiasn={Wbiasn} Lbiasn={Lbiasn} Wbiasp={Wbiasp} Lbiasp={Lbiasp}
-parameters Cc1={Cc1} Rz1={Rz1} Cc2={Cc2}
+parameters Cc1={Cc1} Cc2={Cc2}
 
 subckt nmcf_three_stage (vip vin vout ibias vdd vss)
 // Bias generator
-Mbn1 (ibias ibias vss vss) {nmos_model} w=Wbiasn l=Lbiasn nf=1
-Mbn2 (vbiasp ibias vss vss) {nmos_model} w=Wbiasn l=Lbiasn nf=1
-Mbp1 (vbiasp vbiasp vdd vdd) {pmos_model} w=Wbiasp l=Lbiasp nf=1
+Mbn1 (ibias ibias vss vss) {nmos_lvt_model} w=Wbiasn l=Lbiasn nf=1
+Mbn2 (vbiasp ibias vss vss) {nmos_lvt_model} w=Wbiasn l=Lbiasn nf=1
+Mbp1 (vbiasp vbiasp vdd vdd) {pmos_lvt_model} w=Wbiasp l=Lbiasp nf=1
 
 // Stage 1: PMOS input differential pair and NMOS mirror load
-Mtail1 (tail vbiasp vdd vdd) {pmos_model} w=Wtail1 l=Ltail1 nf=1
-Mdiff1a (s1_mirr vip tail vdd) {pmos_model} w=Wdiff1 l=Ldiff1 nf=1
-Mdiff1b (s1_out vin tail vdd) {pmos_model} w=Wdiff1 l=Ldiff1 nf=1
-Mload1a (s1_mirr s1_mirr vss vss) {nmos_model} w=Wload1 l=Lload1 nf=1
-Mload1b (s1_out s1_mirr vss vss) {nmos_model} w=Wload1 l=Lload1 nf=1
+Mtail1 (tail vbiasp vdd vdd) {pmos_lvt_model} w=Wtail1 l=Ltail1 nf=1
+Mdiff1a (s1_mirr vin tail vdd) {pmos_lvt_model} w=Wdiff1 l=Ldiff1 nf=1
+Mdiff1b (s1_out vip tail vdd) {pmos_lvt_model} w=Wdiff1 l=Ldiff1 nf=1
+Mload1a (s1_mirr s1_mirr vss vss) {nmos_lvt_model} w=Wload1 l=Lload1 nf=1
+Mload1b (s1_out s1_mirr vss vss) {nmos_lvt_model} w=Wload1 l=Lload1 nf=1
 
-// Stage 2 and stage 3
-Mgm2 (s2_out s1_out vss vss) {nmos_model} w=Wgm2 l=Lgm2 nf=1
-Mload2 (s2_out vbiasp vdd vdd) {pmos_model} w=Wload2 l=Lload2 nf=1
-Mgm3 (vout s2_out vdd vdd) {pmos_model} w=Wgm3 l=Lgm3 nf=1
-Mload3 (vout ibias vss vss) {nmos_model} w=Wload3 l=Lload3 nf=1
+// Stage 2: PMOS gm2, NMOS current mirror, and PMOS source load
+Mgm2 (s2_mirr s1_out vdd vdd) {pmos_lvt_model} w=Wgm2 l=Lgm2 nf=1
+Mmirror2a (s2_mirr s2_mirr vss vss) {nmos_lvt_model} w=Wmirror2 l=Lmirror2 nf=1
+Mmirror2b (s2_out s2_mirr vss vss) {nmos_lvt_model} w=Wmirror2 l=Lmirror2 nf=1
+Msource2 (s2_out vbiasp vdd vdd) {pmos_lvt_model} w=Wsource2 l=Lsource2 nf=1
 
-// Nested Miller compensation
-Rz1 (s1_out n_rz1) resistor r=Rz1
-Cc1 (n_rz1 s2_out) capacitor c=Cc1
+// Push-pull output: serial gmL path plus stage-1 feedforward gmf2 path
+Mgm3 (vout s2_out vss vss) {nmos_lvt_model} w=Wgm3 l=Lgm3 nf=1
+Mgmf2 (vout s1_out vdd vdd) {pmos_lvt_model} w=Wgmf2 l=Lgmf2 nf=1
+
+// NMCF compensation from Fig. 1(h)
+Cc1 (s1_out vout) capacitor c=Cc1
 Cc2 (s2_out vout) capacitor c=Cc2
 ends nmcf_three_stage
 """

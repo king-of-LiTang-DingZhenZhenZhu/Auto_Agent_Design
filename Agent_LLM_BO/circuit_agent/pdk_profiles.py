@@ -166,6 +166,18 @@ PDK_PROFILES: dict[str, PDKProfile] = {
                     "pmos": {"svt": "pch_mac", "lvt": "pch_lvt_mac"},
                 },
             ),
+            "io_1p8": VoltageDomainProfile(
+                name="io_1p8",
+                vdd=1.8,
+                vdd_min=1.62,
+                vdd_max=1.98,
+                max_device_voltage=3.3,
+                min_l=300e-9,
+                model_flavors={
+                    "nmos": {"svt": "nch_25od33_mac"},
+                    "pmos": {"svt": "pch_25od33_mac"},
+                },
+            ),
         },
         active_voltage_domain="core_0p9",
         special_models={
@@ -210,6 +222,26 @@ PDK_PROFILES: dict[str, PDKProfile] = {
                     "CL": 2e-12,
                 },
             },
+            "leung_mok_sub1v_bandgap": {
+                "default_params": {
+                    "Wcore_p": 10e-6,
+                    "Lcore_p": 500e-9,
+                    "Wstart_p": 2e-6,
+                    "Wstart_n": 300e-9,
+                    "Lstart_n": 600e-9,
+                    "Wbias_p": 4e-6,
+                    "Wbias_n": 2e-6,
+                    "Lbias": 500e-9,
+                    "Wamp_p": 4e-6,
+                    "Wdiff_p": 20e-6,
+                    "Wamp_n": 4e-6,
+                    "Lamp": 500e-9,
+                    "Ldiff_p": 500e-9,
+                },
+                "testbench_defaults": {
+                    "CL": 100e-15,
+                },
+            },
             "folded_cascode_two_stage": {
                 "default_params": {
                     "Wdiffp": 12e-6,
@@ -243,19 +275,89 @@ PDK_PROFILES: dict[str, PDKProfile] = {
                     "Lload1": 100e-9,
                     "Wgm2": 14e-6,
                     "Lgm2": 80e-9,
-                    "Wload2": 16e-6,
-                    "Lload2": 120e-9,
+                    "Wmirror2": 10e-6,
+                    "Lmirror2": 200e-9,
+                    "Wsource2": 16e-6,
+                    "Lsource2": 200e-9,
                     "Wgm3": 24e-6,
                     "Lgm3": 100e-9,
-                    "Wload3": 12e-6,
-                    "Lload3": 180e-9,
+                    "Wgmf2": 24e-6,
+                    "Lgmf2": 100e-9,
                     "Wbiasn": 4e-6,
                     "Lbiasn": 200e-9,
                     "Wbiasp": 8e-6,
                     "Lbiasp": 200e-9,
                     "Cc1": 800e-15,
-                    "Rz1": 1000.0,
                     "Cc2": 500e-15,
+                },
+                "testbench_defaults": {
+                    "VCM": 0.3,
+                    "IBIAS": 40e-6,
+                    "CL": 10e-12,
+                },
+            },
+            "mnmc_three_stage": {
+                "default_params": {
+                    "Wtail1": 18e-6,
+                    "Ltail1": 200e-9,
+                    "Wdiff1": 10e-6,
+                    "Ldiff1": 80e-9,
+                    "Wload1": 10e-6,
+                    "Lload1": 100e-9,
+                    "Wgm2": 14e-6,
+                    "Lgm2": 80e-9,
+                    "Wmirror2": 10e-6,
+                    "Lmirror2": 200e-9,
+                    "Wsource2": 16e-6,
+                    "Lsource2": 200e-9,
+                    "Wgm3": 24e-6,
+                    "Lgm3": 100e-9,
+                    "Wload3": 24e-6,
+                    "Lload3": 200e-9,
+                    "Wtailf1": 160e-6,
+                    "Ltailf1": 200e-9,
+                    "Wgmf1": 64e-6,
+                    "Lgmf1": 80e-9,
+                    "Wloadf1": 64e-6,
+                    "Lloadf1": 200e-9,
+                    "Wbiasn": 4e-6,
+                    "Lbiasn": 200e-9,
+                    "Wbiasp": 8e-6,
+                    "Lbiasp": 200e-9,
+                    "Cc1": 800e-15,
+                    "Cc2": 10e-12,
+                },
+                "testbench_defaults": {
+                    "VCM": 0.3,
+                    "IBIAS": 40e-6,
+                    "CL": 10e-12,
+                },
+            },
+            "nmcnr_three_stage": {
+                "default_params": {
+                    "Wtail1": 18e-6,
+                    "Ltail1": 200e-9,
+                    "Wdiff1": 10e-6,
+                    "Ldiff1": 80e-9,
+                    "Wload1": 10e-6,
+                    "Lload1": 100e-9,
+                    "Wgm2": 14e-6,
+                    "Lgm2": 80e-9,
+                    "Wmirror2": 10e-6,
+                    "Lmirror2": 200e-9,
+                    "Wsource2": 16e-6,
+                    "Lsource2": 200e-9,
+                    "Wgm3": 24e-6,
+                    "Lgm3": 100e-9,
+                    "Wload3": 24e-6,
+                    "Lload3": 200e-9,
+                    "Wbiasn": 4e-6,
+                    "Lbiasn": 200e-9,
+                    "Wbiasp": 8e-6,
+                    "Lbiasp": 200e-9,
+                    "Cc1": 6e-12,
+                    "Cc2": 2.5e-12,
+                    "Rm": 1.7e3,
                 },
                 "testbench_defaults": {
                     "VCM": 0.3,
@@ -784,6 +886,14 @@ def _validate_gmid_models(
         return [f"cannot read gm/Id table {gmid_path}: {exc}"]
     available = set(raw)
     roles_to_check = required_roles or tuple(model_roles)
+    # gm/Id lookup tables describe MOS devices only. Special models such as
+    # BJTs and poly resistors are still validated as required model roles, but
+    # must not be required to appear in a MOS gm/Id table.
+    roles_to_check = tuple(
+        role
+        for role in roles_to_check
+        if role.startswith("nmos") or role.startswith("pmos")
+    )
     for role in roles_to_check:
         model = model_roles.get(role, "")
         if model and model not in available:

@@ -8,13 +8,13 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class ReviewProfile:
     domain: str
-    success_task: str
+    audit_repair_task: str
     failure_task: str
 
 
 _OPAMP_PROFILE = ReviewProfile(
     domain="opamp",
-    success_task="""BO has met its nominal targets for this opamp. Audit the successful design rather than assuming it is final:
+    audit_repair_task="""BO met its nominal targets, but Design Audit blocked this opamp. Repair the audited problem:
 - inspect critical DC operating points, saturation margins, and branch currents;
 - judge whether transistor dimensions, multiplicities, compensation, and current ratios are physically reasonable;
 - identify parameters near bounds, excessive area/current, hidden overdesign, and safe power/area optimization opportunities;
@@ -29,7 +29,7 @@ _OPAMP_PROFILE = ReviewProfile(
 
 _BANDGAP_PROFILE = ReviewProfile(
     domain="bandgap",
-    success_task="""BO has met its nominal bandgap targets. Audit the reference as a bandgap, not as an opamp:
+    audit_repair_task="""BO met its nominal targets, but Design Audit blocked this bandgap. Repair it as a bandgap, not as an opamp:
 - verify startup escapes the zero-current state and settles with margin;
 - inspect mirror, startup, BJT, resistor-current, and child-opamp DC operating points;
 - review Vref accuracy, tempco, temperature curvature, PSRR, line regulation, and power together;
@@ -46,7 +46,7 @@ _BANDGAP_PROFILE = ReviewProfile(
 
 _LDO_PROFILE = ReviewProfile(
     domain="ldo",
-    success_task="""BO has met its nominal LDO targets. Audit the regulator as a closed-loop power circuit:
+    audit_repair_task="""BO met its nominal targets, but Design Audit blocked this LDO. Repair it as a closed-loop power circuit:
 - inspect PMOS pass-device saturation/triode operation, gate headroom, full-load current density, and zero-load bias currents;
 - verify the zero-load STB result, loop GBW/PM, output accuracy, load regulation, near-DC PSR, and both load-step polarities;
 - judge pass-device area, feedback-divider current, bleed current, internal compensation, and error-amplifier drive capability;
@@ -62,8 +62,12 @@ _LDO_PROFILE = ReviewProfile(
 
 
 def get_review_profile(topology_name: str) -> ReviewProfile:
-    if topology_name == "bandgap_ptat":
+    if topology_name in {
+        "bandgap_ptat",
+        "banba_sub1v_bandgap",
+        "leung_mok_sub1v_bandgap",
+    }:
         return _BANDGAP_PROFILE
-    if topology_name == "capless_ldo":
+    if topology_name in {"capless_ldo", "dfc_capless_ldo"}:
         return _LDO_PROFILE
     return _OPAMP_PROFILE

@@ -156,6 +156,19 @@
         "mismatch, long-term drift, and resistor/BJT statistical models require dedicated Monte Carlo signoff"
       ]
     },
+    "banba_sub1v_bandgap": {
+      "domain": "bandgap",
+      "architecture": "banba_current_summing_sub1v",
+      "relations": [
+        "bandgap_reference",
+        "bandgap_delta_vbe",
+        "bandgap_tempco_cancel"
+      ],
+      "limitations": [
+        "the paper's native-NMOS implementation is mapped to the active PDK LVT models and must be revalidated for input common-mode and startup headroom",
+        "the schematic uses ideal resistor values to preserve the published ratios; PDK resistor mapping and Monte Carlo mismatch require signoff"
+      ]
+    },
     "capless_ldo": {
       "domain": "ldo",
       "architecture": "pmos_pass_hierarchical",

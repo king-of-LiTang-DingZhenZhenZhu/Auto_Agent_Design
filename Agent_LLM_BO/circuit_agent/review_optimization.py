@@ -356,9 +356,30 @@ def _apply_opamp_review_rules(
     if power_high:
         scale(_matching_params(adjusted, "Wtail"), 0.90)
         scale(_matching_params(adjusted, "Wload"), 0.90)
-        scale(["Wcs", "Wgm2", "Wgm3"], 0.90)
+        scale(
+            [
+                "Wcs", "Wgm2", "Wgm3", "Wgmf2", "Wgmf1",
+                "Wmirror2", "Wsource2", "Wload3", "Wtailf1", "Wloadf1",
+            ],
+            0.90,
+        )
     if sr_low:
-        scale(["Wcs", "Wgm2", "Wgm3", "Wload", "Wload2", "Wload3"], 1.15)
+        scale(
+            [
+                "Wcs",
+                "Wgm2",
+                "Wgm3",
+                "Wgmf2",
+                "Wgmf1",
+                "Wload",
+                "Wload3",
+                "Wtailf1",
+                "Wloadf1",
+                "Wmirror2",
+                "Wsource2",
+            ],
+            1.15,
+        )
         scale(_matching_params(adjusted, "Cc"), 0.90)
     if st_slow:
         if pm_low:
@@ -786,8 +807,8 @@ def _build_local_agent_context(
     design_audit_path: Path,
 ) -> str:
     profile = get_review_profile(topology_name)
-    if review_mode == "success_audit":
-        task = profile.success_task
+    if review_mode == "audit_repair":
+        task = profile.audit_repair_task
         evidence = f"""1. Design audit: `{design_audit_path.resolve()}`
 2. Topology guide: `{topology_guide_path.resolve()}`
 3. Knowledge-driven diagnostics: `{knowledge_analysis_path.resolve()}`
@@ -898,10 +919,10 @@ def _detect_review_mode(
     results_path = project / "results.json"
     if results_path.exists():
         results = json.loads(results_path.read_text(encoding="utf-8"))
-        return "success_audit" if results.get("all_targets_met") else "failure_repair"
+        return "audit_repair" if results.get("all_targets_met") else "failure_repair"
     targets = history.get("targets") or {}
     if records and _result_meets_targets(records[0].get("result") or {}, targets):
-        return "success_audit"
+        return "audit_repair"
     return "failure_repair"
 
 

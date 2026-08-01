@@ -111,6 +111,7 @@ class DesignFlowGraphTests(unittest.TestCase):
             state = run_design_flow(project)
 
             self.assertIn("prepare_agent_review", state["next_action"])
+            self.assertEqual(state["review_mode"], "failure_repair")
             self.assertIs(state["nominal_pass"], False)
             self.assertTrue((project / "flow" / "flow_report.md").exists())
 
@@ -140,6 +141,7 @@ class DesignFlowGraphTests(unittest.TestCase):
 
             self.assertEqual(state["audit_status"], "block")
             self.assertIn("prepare_agent_review", state["next_action"])
+            self.assertEqual(state["review_mode"], "audit_repair")
             self.assertFalse((project / "pvt").exists())
 
 

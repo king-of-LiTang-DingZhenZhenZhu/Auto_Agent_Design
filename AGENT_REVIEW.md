@@ -2,13 +2,15 @@
 
 > 本文件面向人类开发者和操作人员，用于说明 Review 的两条路线、文件流和执行命令。它不会作为 Agent Review 的证据文件加载；Agent 所需任务、证据路径和输出约束由每次生成的 `agent_context.md` 直接给出。
 
-## 定位与两条路线
+## 定位与两条触发路线
 
-Review 根据 BO 是否满足 nominal targets 分成两条路线。Agent 不直接编辑 rendered netlist，也不替代 Spectre：Agent 负责解释证据和填写结构化 `patch_plan.json`，Python 负责校验、clamp、渲染和仿真。
+Agent Review 只在 BO 未达标，或 BO 达标但 Design Audit 出现 blocker 时触发。
+Agent 不直接编辑 rendered netlist，也不替代 Spectre：Agent 负责解释证据和
+填写结构化 `patch_plan.json`，Python 负责校验、clamp、渲染和仿真。
 
-### 路线 A：`success_audit`
+### 路线 A：`audit_repair`
 
-BO 已达标时，不再分析“怎么补指标”，而是审计设计质量：
+BO 已达标但 Design Audit 出现 blocker 时，修复审计问题：
 
 - critical MOS 的 DC 工作点和饱和裕量是否合理；
 - W/L、`nf`、`m`、总有效宽度是否异常；
@@ -16,7 +18,8 @@ BO 已达标时，不再分析“怎么补指标”，而是审计设计质量�
 - 是否存在参数贴边、过度设计、过大面积/电流；
 - 是否有安全的降功耗、降面积或增加鲁棒性的空间。
 
-没有明确改进证据时应输出 `decision=accept`，不要为了“优化”而强行修改已经达标的设计。
+只有证据表明 blocker 是误报时才可输出 `decision=accept`；否则应修复
+blocker，再验证 candidate。
 
 ### 路线 B：`failure_repair`
 
@@ -27,7 +30,9 @@ BO 未达标时，先诊断再修改：
 - 结合 topology 知识、一阶理论和带参数的 BO 经验趋势；
 - 输出局部修改候选，或判断应调整参数空间、重启 BO、升级 topology。
 
-`main.py` 不会自动启动本地 Agent。`review_optimization.py --prepare-agent-review` 会根据 `results.json.all_targets_met` 自动选择上述模式并生成 Agent context。
+`main.py` 不会自动启动本地 Agent。`design_flow_graph.py` 先区分 BO
+成功/失败；`review_optimization.py --prepare-agent-review` 根据
+`results.json.all_targets_met` 生成对应 Agent context。
 
 ## 达标后的 Design Audit
 

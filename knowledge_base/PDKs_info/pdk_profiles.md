@@ -65,7 +65,11 @@ profile 同时提供常规 MOS 和 LVT MOS model 名称：
 | LVT NMOS | `nmos_lvt_model` | `nch_lvt_mac` |
 | LVT PMOS | `pmos_lvt_model` | `pch_lvt_mac` |
 
-当前 `five_t_ota`、`two_stage_ota`、`nmcf_three_stage` 使用常规 MOS；`folded_cascode` 与 `folded_cascode_two_stage` 使用 LVT MOS。换 PDK 时，只需要改 profile 中这些 model 名称，topology 会把对应 model 写入生成的 Spectre netlist 和 gm/Id sizing spec。
+当前 `five_t_ota`、`two_stage_ota` 使用常规 MOS；`nmcnr_three_stage`、`mnmc_three_stage`、`nmcf_three_stage`、`folded_cascode` 与 `folded_cascode_two_stage` 使用 LVT MOS。换 PDK 时，只需要改 profile 中这些 model 名称，topology 会把对应 model 写入生成的 Spectre netlist 和 gm/Id sizing spec。
+
+`leung_mok_sub1v_bandgap` 按论文“不需要低阈值器件”的条件使用常规
+`nmos_model/pmos_model` 和 `special_models.pnp`。其 PMOS 体端前向偏置必须
+在目标 PDK 的结电流和可靠性规则下重新验证。
 
 PNP、poly resistor 等非 MOS 器件写入 `special_models`，通过
 `profile.resolve_model(<role>)` 获取。当前 `bandgap_ptat` 需要：
@@ -219,3 +223,14 @@ python pdk_profiles.py --validate --require-gmid --require-virtuoso
 5. 在真实 Cadence/Spectre 机器上加 `--check-files`，确认模型文件和 Virtuoso OA library 路径可见。
 
 优化完成后，`outputs/<project>/pdk_profile_used.json` 会保存当次使用的 profile 快照，方便之后复现实验或排查 PDK 切换问题。
+
+# TSMC28 IO 1.8 V 域
+
+内置 `tsmc28` profile 提供 `io_1p8` voltage domain：
+
+- 默认/允许电源：`1.8 V`，范围 `1.62–1.98 V`
+- NMOS：`nch_25od33_mac`
+- PMOS：`pch_25od33_mac`
+- 最小沟道长度：`300 nm`
+
+项目参数或环境变量使用 `VOLTAGE_DOMAIN=io_1p8` 选择该域。当前 gm/Id lookup table 不包含这两个 IO model，因此使用它们的拓扑采用物理 W/L 参数 BO，而不调用 core-device gm/Id 表。

@@ -232,15 +232,15 @@ results.json
 
 `main.py` 不自动运行 Review 或 PVT。
 
-### 6.1 BO 达标：success_audit
+### 6.1 BO 达标：Design Audit
 
 ```text
 BO nominal 达标
   -> Design Audit
   -> 检查 critical OP、尺寸、倍乘数、支路电流、参数贴边和过度设计
   |
-  +-- 无 blocker、无明确修改证据 -> 接受并进入 PVT
-  +-- 有 blocker 或明确优化证据 -> Agent Review candidate
+  +-- 无 blocker -> 进入 PVT
+  +-- 有 blocker -> audit_repair Agent Review
 ```
 
 ### 6.2 BO 未达标：failure_repair

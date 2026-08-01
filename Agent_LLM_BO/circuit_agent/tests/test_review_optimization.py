@@ -410,7 +410,7 @@ ends dut
             self.assertIn('"review_mode": "failure_repair"', plan)
             self.assertIn('"findings": []', plan)
 
-    def test_write_local_agent_review_package_uses_success_audit_route(self):
+    def test_write_local_agent_review_package_uses_audit_repair_route(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             workspace = root / "workspace"
@@ -455,12 +455,12 @@ ends dut
             plan = json.loads(
                 (review_root / "patch_plan.json").read_text(encoding="utf-8")
             )
-            self.assertIn("`success_audit`", context)
-            self.assertIn("BO has met its nominal targets", context)
+            self.assertIn("`audit_repair`", context)
+            self.assertIn("BO met its nominal targets", context)
             self.assertIn("branch currents", context)
             self.assertIn("decision=accept", context)
             self.assertNotIn("AGENT_REVIEW.md", context)
-            self.assertEqual(plan["review_mode"], "success_audit")
+            self.assertEqual(plan["review_mode"], "audit_repair")
             self.assertEqual(plan["findings"], [])
 
     def test_bandgap_context_uses_bandgap_review_profile(self):

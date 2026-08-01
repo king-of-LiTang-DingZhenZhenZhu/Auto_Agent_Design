@@ -9,11 +9,17 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from topologies.bandgap_ptat import BandgapPTAT
+from topologies.banba_sub1v_bandgap import BanbaSub1VBandgap
 from topologies.base import BaseTopology, TopologyMeta
 from topologies.capless_ldo import CaplessLDO
+from topologies.dfc_capless_ldo import DFCCaplessLDO
 from topologies.five_t_ota import FiveTOTA
 from topologies.folded_cascode import FoldedCascodeOTA
 from topologies.folded_cascode_two_stage import FoldedCascodeTwoStageOTA
+from topologies.leung_mok_sub1v_bandgap import LeungMokSub1VBandgap
+from topologies.mzc_two_stage_ota import MZCTwoStageOTA, PMOSInputMZCTwoStageOTA
+from topologies.mnmc_three_stage import MNMCThreeStageOTA
+from topologies.nmcnr_three_stage import NMCNRThreeStageOTA
 from topologies.nmcf_three_stage import NMCFThreeStageOTA
 from topologies.pmos_input_two_stage_ota import PMOSInputTwoStageOTA
 from topologies.two_stage_ota import TwoStageOTA
@@ -28,11 +34,18 @@ TOPOLOGY_REGISTRY: dict[str, type[BaseTopology]] = {
     "5t_ota": FiveTOTA,
     "two_stage_ota": TwoStageOTA,
     "pmos_input_two_stage_ota": PMOSInputTwoStageOTA,
+    "mzc_two_stage_ota": MZCTwoStageOTA,
+    "pmos_input_mzc_two_stage_ota": PMOSInputMZCTwoStageOTA,
     "folded_cascode": FoldedCascodeOTA,
     "folded_cascode_two_stage": FoldedCascodeTwoStageOTA,
+    "nmcnr_three_stage": NMCNRThreeStageOTA,
+    "mnmc_three_stage": MNMCThreeStageOTA,
     "nmcf_three_stage": NMCFThreeStageOTA,
     "bandgap_ptat": BandgapPTAT,
+    "banba_sub1v_bandgap": BanbaSub1VBandgap,
+    "leung_mok_sub1v_bandgap": LeungMokSub1VBandgap,
     "capless_ldo": CaplessLDO,
+    "dfc_capless_ldo": DFCCaplessLDO,
 }
 
 
@@ -61,10 +74,45 @@ def get_topology_for_targets(targets: DesignTarget) -> str | None:
     Returns None only when no topology can plausibly meet the targets.
     """
     topology_hint = (targets.topology_hint or "").lower()
+    if (
+        "leung" in topology_hint
+        or "mok" in topology_hint
+        or "15-ppm" in topology_hint
+        or "15 ppm" in topology_hint
+        or "without requiring low threshold" in topology_hint
+        or "603 mv" in topology_hint
+    ) and "bandgap" in topology_hint:
+        return "leung_mok_sub1v_bandgap"
+    if (
+        "banba" in topology_hint
+        or "sub-1-v" in topology_hint
+        or "sub1v" in topology_hint
+    ):
+        return "banba_sub1v_bandgap"
     if "bandgap" in topology_hint or "ptat" in topology_hint:
         return "bandgap_ptat"
+    if "dfc" in topology_hint and (
+        "ldo" in topology_hint or "low dropout" in topology_hint
+    ):
+        return "dfc_capless_ldo"
     if "ldo" in topology_hint or "low dropout" in topology_hint:
         return "capless_ldo"
+    if "nmcnr" in topology_hint or (
+        "nested miller" in topology_hint and "nulling resistor" in topology_hint
+    ):
+        return "nmcnr_three_stage"
+    if "mnmc" in topology_hint or "multipath nested miller" in topology_hint:
+        return "mnmc_three_stage"
+    if "nmcf" in topology_hint:
+        return "nmcf_three_stage"
+    if (
+        "mzc" in topology_hint
+        or "feedforward" in topology_hint
+        or "fts" in topology_hint
+    ):
+        if "pmos" in topology_hint:
+            return "pmos_input_mzc_two_stage_ota"
+        return "mzc_two_stage_ota"
 
     if "nmcf_three_stage" in TOPOLOGY_REGISTRY:
         very_high_gain = (
@@ -81,7 +129,10 @@ def get_topology_for_targets(targets: DesignTarget) -> str | None:
 
     candidates: list[tuple[int, int, str]] = []  # (score, complexity, name)
     for name, cls in TOPOLOGY_REGISTRY.items():
-        if name in {"bandgap_ptat", "capless_ldo"}:
+        if name in {
+            "bandgap_ptat", "banba_sub1v_bandgap", "leung_mok_sub1v_bandgap",
+            "capless_ldo", "dfc_capless_ldo",
+        }:
             continue
         meta = cls().meta
         score = 0

@@ -51,6 +51,10 @@ Agent_LLM_BO/circuit_agent/cache/
 
 # Documentation
 GIT_GUIDE.md
+LOCAL_SIMULATION_ACCESS.md
+
+# Temporary working directories
+tmp/
 
 # Generated circuit project directories (created by topologies/*.write_project())
 Agent_LLM_BO/circuit_agent/folded_cascode_opamp/

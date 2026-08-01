@@ -36,6 +36,7 @@ class DesignFlowState(TypedDict, total=False):
     audit_blockers: int
     audit_warnings: int
     audit_report: str | None
+    review_mode: str | None
     pvt_requested: bool
     pvt_targets: DesignTarget | None
     pvt_profile: PDKProfile | None
@@ -200,13 +201,20 @@ def route_after_audit(state: DesignFlowState) -> Literal["review", "pvt"]:
 
 def prepare_review(state: DesignFlowState) -> DesignFlowState:
     project = Path(state["project_dir"])
+    review_mode = (
+        "audit_repair"
+        if state.get("audit_status") == "block"
+        else "failure_repair"
+    )
     audit_note = ""
     if state.get("audit_status") == "block":
         audit_note = f" inspect `{state.get('audit_report')}`, then"
     return {
         **state,
+        "review_mode": review_mode,
         "next_action": (
-            f"prepare_agent_review:{audit_note} run `python review_optimization.py "
+            f"prepare_agent_review:{review_mode}:{audit_note} "
+            f"run `python review_optimization.py "
             f"--project {project} --workspace workspace --topology <topology> "
             "--prepare-agent-review`"
         ),
@@ -322,6 +330,7 @@ def _render_flow_report(state: DesignFlowState) -> str:
         f"- Nominal pass: `{state.get('nominal_pass')}`",
         f"- Review available: `{state.get('review_available')}`",
         f"- Review pass: `{state.get('review_pass')}`",
+        f"- Review mode: `{state.get('review_mode')}`",
         f"- Design audit: `{state.get('audit_status')}`",
         f"- Audit blockers: `{state.get('audit_blockers')}`",
         f"- Audit warnings: `{state.get('audit_warnings')}`",

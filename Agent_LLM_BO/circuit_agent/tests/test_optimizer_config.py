@@ -477,7 +477,12 @@ class OptimizerConfigTest(unittest.TestCase):
         physical_roles = {
             "5t_ota": ("Ltail", "Lcm"),
             "two_stage_ota": ("Lbias",),
-            "nmcf_three_stage": ("Ltail1", "Lload1", "Lload2", "Lload3"),
+            "nmcf_three_stage": (
+                "Ltail1",
+                "Lload1",
+                "Lmirror2",
+                "Lsource2",
+            ),
         }
         gmid_roles = {
             "5t_ota": ("tail_pmos", "mirror_nmos"),
@@ -485,8 +490,8 @@ class OptimizerConfigTest(unittest.TestCase):
             "nmcf_three_stage": (
                 "stage1_tail_pmos",
                 "stage1_load_nmos",
-                "stage2_load_pmos",
-                "stage3_load_nmos",
+                "stage2_mirror_nmos",
+                "stage2_source_pmos",
             ),
         }
 
