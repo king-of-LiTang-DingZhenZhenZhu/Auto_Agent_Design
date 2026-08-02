@@ -1245,12 +1245,14 @@ def _eng(value: float) -> str:
 
 
 def _format_spice_value(value: float) -> str:
-    """Format a float as a SPICE value with appropriate suffix."""
+    """Format a float using Spectre-safe engineering notation."""
     if value == 0:
         return "0"
     abs_val = abs(value)
+    if abs_val >= 1e6:
+        return f"{_format_no_exponent(value / 1e6)}e6"
     suffixes = [
-        (1e6, "meg"), (1e3, "k"), (1, ""), (1e-3, "m"),
+        (1e3, "k"), (1, ""), (1e-3, "m"),
         (1e-6, "u"), (1e-9, "n"), (1e-12, "p"), (1e-15, "f"),
     ]
     for threshold, suffix in suffixes:

@@ -28,7 +28,7 @@ class BanbaSub1VBandgapTest(unittest.TestCase):
             r"(?m)^subckt banba_sub1v_bandgap \(vref vdd vss\)",
         )
         self.assertIn(
-            "parameters R12=2.063meg PTAT_WEIGHT=11.1612 VREF_SCALE=412m",
+            "parameters R12=2.063e6 PTAT_WEIGHT=11.1612 VREF_SCALE=412m",
             circuit,
         )
         self.assertIn(
@@ -39,6 +39,7 @@ class BanbaSub1VBandgapTest(unittest.TestCase):
         self.assertIn("P1 (va vg vdd vdd)", circuit)
         self.assertIn("P2 (vb vg vdd vdd)", circuit)
         self.assertIn("P3 (vref vg vdd vdd)", circuit)
+        self.assertIn("parameters C1=2p C2=20p", circuit)
         self.assertIn("R1dev (va vss) resistor r=R12", circuit)
         self.assertIn("R2dev (vb vss) resistor r=R12", circuit)
         self.assertIn("R3dev (vb vdn) resistor r=R3", circuit)
@@ -77,9 +78,17 @@ class BanbaSub1VBandgapTest(unittest.TestCase):
                 "Xdut (vout vdd vss) banba_sub1v_bandgap",
                 testbench,
             )
-        self.assertIn("startupTran tran", files.testbenches[0])
+        self.assertIn(
+            "width=200u period=400u",
+            files.testbenches[0],
+        )
+        self.assertIn("startupTran tran stop=100u", files.testbenches[0])
         self.assertIn("psrrAC ac", files.testbenches[1])
         self.assertIn("tempSweep dc", files.testbenches[2])
+        self.assertIn(
+            "start=125.0 stop=-40.0 step=-1",
+            files.testbenches[2],
+        )
         self.assertIn("lineSweep dc", files.testbenches[3])
 
     def test_bo_render_preserves_derived_resistor_relations(self):
@@ -97,7 +106,7 @@ class BanbaSub1VBandgapTest(unittest.TestCase):
         )
 
         self.assertIn(
-            "parameters R12=2meg PTAT_WEIGHT=12 VREF_SCALE=0.4",
+            "parameters R12=2e6 PTAT_WEIGHT=12 VREF_SCALE=0.4",
             rendered,
         )
         self.assertIn(

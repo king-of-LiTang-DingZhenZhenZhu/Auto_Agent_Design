@@ -45,9 +45,10 @@ class BanbaSub1VBandgap(BandgapPTAT):
         "Lmirror_p": 600e-9,
         # Frozen NMOS-input error-amplifier bias.
         "Iopbias": 2.2e-6,
-        # Fig. 5 loop capacitors and an autonomous equivalent of PONRST.
+        # Fig. 5 loop capacitor and compensation for the frozen OTA macro.
         "C1": 2e-12,
-        "C2": 2e-12,
+        "C2": 20e-12,
+        # Autonomous equivalent of PONRST.
         "Wstart_n": 1e-6,
         "Lstart_n": 300e-9,
         "Rstart": 5e6,
@@ -88,9 +89,25 @@ class BanbaSub1VBandgap(BandgapPTAT):
         analysis_type: str = "startup",
     ) -> str:
         """Reuse the established bandgap measurement contract."""
-        return super().generate_testbench(params, analysis_type).replace(
+        testbench = super().generate_testbench(params, analysis_type).replace(
             "bandgap_ptat", self.meta.name
         )
+        if analysis_type in ("startup", "tran", "sr"):
+            testbench = testbench.replace(
+                "width=20u period=40u", "width=200u period=400u"
+            ).replace(
+                "stop=10u maxstep=10n", "stop=100u maxstep=50n"
+            )
+        if analysis_type in ("temperature", "temp", "nonlinearity"):
+            pdk = get_pdk_profile_for_params(params)
+            temperatures = pdk.pvt_temperatures_c or (-40.0, 27.0, 125.0)
+            low = min(temperatures)
+            high = max(temperatures)
+            testbench = testbench.replace(
+                f"start={low} stop={high} step=1",
+                f"start={high} stop={low} step=-1",
+            )
+        return testbench
 
     def get_default_params(self) -> dict[str, float]:
         return self._default_params_with_preset()
