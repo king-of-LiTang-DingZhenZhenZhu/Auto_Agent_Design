@@ -128,8 +128,11 @@ class PDKProfile:
 PDK_PROFILES: dict[str, PDKProfile] = {
     "tsmc28": PDKProfile(
         name="tsmc28",
-        spectre_model_path="/PDKS/TSMC28nm/models/spectre/toplevel.scs",
-        spectre_section="top_tt",
+        spectre_model_path=(
+            "/PDKS/TSMC28nm/models/spectre/"
+            "cln28hpcp_1d8_elk_v1d0_2p2_shrink0d9_embedded_usage.scs"
+        ),
+        spectre_section="ttmacro_mos_moscap",
         hspice_model_path="/PDKS/TSMC28nm/models/hspice/toplevel.l",
         hspice_section="TOP_TT",
         nmos_model="nch_mac",
@@ -137,9 +140,9 @@ PDK_PROFILES: dict[str, PDKProfile] = {
         nmos_lvt_model="nch_lvt_mac",
         pmos_lvt_model="pch_lvt_mac",
         process_sections={
-            "tt": "top_tt",
-            "ss": "top_ss",
-            "ff": "top_ff",
+            "tt": "ttmacro_mos_moscap",
+            "ss": "ssmacro_mos_moscap",
+            "ff": "ffmacro_mos_moscap",
         },
         vdd=0.9,
         vdd_min=0.9,
@@ -658,6 +661,18 @@ def validate_pdk_profile(
         ):
             if path_value and not Path(path_value).expanduser().exists():
                 errors.append(f"{label} file not found: {path_value}")
+        spectre_path = Path(pdk.spectre_model_path).expanduser()
+        if spectre_path.is_file():
+            available_sections = _read_spectre_sections(spectre_path)
+            for section in {
+                pdk.spectre_section,
+                *pdk.process_sections.values(),
+            }:
+                if section and section.lower() not in available_sections:
+                    errors.append(
+                        f"Spectre section '{section}' not found in "
+                        f"{pdk.spectre_model_path}"
+                    )
         if require_virtuoso and pdk.virtuoso_pdk_lib_path:
             if not Path(pdk.virtuoso_pdk_lib_path).expanduser().exists():
                 errors.append(
@@ -665,6 +680,16 @@ def validate_pdk_profile(
                 )
 
     return errors
+
+
+def _read_spectre_sections(path: Path) -> set[str]:
+    sections: set[str] = set()
+    with path.open(encoding="utf-8", errors="ignore") as model_file:
+        for line in model_file:
+            fields = line.strip().split()
+            if len(fields) >= 2 and fields[0].lower() == "section":
+                sections.add(fields[1].lower())
+    return sections
 
 
 def _apply_env_overrides(profile: PDKProfile) -> PDKProfile:

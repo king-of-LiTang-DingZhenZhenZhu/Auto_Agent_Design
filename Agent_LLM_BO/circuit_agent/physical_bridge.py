@@ -36,7 +36,7 @@ def execute_physical_from_state(
     if not final_netlist:
         return _physical_error(state, "final netlist is unavailable", "fix_physical_blocker")
 
-    project = Path(str(state["project_dir"]))
+    project = Path(str(state["project_dir"])).resolve()
     physical_root = project / "physical"
     try:
         ir = parse_netlist(Path(str(final_netlist)))

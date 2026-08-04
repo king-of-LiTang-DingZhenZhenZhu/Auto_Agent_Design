@@ -58,7 +58,14 @@ class PVTSimulationTests(unittest.TestCase):
         )
 
     def test_patch_netlist_replaces_process_section(self):
-        corner = PVTCorner("ss", "top_ss", "vmin", 0.9, 27)
+        profile = get_pdk_profile()
+        corner = PVTCorner(
+            "ss",
+            profile.process_sections["ss"],
+            "vmin",
+            0.9,
+            27,
+        )
         netlist = """
 simulator lang=spectre insensitive=yes
 include "/old/path/toplevel.scs" section=top_tt
@@ -66,9 +73,12 @@ subckt tiny in out vdd vss
 ends tiny
 """
 
-        patched = patch_netlist_for_corner(netlist, corner, get_pdk_profile())
+        patched = patch_netlist_for_corner(netlist, corner, profile)
 
-        self.assertIn('include "/PDKS/TSMC28nm/models/spectre/toplevel.scs" section=top_ss', patched)
+        self.assertIn(
+            f'include "{profile.spectre_model_path}" section={corner.section}',
+            patched,
+        )
         self.assertNotIn("section=top_tt", patched)
 
     def test_patch_netlist_normalizes_pdk_include_path(self):

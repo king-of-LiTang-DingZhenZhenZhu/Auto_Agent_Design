@@ -189,6 +189,36 @@ ends tiny
             self.assertEqual(report["export_source"], "bo_best")
             self.assertEqual(report["target_cell"], "proj_opt")
 
+    def test_export_ignores_structured_metric_goals_nested_in_targets(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / "outputs" / "proj"
+            project.mkdir(parents=True)
+            bo_netlist = project / "netlist" / "circuit.cir"
+            bo_netlist.parent.mkdir()
+            bo_netlist.write_text(
+                get_topology("5t_ota").generate_circuit(),
+                encoding="utf-8",
+            )
+            self._write_results_and_targets(project, bo_netlist)
+            log_path = project / "optimization_log.json"
+            log = json.loads(log_path.read_text(encoding="utf-8"))
+            log["targets"]["metric_goals"] = {
+                "gain_db": {
+                    "constraint": "min",
+                    "target": 60.0,
+                    "objective": "none",
+                }
+            }
+            log_path.write_text(json.dumps(log), encoding="utf-8")
+
+            report = export_from_results(
+                project / "results.json",
+                lib_name="BO_Designs",
+            )
+
+            self.assertEqual(Path(report["netlist_file"]), bo_netlist)
+            self.assertEqual(report["export_source"], "bo_best")
+
     def test_prepare_virtuoso_workspace_writes_wrapper_files_without_running(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -436,11 +436,15 @@ def _load_targets(results_path: Path) -> dict[str, float]:
     targets = data.get("targets")
     if not isinstance(targets, dict):
         return {}
-    return {
-        key: float(value)
-        for key, value in targets.items()
-        if value is not None
-    }
+    scalar_targets: dict[str, float] = {}
+    for key, value in targets.items():
+        if value is None or isinstance(value, (dict, list)):
+            continue
+        try:
+            scalar_targets[key] = float(value)
+        except (TypeError, ValueError):
+            continue
+    return scalar_targets
 
 
 def _select_passing_review_candidate(
