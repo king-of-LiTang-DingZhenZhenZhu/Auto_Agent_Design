@@ -354,6 +354,40 @@ class OptimizerConfigTest(unittest.TestCase):
             self.assertTrue(any("Ldoes_not_exist" in error for error in errors))
             self.assertTrue(any("BAD" in error for error in errors))
 
+    def test_check_files_validates_spectre_corner_sections(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            spectre_model = root / "models.scs"
+            spectre_model.write_text(
+                "section unit_tt\nendsection unit_tt\n",
+                encoding="utf-8",
+            )
+            hspice_model = root / "models.l"
+            hspice_model.write_text(".lib UNIT_TT\n.endl UNIT_TT\n", encoding="utf-8")
+            profile_path = self._write_unit_profile(
+                root,
+                spectre_model_path=str(spectre_model),
+                hspice_model_path=str(hspice_model),
+                gmid_table_path="",
+            )
+            with patch.dict(
+                "os.environ",
+                {
+                    "PDK_SPECTRE_PATH": "",
+                    "PDK_SPECTRE_SECTION": "",
+                    "GMID_TABLE_PATH": "",
+                },
+            ):
+                profile = get_pdk_profile(str(profile_path))
+
+            errors = validate_pdk_profile(profile, check_files=True)
+
+            self.assertTrue(any("unit_ss" in error for error in errors))
+            self.assertTrue(any("unit_ff" in error for error in errors))
+            self.assertFalse(
+                any("Spectre section 'unit_tt'" in error for error in errors)
+            )
+
     def test_spectre_include_normalizes_common_pdk_absolute_path(self):
         with patch.dict(
             "os.environ",
