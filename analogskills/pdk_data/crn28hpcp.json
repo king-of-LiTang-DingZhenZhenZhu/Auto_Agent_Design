@@ -1,0 +1,2896 @@
+{
+  "name": "crn28hpcp",
+  "layer_map": {
+    "active": "OD",
+    "gate": "PO",
+    "contact": "CO",
+    "metals": ["M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9", "M10"],
+    "vias": ["VIA1", "VIA2", "VIA3", "VIA4", "VIA5", "VIA6", "VIA7", "VIA8", "VIA9"],
+    "wells": {"nwell": "NW"},
+    "implants": {"pplus": "PP", "nplus": "NP", "pmetal": "PM"}
+  },
+  "rules": {
+    "grid_nm": 1,
+    "min_width_nm": {
+      "OD": 60,
+      "PO": 30,
+      "CO": 40,
+      "M1": 50,
+      "M2": 50,
+      "M3": 50,
+      "M4": 50,
+      "M5": 50,
+      "M6": 50,
+      "M7": 50,
+      "M8": 50,
+      "M9": 400,
+      "M10": 400,
+      "VIA1": 50,
+      "VIA2": 50,
+      "VIA3": 50,
+      "VIA4": 50,
+      "VIA5": 50,
+      "VIA6": 50,
+      "VIA7": 50,
+      "VIA8": 360,
+      "VIA9": 360,
+      "NW": 180,
+      "PP": 65,
+      "NP": 65,
+      "PM": 65
+    },
+    "min_spacing_nm": {
+      "OD": 60,
+      "PO": 86,
+      "CO": 70,
+      "M1": 50,
+      "M2": 50,
+      "M3": 50,
+      "M4": 50,
+      "M5": 50,
+      "M6": 50,
+      "M7": 50,
+      "M8": 50,
+      "M9": 400,
+      "M10": 400,
+      "VIA1": 80,
+      "VIA2": 80,
+      "VIA3": 80,
+      "VIA4": 80,
+      "VIA5": 80,
+      "VIA6": 80,
+      "VIA7": 80,
+      "VIA8": 340,
+      "VIA9": 340,
+      "NW": 180,
+      "PP": 65,
+      "NP": 65,
+      "PM": 65
+    },
+    "enclosure_nm": {
+      "CO_OD": 30,
+      "CO_PO": 45,
+      "CO_M1": 25,
+      "VIA1_M1": 25,
+      "VIA1_M2": 25,
+      "VIA8_M8": 80,
+      "VIA8_M9": 80,
+      "VIA9_M9": 80,
+      "VIA9_M10": 80,
+      "NW_OD": 180,
+      "PP_OD": 65,
+      "NP_OD": 65
+    },
+    "min_area_nm2": {
+      "M1": 38000,
+      "M2": 44000,
+      "M3": 17000,
+      "M4": 17000,
+      "M5": 17000,
+      "M6": 17000,
+      "M7": 17000,
+      "M8": 17000,
+      "M9": 565000,
+      "M10": 565000
+    },
+    "eol_spacing_nm": {
+      "M1": 50, "M2": 50, "M3": 50, "M4": 50, "M5": 50,
+      "M6": 50, "M7": 50, "M8": 50, "M9": 400, "M10": 400
+    },
+    "array_spacing_nm": {
+      "VIA1": 80, "VIA2": 80, "VIA3": 80, "VIA4": 80, "VIA5": 80,
+      "VIA6": 80, "VIA7": 80, "VIA8": 80, "VIA9": 80
+    },
+    "diagonal_spacing_nm": {
+      "CO": 70
+    },
+    "extension_nm": {
+      "PO": 75
+    }
+  },
+  "preferred_signal_layers": ["M1", "M2"],
+  "preferred_power_layers": ["M1", "M2"],
+  "routing_layers": {
+    "M1": {"direction": "h", "preferred": true, "role": "mixed", "track_pitch_nm": 100, "max_current_ma": 6.0},
+    "M2": {"direction": "v", "preferred": true, "role": "mixed", "track_pitch_nm": 64, "max_current_ma": 8.0},
+    "M3": {"direction": "h", "preferred": false, "role": "signal", "track_pitch_nm": 64, "max_current_ma": 10.0},
+    "M4": {"direction": "v", "preferred": false, "role": "signal", "track_pitch_nm": 64, "max_current_ma": 12.0},
+    "M5": {"direction": "h", "preferred": false, "role": "power", "track_pitch_nm": 80, "max_current_ma": 14.0},
+    "M6": {"direction": "v", "preferred": false, "role": "power", "track_pitch_nm": 80, "max_current_ma": 16.0},
+    "M7": {"direction": "h", "preferred": false, "role": "power", "track_pitch_nm": 96, "max_current_ma": 20.0},
+    "M8": {"direction": "v", "preferred": false, "role": "power", "track_pitch_nm": 96, "max_current_ma": 24.0},
+    "M9": {"direction": "h", "preferred": false, "role": "power", "track_pitch_nm": 120, "max_current_ma": 30.0},
+    "M10": {"direction": "v", "preferred": false, "role": "power", "track_pitch_nm": 160, "max_current_ma": 36.0}
+  },
+  "via_stack": [
+    {"via_def": "VIA1", "lower_layer": "M1", "upper_layer": "M2", "default_rows": 1, "default_cols": 1, "max_rows": 4, "max_cols": 4, "max_current_ma_per_cut": 4.0},
+    {"via_def": "VIA2", "lower_layer": "M2", "upper_layer": "M3", "default_rows": 1, "default_cols": 1, "max_rows": 4, "max_cols": 4, "max_current_ma_per_cut": 4.0},
+    {"via_def": "VIA3", "lower_layer": "M3", "upper_layer": "M4", "default_rows": 1, "default_cols": 1, "max_rows": 4, "max_cols": 4, "max_current_ma_per_cut": 5.0},
+    {"via_def": "VIA4", "lower_layer": "M4", "upper_layer": "M5", "default_rows": 1, "default_cols": 1, "max_rows": 4, "max_cols": 4, "max_current_ma_per_cut": 5.0},
+    {"via_def": "VIA5", "lower_layer": "M5", "upper_layer": "M6", "default_rows": 2, "default_cols": 1, "max_rows": 4, "max_cols": 4, "max_current_ma_per_cut": 6.0},
+    {"via_def": "VIA6", "lower_layer": "M6", "upper_layer": "M7", "default_rows": 2, "default_cols": 1, "max_rows": 4, "max_cols": 4, "max_current_ma_per_cut": 6.0},
+    {"via_def": "VIA7", "lower_layer": "M7", "upper_layer": "M8", "default_rows": 2, "default_cols": 2, "max_rows": 4, "max_cols": 4, "max_current_ma_per_cut": 7.0},
+    {"via_def": "VIA8", "lower_layer": "M8", "upper_layer": "M9", "default_rows": 2, "default_cols": 2, "max_rows": 4, "max_cols": 4, "max_current_ma_per_cut": 7.0},
+    {"via_def": "VIA9", "lower_layer": "M9", "upper_layer": "M10", "default_rows": 2, "default_cols": 2, "max_rows": 4, "max_cols": 4, "max_current_ma_per_cut": 8.0}
+  ],
+  "pcell_templates": {
+    "nmos": {
+      "lib_name": "tsmcN28",
+      "cell_name": "nch_mac",
+      "view_name": "layout",
+      "parameter_ranges": {
+        "W": [1.2e-07, 1.0e-03],
+        "L": [2.8e-08, 1.0e-05],
+        "nf": [1, 128],
+        "m": [1, 64]
+      },
+      "default_params": {},
+      "parameter_map": {"Wfg": "W / nf", "fingers": "nf", "l": "L", "simM": "m"},
+      "schematic_parameter_map": {"w": "W", "l": "L", "nf": "nf", "m": "m"},
+      "instantiation_method": "dbCreateParamInst",
+      "terminal_access": {
+        "G": {"xy": [0.02, -0.06], "layer": "PO", "contact_layer": "CO"},
+        "S": {"xy": [-0.05, "Wfg / 2"], "layer": "M1", "contact_layer": "CO"},
+        "D": {"xy": [0.08, "Wfg / 2"], "layer": "M1", "contact_layer": "CO"},
+        "B": {"xy": [0.0, -0.18], "layer": "M1", "contact_layer": "CO"}
+      }
+    },
+    "pmos": {
+      "lib_name": "tsmcN28",
+      "cell_name": "pch_mac",
+      "view_name": "layout",
+      "parameter_ranges": {
+        "W": [1.2e-07, 1.0e-03],
+        "L": [2.8e-08, 1.0e-05],
+        "nf": [1, 128],
+        "m": [1, 64]
+      },
+      "default_params": {},
+      "parameter_map": {"Wfg": "W / nf", "fingers": "nf", "l": "L", "simM": "m"},
+      "schematic_parameter_map": {"w": "W", "l": "L", "nf": "nf", "m": "m"},
+      "instantiation_method": "dbCreateParamInst",
+      "terminal_access": {
+        "G": {"xy": [0.02, -0.06], "layer": "PO", "contact_layer": "CO"},
+        "S": {"xy": [-0.05, "Wfg / 2"], "layer": "M1", "contact_layer": "CO"},
+        "D": {"xy": [0.08, "Wfg / 2"], "layer": "M1", "contact_layer": "CO"},
+        "B": {"xy": [-0.05, "Wfg / 2"], "layer": "M1", "contact_layer": "CO"}
+      }
+    },
+    "bjt": {
+      "lib_name": "tsmcN28",
+      "cell_name": "npn",
+      "view_name": "layout",
+      "parameter_ranges": {
+        "M": [1, 64]
+      },
+      "default_params": {},
+      "parameter_map": {},
+      "schematic_parameter_map": {},
+      "instantiation_method": "dbCreateInstByMasterName",
+      "terminal_access": {
+        "C": {"xy": [1.0, 1.0], "layer": "M1", "contact_layer": "CO"},
+        "B": {"xy": [1.48, 1.48], "layer": "M1", "contact_layer": "CO"},
+        "E": {"xy": [2.63, 2.63], "layer": "M1", "contact_layer": "CO", "notes": "Calibre-clean isolated npn5 E terminal coordinate from crn28_terminal_xy_probe_0720."}
+      }
+    },
+    "resistor": {
+      "lib_name": "tsmcN28",
+      "cell_name": "rnod",
+      "view_name": "layout",
+      "parameter_ranges": {
+        "R": [1.0, 1.0e9],
+        "W": [1.0e-07, 1.0e-04]
+      },
+      "default_params": {},
+      "parameter_map": {},
+      "schematic_parameter_map": {},
+      "instantiation_method": "dbCreateInstByMasterName",
+      "layout_instantiation_method": "dbCreateParamInst",
+      "layout_parameter_allowlist": ["model", "w", "sumW", "l", "sumL", "m", "multi"],
+      "terminal_access": {
+        "PLUS": {"xy": ["l + 0.08", "w / 2"], "layer": "M1", "contact_layer": "CO", "notes": "CRN28 rnod OA PLUS pin is the right M1 bar; x follows l."},
+        "MINUS": {"xy": [0.04, "w / 2"], "layer": "M1", "contact_layer": "CO", "notes": "CRN28 rnod OA MINUS pin is the left M1 bar."}
+      }
+    },
+    "capacitor": {
+      "lib_name": "tsmcN28",
+      "cell_name": "nmoscap",
+      "view_name": "layout",
+      "parameter_ranges": {
+        "C": [1.0e-18, 1.0e-08]
+      },
+      "default_params": {},
+      "parameter_map": {},
+      "schematic_parameter_map": {},
+      "instantiation_method": "dbCreateInstByMasterName",
+      "layout_instantiation_method": "dbCreateParamInst",
+      "layout_parameter_allowlist": ["model", "wr", "lr", "c", "m", "multi"],
+      "terminal_access": {
+        "PLUS": {"xy": ["lr / 2", -0.025], "layer": "M1", "contact_layer": "CO", "notes": "Calibre-clean nmoscap bottom M1 bar center. CRN28 nmoscap horizontal span follows lr."},
+        "MINUS": {"xy": ["lr / 2", "wr - 0.03"], "layer": "M1", "contact_layer": "CO", "notes": "Calibre-clean nmoscap top M1 bar center. CRN28 nmoscap vertical span follows wr."}
+      }
+    }
+  },
+  "pcell_aliases": {
+    "nfet": "nmos",
+    "nch": "nmos",
+    "nch_mac": "nmos",
+    "pfet": "pmos",
+    "pch": "pmos",
+    "pch_mac": "pmos",
+    "npn": "bjt",
+    "rnod": "resistor",
+    "res": "resistor",
+    "cap": "capacitor",
+    "nmoscap": "capacitor",
+    "mimcap": "capacitor"
+  },
+  "macro_bindings": {
+    "vco": {
+      "lib_name": "crn28hpcp_macro",
+      "cell_name": "vco_core",
+      "view_name": "layout",
+      "abstract_view_name": "abstract",
+      "layout_artifact": "vco_core.gds",
+      "pin_contract": {
+        "VCTRL": ["VCTRL"],
+        "VCO_OUT": ["VCO_OUT"]
+      },
+      "metadata": {
+        "source": "integration_reference",
+        "requires_project_library": true
+      }
+    }
+  },
+  "metadata": {
+    "node": "28nm",
+    "source": "crn28hpcp",
+    "inline_calibre_correlation": {
+      "inline_rule_map": {
+        "min_width": "metal_width",
+        "width": "metal_width",
+        "min_spacing": "metal_spacing",
+        "spacing": "metal_spacing",
+        "min_area": "metal_area",
+        "via_enclosure": "via_enclosure",
+        "off_grid": "stream_grid"
+      },
+      "calibre_rule_map": {
+        "M*.W.*": "metal_width",
+        "M*.S.*": "metal_spacing",
+        "M*.A.*": "metal_area",
+        "VIA*.EN.*": "via_enclosure",
+        "G.1:*": "stream_grid"
+      },
+      "bbox_halo_um": 0.02,
+      "min_overlap_ratio": 0.0,
+      "require_layer_match": true,
+      "status": "mapping_seed_requires_live_calibre_calibration"
+    },
+    "spectre": {
+      "model_library": "/home/userone/skills_evolvo/virtuoso/iPDK_t28/CRN28HPCp/models/spectre/toplevel_1d8.scs",
+      "default_section": "top_tt",
+      "execution_target": "centos-vm",
+      "status": "remote_collateral_path_configured_requires_target_preflight"
+    },
+    "pcell_generation": {
+      "native_passive_pcell_by_default": true,
+      "parameter_grid_nm": 5,
+      "pitch_grid_nm": 5,
+      "description": "Use calibrated native resistor/capacitor PCells by default so generated block-level GDS can participate in Calibre LVS. Explicit sizing use_drawn_primitive=true still requests compact drawn fallback geometry.",
+      "origin_phase_rules": [
+        {
+          "cell_name": "pch_mac",
+          "match_params": {"fingers": 6},
+          "match_params_nm": {"Wfg": 2667.0, "l": 180.0},
+          "phase_um": [0.0, 0.0],
+          "rule_ids": ["G.1:PMET", "G.1:PPi", "G.1:ODi", "G.1:PO", "G.1:SRDPO"],
+          "description": "Calibrated from Bandgap pch_mac Wfg=2.667um/fingers=6/l=0.18um streamout: native PCell internal vertices are 5nm-aligned when the instance origin is 5nm-aligned. A prior +3nm y phase moved all residuals to +3nm."
+        },
+        {
+          "cell_name": "pch_mac",
+          "match_params": {"fingers": 2},
+          "match_params_nm": {"Wfg": 1500.0, "l": 360.0},
+          "phase_um": [0.0, 0.0],
+          "rule_ids": ["G.1:CO", "G.1:PMET", "G.1:PPi", "G.1:M1i", "G.1:ODi", "G.1:PO", "G.1:SRDPO"],
+          "description": "Calibrated from LDO pch_mac Wfg=1.5um/fingers=2/l=0.36um streamout: native PCell internal vertices are 5nm-aligned when the instance origin is 5nm-aligned. A prior +1nm y phase moved all residuals to +1nm."
+        }
+      ]
+    },
+    "oa": {
+      "emit_native_via_geometry": ["CO", "VIA1", "VIA2", "VIA3", "VIA4", "VIA5", "VIA6", "VIA7", "VIA8", "VIA9"]
+    },
+    "layout": {
+      "macro_refinement": {
+        "bandgap": {
+          "enabled": true,
+          "max_candidates": 2,
+          "max_total_candidates": 5,
+          "reference_basis": "ADC/PLL reference layouts pack repeated primitive cells near local rule minima and use local macro reordering before detailed routing.",
+          "notes": "Enable observation-driven Bandgap macro-refinement candidates so SMT can try resistor/MOS/tail local packing instead of solving only the baseline DSL topology."
+        },
+        "ldo": {
+          "enabled": true,
+          "max_candidates": 3,
+          "max_total_candidates": 5,
+          "reference_basis": "Human LDO layouts use a regular power island, matched control core, compact feedback interface, and integrated passive banks; exact coordinates remain solver variables.",
+          "notes": "Compare weak motif, reference partition, and global-free packing candidates instead of accumulating one rigid field of soft directional constraints."
+        }
+      }
+    },
+    "pcell_access": {
+      "bjt_terminal_access": {
+        "C": "template",
+        "B": "template",
+        "E": "template"
+      },
+      "resistor_terminal_access": {
+        "PLUS": "template",
+        "MINUS": "template"
+      },
+      "multifinger_gate_strap": {
+        "enabled": true,
+        "legalize": true,
+        "reject_crossing_gate_terminals": true,
+        "layer": "PO",
+        "local_layer": "M1",
+        "local_layer_overrides": {
+          "MRST_N:G": "M2"
+        },
+        "pitch_nm": 300,
+        "width_nm": 50,
+        "legalization_keepout_nm": 50,
+        "same_row_gate_y_tolerance_nm": 120,
+        "same_row_gate_x_guard_nm": 20,
+        "gate_length_nm": 180,
+        "lower_extension_nm": 80,
+        "x_margin_nm": 0
+      }
+    },
+    "mos_pcell_overrides": {
+      "nmos": {},
+      "pmos": {}
+    },
+    "shared_diffusion_realization": {
+      "enabled": true,
+      "notes": "Shared-S/D physical merge is enabled only for calibrated candidates with clean DRC and clean LVS evidence. Other MOS shared-S/D pairs remain proximity-only in SMT.",
+      "candidates": {
+        "crn28_nmos_two_gate_shared_source_v14": {
+          "enabled": true,
+          "candidate": "crn28_nmos_two_gate_shared_source_v14",
+          "priority": 0,
+          "topology": "two_gate_shared_source",
+          "allowed_device_logicals": ["nmos"],
+          "shared_sd_roles": ["source"],
+          "status": "ready",
+          "solver_allowed_mode": "physical_shared_diffusion",
+          "physical_diffusion_merge_allowed": true,
+          "lvs_required": true,
+          "lvs_correct": true,
+          "emitter_bound": false,
+            "template_lib": "agent_designs",
+            "template_cell": "abutted_nmos_pair_probe_v14_drc_lvs_ready",
+            "template_view": "layout",
+            "compatible_instance_params": {
+              "Wfg": 1.2e-06,
+              "l": 1.8e-07,
+              "fingers": 1,
+              "simM": 1
+            },
+            "readiness_artifact": "abutted_mos_pair_probe_work_v14_drc_lvs_ready/abutted_nmos_pair_probe_v14_drc_lvs_ready.shared_diffusion_readiness.json",
+            "gds_artifact": "abutted_mos_pair_probe_work_v14_drc_lvs_ready/abutted_nmos_pair_probe_v14_drc_lvs_ready.gds",
+          "evidence_summary": "v14 drawn abutted two-gate NMOS probe: blocking DRC=0, LVS correct with two nch_mac instances and shared source net. Density/context warnings are not used as shared-S/D blockers.",
+          "notes": "Solver may select a physical shared-S/D candidate for two equal-logical nMOS devices sharing their source. Final streamout must still bind an abutted master/template before physical_diffusion_merge_emitted can be true."
+        },
+        "crn28_nmos_two_gate_shared_source_w2_l180_nf2_v4": {
+          "enabled": true,
+          "candidate": "crn28_nmos_two_gate_shared_source_w2_l180_nf2_v4",
+          "priority": 20,
+          "blocks": ["ldo"],
+          "topology": "two_gate_shared_source",
+          "allowed_device_logicals": ["nmos"],
+          "shared_sd_roles": ["source"],
+          "status": "ready",
+          "solver_allowed_mode": "physical_shared_diffusion",
+          "physical_diffusion_merge_allowed": true,
+          "lvs_required": true,
+          "lvs_correct": true,
+          "emitter_bound": false,
+          "template_lib": "agent_designs",
+          "template_cell": "abutted_nmos_pair_probe_w2_l180_nf2_v4",
+          "template_view": "layout",
+          "compatible_instance_params": {
+            "Wfg": 2.0e-06,
+            "l": 1.8e-07,
+            "fingers": 2,
+            "simM": 1
+          },
+          "lvs_finger_abstraction": "multiplier",
+          "template_source_params": {
+            "W": 2.0e-06,
+            "l": 1.8e-07,
+            "fingers": 1,
+            "simM": 2
+          },
+          "layout_bbox_um": [-0.045, -0.81, 1.315, 2.21],
+          "layout_width_um": 1.36,
+          "layout_height_um": 3.02,
+          "terminal_access": {
+            "DL": {
+              "bbox_um": [0.225, 0.89, 0.445, 1.11],
+              "layer": "M1",
+              "contact_layer": "CO",
+              "source": "shared_sd_template_pin",
+              "confidence": 1.0,
+              "lvs_safe": true
+            },
+            "S": {
+              "bbox_um": [-0.045, 0.51, 1.315, 0.61],
+              "layer": "M2",
+              "contact_layer": "VIA1",
+              "source": "shared_sd_template_pin",
+              "confidence": 1.0,
+              "lvs_safe": true
+            },
+            "DR": {
+              "bbox_um": [0.825, 0.89, 1.045, 1.11],
+              "layer": "M1",
+              "contact_layer": "CO",
+              "source": "shared_sd_template_pin",
+              "confidence": 1.0,
+              "lvs_safe": true
+            },
+            "G1": {
+              "bbox_um": [0.065, 2.05, 0.605, 2.21],
+              "layer": "M1",
+              "contact_layer": "CO",
+              "source": "shared_sd_template_pin",
+              "confidence": 1.0,
+              "lvs_safe": true
+            },
+            "G2": {
+              "bbox_um": [0.665, 2.05, 1.205, 2.21],
+              "layer": "M1",
+              "contact_layer": "CO",
+              "source": "shared_sd_template_pin",
+              "confidence": 1.0,
+              "lvs_safe": true
+            },
+            "VSS": {
+              "bbox_um": [0.485, -0.81, 0.785, -0.59],
+              "layer": "M1",
+              "contact_layer": "CO",
+              "source": "shared_sd_template_pin",
+              "confidence": 1.0,
+              "lvs_safe": true
+            }
+          },
+          "readiness_artifact": "validation_reports/shared_sd_main_flow_0730/param_probe_nf2_v4_calibre/abutted_nmos_pair_probe_w2_l180_nf2_v4.shared_diffusion_readiness.json",
+          "gds_artifact": "validation_reports/shared_sd_main_flow_0730/param_probe_nf2_v4_calibre/abutted_nmos_pair_probe_w2_l180_nf2_v4.gds",
+          "evidence_summary": "nf=2 LDO-sized drawn abutted two-gate-per-side NMOS probe: DRC blocking=0 after lower-left marker anchoring, LVS correct with two nch_mac devices using Calibre multiplier abstraction W=2000n L=180n nf=1 M=2.",
+          "notes": "Enabled only for LDO unit NMOS input-pair cells whose native PCell params are Wfg=2um, l=0.18um, fingers=2, simM=1. Bandgap nf=3/L=0.12 remains gated because isolated probe still triggers PO.R.19."
+        }
+      }
+    },
+    "pcell_realization": {
+      "mos": {
+        "top_k": 8,
+        "max_growth_when_current_legal": 1.6,
+        "dynamic_candidate_policy": "config_constrained",
+        "allow_unconstrained_dynamic": false,
+        "candidate_sources": ["current_if_config_legal", "config_legal_maxw_repair", "config_ranked"],
+        "allow_nearest_calibration": false,
+        "require_calibrated": false,
+        "unit_array": {
+          "enabled": true,
+          "max_unit_count": 8,
+          "unit_counts": [2, 4, 8],
+          "spacing_um": 0.5,
+          "access_pitch_margin_y_um": 0.75,
+          "unit_width_overflow_cost_per_ratio": 2.0,
+          "unit_nf_overflow_cost_per_finger": 1.0,
+          "target_unit_width_um_by_logical": {
+            "nmos": 1.5,
+            "pmos": 2.0
+          },
+          "role_overrides": {
+            "driver": {
+              "max_unit_count": 32,
+              "unit_counts": [4, 8, 16, 32],
+              "target_unit_width_um_by_logical": {
+                "nmos": 1.5,
+                "pmos": 4.0
+              },
+              "unit_width_overflow_cost_per_ratio": 10.0,
+              "unit_nf_overflow_cost_per_finger": 1.0,
+              "notes": "Large pass/driver PMOS devices should be represented as stripe banks with route-accessible finite primitives, not one or two very wide primitives."
+            },
+            "pass_transistor": {
+              "max_unit_count": 32,
+              "unit_counts": [4, 8, 16, 32],
+              "target_unit_width_um_by_logical": {
+                "nmos": 1.5,
+                "pmos": 4.0
+              },
+              "unit_width_overflow_cost_per_ratio": 10.0,
+              "unit_nf_overflow_cost_per_finger": 1.0
+            }
+          },
+          "notes": "Human-reference MOS realization policy: large devices may be represented as repeated finite clean primitive MOS units with all terminals shorted, then LVS-reduced as parallel devices. This keeps aspect/route access choices visible to SMT instead of forcing one monolithic PCell."
+        },
+        "notes": "Generate nf/m aspect candidates from fixed electrical W/L. Exact OA/Calibre calibration overrides estimated bboxes when the cache contains the candidate params."
+      },
+      "bjt": {
+        "preserve_electrical_m": true,
+        "allow_nearest_calibration": false,
+        "require_calibrated": false,
+        "calibration_sweep": {
+          "M": [1, 2, 4, 8],
+          "target_aspects": ["current", "array_1xn", "array_nx1"],
+          "notes": "Calibre sweep crn28_pcell_param_sweep_calibre_0720_v2 shows only npn5/M1 is clean as a single native PCell. M>1 must be implemented as an explicit array of clean M1 PCells, not by setting the native PCell m parameter."
+        },
+        "candidates": [
+          {
+            "name": "npn_current_M1",
+            "sizing_overrides": {"M": 1},
+            "pcell_params": {"model": "npn5", "m": 1, "area": "2.5e-11", "l": "5u", "w": "5u", "Esize": "5x5"},
+            "layout_width_um": 9.2,
+            "layout_height_um": 9.2,
+            "native_pcell_realization": true,
+            "calibrated_pcell_realization": true,
+            "configured_pcell_params": true,
+            "pcell_calibre_status": "clean",
+            "pcell_calibre_usable_for_layout": true,
+            "drc_clean": true,
+            "lvs_clean": true,
+            "cost": 0,
+            "notes": "Calibre-clean CRN28 npn5/M1 native PCell realization. M>1 is handled by array replication outside the PCell."
+          }
+        ]
+      },
+      "resistor": {
+        "allow_nearest_calibration": false,
+        "require_calibrated": false,
+        "allow_uncalibrated_configured": false,
+        "calibration_sweep": {
+          "W_um": [2.0, 3.0, 4.0],
+          "L_um": [5.0, 10.0],
+          "R_ohm": [1000.0],
+          "target_aspects": ["compact", "square", "bjt_height_aligned"],
+          "notes": "Calibre run crn28_resistor_w_sweep_fixed_0720 shows W=0.5um is not extracted; geometry calibration uses real CDF w/l/sumW/sumL and keeps electrical R out of PCell creation."
+        },
+        "candidates": [
+          {
+            "name": "rnod_R1k_W2_L5",
+            "sizing_overrides": {"R": 1000.0, "W": 2e-6, "L": 5e-6},
+            "pcell_params": {"model": "rnodl", "w": "2u", "sumW": "2u", "l": "5u", "sumL": "5u"},
+            "layout_width_um": 5.5,
+            "layout_height_um": 2.98,
+            "native_pcell_realization": true,
+            "calibrated_pcell_realization": true,
+            "configured_pcell_params": true,
+            "pcell_calibre_status": "clean",
+            "pcell_calibre_usable_for_layout": true,
+            "drc_clean": true,
+            "lvs_clean": true,
+            "cost": 0,
+            "notes": "Calibre-clean in crn28_resistor_param_sweep_directlabel_0720. Native bbox measured by rnod introspection: width ~= L+0.5um, height ~= W+0.98um."
+          },
+          {
+            "name": "rnod_R1k_W2_L10",
+            "sizing_overrides": {"R": 1000.0, "W": 2e-6, "L": 10e-6},
+            "pcell_params": {"model": "rnodl", "w": "2u", "sumW": "2u", "l": "10u", "sumL": "10u"},
+            "layout_width_um": 10.5,
+            "layout_height_um": 2.98,
+            "native_pcell_realization": true,
+            "calibrated_pcell_realization": true,
+            "configured_pcell_params": true,
+            "pcell_calibre_status": "clean",
+            "pcell_calibre_usable_for_layout": true,
+            "drc_clean": true,
+            "lvs_clean": true,
+            "cost": 1,
+            "notes": "Calibre-clean in crn28_resistor_param_sweep_directlabel_0720."
+          },
+          {
+            "name": "rnod_R1k_W3_L5",
+            "sizing_overrides": {"R": 1000.0, "W": 3e-6, "L": 5e-6},
+            "pcell_params": {"model": "rnodl", "w": "3u", "sumW": "3u", "l": "5u", "sumL": "5u"},
+            "layout_width_um": 5.5,
+            "layout_height_um": 3.98,
+            "native_pcell_realization": true,
+            "calibrated_pcell_realization": true,
+            "configured_pcell_params": true,
+            "pcell_calibre_status": "clean",
+            "pcell_calibre_usable_for_layout": true,
+            "drc_clean": true,
+            "lvs_clean": true,
+            "cost": 2,
+            "notes": "Calibre-clean in crn28_resistor_param_sweep_directlabel_0720."
+          },
+          {
+            "name": "rnod_R1k_W3_L10",
+            "sizing_overrides": {"R": 1000.0, "W": 3e-6, "L": 10e-6},
+            "pcell_params": {"model": "rnodl", "w": "3u", "sumW": "3u", "l": "10u", "sumL": "10u"},
+            "layout_width_um": 10.5,
+            "layout_height_um": 3.98,
+            "native_pcell_realization": true,
+            "calibrated_pcell_realization": true,
+            "configured_pcell_params": true,
+            "pcell_calibre_status": "clean",
+            "pcell_calibre_usable_for_layout": true,
+            "drc_clean": true,
+            "lvs_clean": true,
+            "cost": 3,
+            "notes": "Calibre-clean in crn28_resistor_param_sweep_directlabel_0720."
+          },
+          {
+            "name": "rnod_R1k_W4_L5",
+            "sizing_overrides": {"R": 1000.0, "W": 4e-6, "L": 5e-6},
+            "pcell_params": {"model": "rnodl", "w": "4u", "sumW": "4u", "l": "5u", "sumL": "5u"},
+            "layout_width_um": 5.5,
+            "layout_height_um": 4.98,
+            "native_pcell_realization": true,
+            "calibrated_pcell_realization": true,
+            "configured_pcell_params": true,
+            "pcell_calibre_status": "clean",
+            "pcell_calibre_usable_for_layout": true,
+            "drc_clean": true,
+            "lvs_clean": true,
+            "cost": 4,
+            "notes": "Calibre-clean in crn28_resistor_param_sweep_directlabel_0720."
+          },
+          {
+            "name": "rnod_R1k_W4_L10",
+            "sizing_overrides": {"R": 1000.0, "W": 4e-6, "L": 10e-6},
+            "pcell_params": {"model": "rnodl", "w": "4u", "sumW": "4u", "l": "10u", "sumL": "10u"},
+            "layout_width_um": 10.5,
+            "layout_height_um": 4.98,
+            "native_pcell_realization": true,
+            "calibrated_pcell_realization": true,
+            "configured_pcell_params": true,
+            "pcell_calibre_status": "clean",
+            "pcell_calibre_usable_for_layout": true,
+            "drc_clean": true,
+            "lvs_clean": true,
+            "cost": 5,
+            "notes": "Calibre-clean in crn28_resistor_param_sweep_directlabel_0720."
+          }
+        ]
+      },
+      "capacitor": {
+        "allow_nearest_calibration": false,
+        "require_calibrated": false,
+        "allow_uncalibrated_configured": false,
+        "array_unit_counts": [2, 4, 8, 16, 32, 64, 128, 256, 512, 1000, 1024, 2048],
+        "calibration_sweep": {
+          "W_um": [1.0, 2.0, 4.0],
+          "L_um": [1.0, 2.0, 4.0],
+          "C_f": [1e-15],
+          "target_aspects": ["compact", "square", "mos_height_aligned"],
+          "notes": "Calibre-clean terminal access uses PLUS=(lr/2,-0.025), MINUS=(lr/2,wr-0.03); CRN28 nmoscap horizontal span follows lr and vertical span follows wr."
+        },
+        "candidates": [
+          {
+            "name": "nmoscap_current_C1f",
+            "sizing_overrides": {"C": 1e-15, "W": 1e-6, "L": 1e-6},
+            "pcell_params": {"model": "nmoscap", "wr": "1u", "lr": "1u", "c": "1f", "m": 1, "multi": 1},
+            "layout_width_um": 1.56,
+            "layout_height_um": 1.32,
+            "native_pcell_realization": true,
+            "calibrated_pcell_realization": true,
+            "configured_pcell_params": true,
+            "pcell_calibre_status": "clean",
+            "pcell_calibre_usable_for_layout": true,
+            "drc_clean": true,
+            "lvs_clean": true,
+            "cost": 0,
+            "notes": "Current CRN28 nmoscap native PCell. Terminal access was Calibre-cleaned in crn28_nmoscap_terminal_clean_probe_0720."
+          },
+          {
+            "name": "nmoscap_C1f_W2_L1",
+            "sizing_overrides": {"C": 1e-15, "W": 2e-6, "L": 1e-6},
+            "pcell_params": {"model": "nmoscap", "wr": "2u", "lr": "1u", "c": "1f", "m": 1, "multi": 1},
+            "layout_width_um": 1.56,
+            "layout_height_um": 2.32,
+            "native_pcell_realization": true,
+            "calibrated_pcell_realization": true,
+            "configured_pcell_params": true,
+            "pcell_calibre_status": "clean",
+            "pcell_calibre_usable_for_layout": true,
+            "drc_clean": true,
+            "lvs_clean": true,
+            "cost": 1,
+            "notes": "Calibre-clean in crn28_capacitor_param_sweep_axisfix_0720. CRN28 nmoscap horizontal span follows lr and vertical span follows wr."
+          }
+        ]
+      }
+    },
+    "calibre": {
+      "grid_nm": 5,
+      "generated_drc_run": {
+        "policy": "block_level_no_efp_no_full_chip_no_density",
+        "deck_template_path": "/home/userone/skills_evolvo/virtuoso/iPDK_t28/CRN28HPCp/Calibre/drc/calibre.drc",
+        "run_dir_name": "calibre_generated_drc_block",
+        "warning_rule_tokens": [":WARNING"],
+        "disable_defines": [
+          "EFP",
+          "EFP_ONLY",
+          "FULL_CHIP",
+          "WITH_SEALRING",
+          "WITH_APRDL",
+          "WITH_POLYIMIDE",
+          "AP_28K_THICKNESS",
+          "GUIDELINE_ESD",
+          "IP_TIGHTEN_DENSITY",
+          "CHECK_LOW_DENSITY"
+        ],
+        "description": "Generated reference-flow DRC decks are block-level geometry checks. Full-chip/EFP/RDL/low-density options are disabled so the generated ADC/PLL comparison focuses on local signoff geometry and PCell integration."
+      },
+      "generated_lvs_run": {
+        "policy": "foundry_lvs_deck_with_generated_topology_source",
+        "source_policy": "reference_topology_lvs_source_precheck_then_export",
+        "deck_template_path": "/home/userone/skills_evolvo/virtuoso/iPDK_t28/CRN28HPCp/Calibre/lvs/calibre.lvs",
+        "run_dir_name": "calibre_generated_lvs",
+        "require_model_map": true,
+        "mos_expansion": "finger",
+        "mos_parallel_reduction": false,
+        "mos_parallel_reduction_device_types": [
+          "MN",
+          "MP"
+        ],
+        "passive_device_style": "native_pcell_subckt",
+        "model_map": {
+          "nmos": "nch_mac",
+          "pmos": "pch_mac",
+          "resistor": "rnodl",
+          "capacitor": "nmoscap"
+        },
+        "description": "Reference-flow LVS uses the generated DSL topology as the source CDL and the native streamout GDS as layout. The source CDL is expanded to native-PCell finger/unit abstraction, so MOS parallel reduction is disabled in the generated Calibre deck; this keeps source/layout object spaces aligned before connectivity ECO/detail-router closure."
+      },
+      "reference_route_skeleton_export": {
+        "mode": "pin_stamps_only",
+        "description": "Route skeleton trunks are abstract DSL/routing-handoff intent and must not be streamed as signoff wires before detail routing. Topology-guided common-net stitch connects calibrated PCell terminal row buses only to safe top pin stamps unless a routed path has already been promoted by the detail router."
+      },
+      "reference_common_supply_stitch": {
+        "enabled": true,
+        "auto_from_topology": true,
+        "auto_include_internal_nets": true,
+        "auto_terminals": [
+          "S",
+          "B"
+        ],
+        "allow_non_supply_nets": false,
+        "allow_all_non_supply_nets": false,
+        "max_top_level_anchors_per_net": 1,
+        "max_unit_anchors_per_group_terminal": 1,
+        "cross_net_blocker_spacing_um": 0.11,
+        "same_net_spacing_fill_enabled": true,
+        "same_net_spacing_fill_max_gap_um": 0.12,
+        "same_net_spacing_fill_min_overlap_um": 0.05,
+        "stitch_layers": [
+          "M5",
+          "M6",
+          "M7",
+          "M8"
+        ],
+        "via_width_nm_by_via": {
+          "VIA1": 50,
+          "VIA2": 50,
+          "VIA3": 50,
+          "VIA4": 50,
+          "VIA5": 50,
+          "VIA6": 50,
+          "VIA7": 50
+        },
+        "via_cut_count_by_via": {
+          "VIA1": 2,
+          "VIA2": 2,
+          "VIA3": 2,
+          "VIA4": 2,
+          "VIA5": 2,
+          "VIA6": 2,
+          "VIA7": 2
+        },
+        "via_cut_axis_by_via": {
+          "VIA1": "x",
+          "VIA2": "x",
+          "VIA3": "x",
+          "VIA4": "x",
+          "VIA5": "x",
+          "VIA6": "x",
+          "VIA7": "x"
+        },
+        "via_cut_pitch_nm_by_via": {
+          "VIA1": 140,
+          "VIA2": 140,
+          "VIA3": 140,
+          "VIA4": 140,
+          "VIA5": 140,
+          "VIA6": 140,
+          "VIA7": 140
+        },
+        "native_pcell_keepout_blockers_enabled": true,
+        "native_pcell_keepout_cells": [
+          "nmoscap",
+          "rnod",
+          "rnodl"
+        ],
+        "native_pcell_keepout_margin_um": 0.05,
+        "description": "Topology-derived common supply stitch from calibrated MOS unit-array S/B row buses to safe top pin stamps. Non-supply nets are excluded by default and must be explicitly opted in; this keeps first-pass LVS connectivity closure focused on high-fanout supplies after MOS parallel reduction is disabled."
+      },
+      "reference_detail_route_attempt": {
+        "route_layers": ["M3", "M4", "M5", "M6", "M7", "M8"],
+        "route_layer_strategy": "cyclic",
+        "global_net_order_strategy": "supply_fanout_desc",
+        "trial_global_net_order_strategies": ["supply_fanout_desc"],
+        "drop_route_layer": "",
+        "drop_route_layers": [],
+        "trial_drop_route_layers": ["", "M2"],
+        "trial_drop_route_layer_sets": [["M2", "M1", "same"]],
+        "max_router_trials": 1,
+        "max_global_nets": 32,
+        "max_global_terminals": 256,
+        "max_terminals_per_global_net": 64,
+        "budget_shard_max_trials": 4,
+        "budget_shard_max_terminals_per_trial": 64,
+        "budget_shard_keep_inside_layout": true,
+        "budget_shard_drop_route_layers": [],
+        "trial_config_overrides": [
+          {"name": "baseline"},
+          {
+            "name": "repair_landing",
+            "repair_strap_landing_search_steps": 16
+          },
+          {
+            "name": "repair_fanout_maze",
+            "repair_strap_landing_search_steps": 16,
+            "repair_fanout_on_drop_layer": true,
+            "repair_gate_fanout_on_drop_layer": true,
+            "maze_escape_enabled": true,
+            "maze_escape_only_strap_blocked": false,
+            "maze_escape_search_steps": 6,
+            "maze_escape_y_search_steps": 2,
+            "maze_escape_landing_search_steps": 12,
+            "maze_escape_pitch_um": 0.4,
+            "maze_escape_window_um": 2.0,
+            "maze_escape_max_expansions": 2048
+          }
+        ],
+        "fanout_on_drop_layer": false,
+        "connect_to_existing_net": true,
+        "existing_net_target_limit": 12,
+        "existing_net_fanout_search_steps": 12,
+        "existing_net_fanout_y_search_steps": 1,
+        "same_net_row_cluster_preroute": false,
+        "same_net_row_cluster_layer": "M1",
+        "same_net_row_cluster_nets": [],
+        "same_net_row_cluster_min_terms": 2,
+        "same_net_row_cluster_max_span_um": 25.0,
+        "same_net_row_cluster_y_tolerance_um": 0.02,
+        "min_route_width_nm": 100,
+        "gate_m1_landing_style": "route_aligned",
+        "gate_contact_cut_enabled": false,
+        "contact_cut_size_um": 0.04,
+        "strap_y_margin_um": 2.0,
+        "strap_y_pitch_um": 0.5,
+        "pin_left_margin_um": 2.0,
+        "pin_pitch_um": 0.5,
+        "pin_size_um": 0.2,
+        "pin_drop_x_pitch_um": -0.15,
+        "via_landing_margin_um": 0.05,
+        "wide_metal_multicut_vias": true,
+        "wide_metal_multicut_via_defs": ["VIA1", "VIA2", "VIA3", "VIA4", "VIA5", "VIA6", "VIA7"],
+        "wide_metal_multicut_axis_by_via": {"VIA1": "x"},
+        "dedupe_near_duplicate_vias": true,
+        "via_dedupe_tolerance_um": 0.02,
+        "same_net_jog_fill_enabled": true,
+        "same_net_jog_fill_layers": ["M1"],
+        "same_net_jog_fill_via_defs": ["VIA1"],
+        "same_net_jog_fill_include_nonvia_pairs": true,
+        "same_net_jog_fill_max_side_um": 0.6,
+        "same_net_jog_fill_min_overlap_um": 0.0,
+        "same_net_jog_fill_path_stub_um": 0.0,
+        "same_net_jog_fill_check_spacing": true,
+        "route_spacing_clearance_um_by_layer": {},
+        "route_spacing_clearance_shape_kinds": [],
+        "route_spacing_check_same_net": false,
+        "fanout_pitch_um": 0.2,
+        "fanout_search_steps": 24,
+        "fanout_y_search_steps": 2,
+        "strap_landing_search_steps": 0,
+        "repair_strap_landing_search_steps": 0,
+        "repair_fanout_search_steps": 16,
+        "repair_fanout_y_search_steps": 2,
+        "repair_fanout_on_drop_layer": false,
+        "repair_gate_fanout_on_drop_layer": false,
+        "maze_escape_enabled": false,
+        "maze_escape_only_strap_blocked": true,
+        "maze_escape_search_steps": 8,
+        "maze_escape_y_search_steps": 1,
+        "maze_escape_landing_search_steps": 0,
+        "maze_escape_pitch_um": 0.5,
+        "maze_escape_window_um": 2.0,
+        "maze_escape_max_expansions": 4096,
+        "description": "Explicit diagnostic detail-route attempt for reference-inspired SARADC/PLL LVS closure. The generated route plan is not merged into signoff streamout unless its physical precheck passes."
+      },
+      "reference_native_pcell_support": {
+        "mode": "lup_body_taps_only",
+        "body_tap_rect_kinds": [
+          "crn28_mos_body_nwell_cover",
+          "crn28_mos_body_tap_active",
+          "crn28_mos_body_tap_implant",
+          "crn28_mos_body_tap_m1",
+          "crn28_mos_body_tap_contact",
+          "crn28_mos_source_m2_bus",
+          "crn28_mos_drain_m2_bus",
+          "crn28_mos_gate_m1_bus"
+        ],
+        "same_net_body_tap_m1_bridge_max_gap_nm": 120,
+        "unit_array_spine_mode": "row_bus_only",
+        "unit_array_row_bus_layer_by_terminal": {
+          "G": "M2"
+        },
+        "unit_array_spine_mode_by_terminal": {
+          "G": "row_bus_only"
+        },
+        "unit_array_routing_x_bounds_mode_by_terminal": {
+          "B": "terminal_only"
+        },
+        "unit_array_row_bus_existing_landing_layers_by_terminal": {
+          "G": ["M1", "M2"]
+        },
+        "unit_array_row_bus_redundant_via_cuts_by_terminal": {
+          "G": {
+            "VIA1": 2
+          }
+        },
+        "unit_array_row_bus_redundant_via_axis_by_terminal": {
+          "G": {
+            "VIA1": "x"
+          }
+        },
+        "unit_array_row_bus_via_width_nm_by_via": {
+          "VIA1": 50
+        },
+        "unit_array_row_bus_via_pitch_nm_by_via": {
+          "VIA1": 140
+        },
+        "rule_ids": ["LUP.6", "LVS.source_terminal_access", "LVS.drain_terminal_access", "LVS.gate_terminal_access"],
+        "description": "Reference-sized native PCell macros default to body-tap support plus S/D M2 bus anchors and per-instance gate M1 anchors. Full MOS terminal access support is reserved for small comparator-style blocks because it can introduce PO/OD/CO local access DRC when applied blindly to large macros. Same-net body-tap M1 bridge closes tiny mirror-pair slits that violate M1 spacing in streamout geometry. Unit-array body-tap scaffold emits row buses only by default; cross-row/global supply closure belongs to the routed/ECO stage instead of a speculative M3/VIA stack. Body-terminal row buses use terminal-only x-bounds so gate anchors do not make body rails extend toward adjacent opposite-well body nets. Gate unit-array scaffold is track-allocated to M2 so the flow does not create long M1 gate row buses that PLL probes showed as M1.S.3/M1.S.15 spacing markers. Gate row-bus VIA1 uses configured 2-cut x-axis arrays on the existing M1 gate bus and M2 row bus landings instead of generic square landings."
+      },
+      "passive_array": {
+        "rail_width_nm": 80,
+        "external_bus_margin_nm": 300,
+        "row_escape_margin_nm": 170,
+        "minimum_array_spacing_nm_by_logical": {
+          "resistor": 500,
+          "capacitor": 900
+        },
+        "minimum_access_array_spacing_nm_by_logical": {
+          "resistor": 600,
+          "capacitor": 900
+        },
+        "terminal_bus_side": {
+          "resistor": {"MINUS": "left", "PLUS": "right"},
+          "capacitor": {"PLUS": "left", "MINUS": "right"}
+        },
+        "rule_sources": {
+          "capacitor.minimum_array_spacing_nm": {
+            "rule_ids": ["NW.S.2"],
+            "description": "CRN28 nmoscap unit arrays need enough native well spacing between different-potential nwell islands; 0.5um produced NW.S.2 in passive array calibration."
+          },
+          "rail_width_nm": {
+            "rule_ids": ["M1.W.1", "M1.A.1"],
+            "description": "Array terminal buses are emitted as real M1 geometry for LVS connectivity, with width above the configured M1 minimum."
+          }
+        }
+      },
+      "mos_access": {
+        "sd_bus_height_nm": 240,
+        "sd_m1_drop_width_nm": 120,
+        "via1_width_nm": 50,
+        "via1_pitch_y_nm": 140,
+        "gate_bus_height_nm": 100,
+        "gate_bus_y_offset_nm": -500,
+        "gate_po_access_enabled": false,
+        "gate_po_extension_height_nm": 90,
+        "gate_po_overlap_nm": 80,
+        "gate_contact_po_enclosure_nm": 20,
+        "gate_contact_x_offset_from_gate_left_nm": 20,
+        "gate_po_landing_width_nm": 80,
+        "gate_access_emit_implant_cover": false,
+        "gate_implant_cover_x_margin_nm": 70,
+        "gate_implant_cover_y_margin_nm": 70,
+        "gate_pmetal_cover_x_margin_nm": 120,
+        "gate_pmetal_cover_y_margin_nm": 120,
+        "gate_m1_landing_width_nm": 140,
+        "contact_width_nm": 40,
+        "body_m1_width_nm": 340,
+        "body_tap_x_mode": "left",
+        "body_tap_side_margin_nm": 620,
+        "same_net_m2_bus_bridge_max_gap_nm": 100
+      },
+      "top_level_marker_policy": {
+        "nwell": "native_pcell",
+        "nplus": "native_pcell",
+        "pplus": "native_pcell",
+        "pmetal": "native_pcell"
+      },
+      "drc": {
+        "floating_gate_text_waiver": "primary"
+      },
+      "lvs": {
+        "enable_multifinger": true,
+        "streamout_text_port_layers": [625, 626, 627, 628, 629, 630, 631, 632, 633, 634, 635, 636],
+        "source_mos_dimension_adjustment": {
+          "enabled": true,
+          "width_add_nm": 15.0,
+          "model_alias": {
+            "nmos": "nch_mac",
+            "pmos": "pch_mac"
+          },
+          "length_by_model_wfg_nm": {
+            "nch_mac": [
+              {"wfg_nm": 800.0, "l_nm": 179.365},
+              {"wfg_nm": 1600.0, "l_nm": 179.682}
+            ],
+            "pch_mac": [
+              {"wfg_nm": 600.0, "l_nm": 179.154},
+              {"wfg_nm": 1200.0, "l_nm": 179.576}
+            ]
+          }
+        },
+        "property_tolerances": {
+          "MOS_Lerr": 0.001,
+          "MOS_Werr": 0.001
+        }
+      },
+      "metal_rule_sources": {
+        "M1": {"width_nm": 50, "spacing_nm": 50, "min_area_nm2": 38000, "rule_ids": ["M1.W.1", "M1.S.1", "M1.A.3"]},
+        "M2": {"width_nm": 50, "spacing_nm": 50, "min_area_nm2": 44000, "rule_ids": ["M2.W.1", "M2.S.1", "M2.A.3"]},
+        "M3": {"width_nm": 50, "spacing_nm": 50, "min_area_nm2": 17000, "rule_ids": ["M3.W.1", "M3.S.1", "M3.A.1"]},
+        "M4": {"width_nm": 50, "spacing_nm": 50, "min_area_nm2": 17000, "rule_ids": ["M4.W.1", "M4.S.1", "M4.A.1"]},
+        "M5": {"width_nm": 50, "spacing_nm": 50, "min_area_nm2": 17000, "rule_ids": ["M5.W.1", "M5.S.1", "M5.A.1"]},
+        "M6": {"width_nm": 50, "spacing_nm": 50, "min_area_nm2": 17000, "rule_ids": ["M6.W.1", "M6.S.1", "M6.A.1"]},
+        "M7": {"width_nm": 50, "spacing_nm": 50, "min_area_nm2": 17000, "rule_ids": ["M7.W.1", "M7.S.1", "M7.A.1"]},
+        "M8": {"width_nm": 50, "spacing_nm": 50, "min_area_nm2": 17000, "rule_ids": ["M8.W.1", "M8.S.1", "M8.A.1"]},
+        "M9": {"width_nm": 400, "spacing_nm": 400, "min_area_nm2": 565000, "rule_ids": ["M9.W.1", "M9.S.1", "M9.A.1"]},
+        "M10": {"width_nm": 400, "spacing_nm": 400, "min_area_nm2": 565000, "rule_ids": ["M10.W.1", "M10.S.1", "M10.A.1"]}
+      }
+    },
+    "inline_drc": {
+      "defer_cover_check_kinds": [
+        "via_landing",
+        "guard_ring_active",
+        "supply_tap_active"
+      ]
+    },
+    "required_marker_layers": {
+      "enabled": true,
+      "emission_policy": "signoff_only",
+      "anchor": "lower_right",
+      "markers": [
+        {
+          "name": "DOD",
+          "layer": "OD",
+          "purpose": "dummy",
+          "width_um": 0.4,
+          "height_um": 0.4,
+          "offset_um": [-2.6, 0.1],
+          "enclosures": [
+            {
+              "name": "DOD_PP_ENC",
+              "layer": "PP",
+              "purpose": "drawing",
+              "margin_um": 0.07,
+              "rule_ids": ["DOD.EN.4", "DOD.S.9"]
+            }
+          ],
+          "rule_ids": ["DOD.R.1", "DOD.W.1", "DOD.S.*"]
+        },
+        {
+          "name": "DPO",
+          "layer": "PO",
+          "purpose": "dummy",
+          "width_um": 0.4,
+          "height_um": 0.4,
+          "offset_um": [-1.85, 0.1],
+          "rule_ids": ["DPO.R.1", "DPO.W.1", "DPO.W.2", "DPO.S.*"]
+        },
+        {
+          "name": "SR_DOD",
+          "layer": "OD",
+          "purpose": "dummy1",
+          "width_um": 0.4,
+          "height_um": 0.1,
+          "offset_um": [-1.1, 0.1],
+          "enclosures": [
+            {
+              "name": "SR_DOD_PP_ENC",
+              "layer": "PP",
+              "purpose": "drawing",
+              "margin_um": 0.07,
+              "rule_ids": ["SR_DOD.EN.4"]
+            }
+          ],
+          "rule_ids": ["SR_DOD.R.4", "SR_DOD.W.1", "SR_DOD.A.1", "SR_DOD.L.1", "SR_DOD.L.2", "SR_DOD.S.*"]
+        }
+      ],
+      "rule_sources": {
+        "markers": {
+          "rule_ids": ["DOD.R.1", "DPO.R.1", "SR_DOD.R.4"],
+          "description": "CRN28 full-chip Calibre deck requires these dummy/stress-relief CAD layers to exist. Emit small non-electrical marker rectangles on OA LPPs from the stream map: OD/dummy, PO/dummy, OD/dummy1."
+        }
+      }
+    },
+    "structured_interconnect": {
+      "local_short_jog_repair": {
+        "max_jog_offset_nm": 2000,
+        "rule_sources": {
+          "max_jog_offset_nm": {
+            "rule_ids": ["compact.route_envelope", "local_eco"],
+            "description": "Local same-layer short repair must not create macro-scale detours; larger conflicts should be handled by route resource selection or local SMT repair."
+          }
+        }
+      },
+      "instance_terminal_open_repair": {
+        "max_bridge_distance_nm": 6500,
+        "allow_l_shape_bridges": true,
+        "allow_adjacent_layer_via_bridges": true,
+        "allow_via_stack_bridges": true,
+        "max_terminal_escape_points": 9,
+        "batch_enabled": false,
+        "greedy_accept_first_improving": true,
+        "rule_sources": {
+          "max_bridge_distance_nm": {
+            "rule_ids": ["local_eco.instance_terminal_open", "shared_sd.pin_access"],
+            "description": "Shared-S/D custom masters expose real pins that can move a few microns from stale route anchors. ECO bridges are accepted only when physical open component count decreases and shorts do not increase."
+          },
+          "allow_l_shape_bridges": {
+            "rule_ids": ["local_eco.instance_terminal_open"],
+            "description": "Permit two-rect local L bridges for isolated instance terminal opens when straight overlap bridges are impossible."
+          },
+          "allow_adjacent_layer_via_bridges": {
+            "rule_ids": ["local_eco.instance_terminal_open", "pin_access.adjacent_layer"],
+            "description": "Permit one adjacent-layer via plus local bridge from an isolated terminal pin to an existing same-net route on the neighboring metal layer."
+          },
+          "max_terminal_escape_points": {
+            "rule_ids": ["local_eco.instance_terminal_open", "pin_access.edge_escape"],
+            "description": "Sample center/edge/corner via-stack origins inside a terminal bbox so local ECO can avoid stale neighboring access straps without leaving the terminal access window."
+          }
+        }
+      },
+      "terminal_access": {
+        "emit_gate_contacts": false,
+        "emit_unknown_nonmetal_contacts": false,
+        "use_crn28_mos_gate_access_anchor": true,
+        "use_crn28_mos_calibrated_access_anchor": true,
+        "crn28_mos_gate_bus_y_offset_nm": -500,
+        "landing_uses_route_width": false,
+        "min_landing_half_nm": 25,
+        "redundant_via_min_adjacent_width_nm": 180,
+        "redundant_via_cuts": 1,
+        "redundant_via_cuts_by_via": {
+          "VIA1": 2,
+          "VIA2": 2,
+          "VIA3": 4,
+          "VIA4": 2,
+          "VIA5": 2,
+          "VIA6": 4,
+          "VIA7": 4
+        },
+        "transition_escape_by_net": {
+          "VREF": {
+            "VIA3": {
+              "dx_nm": 0,
+              "dy_nm": 350,
+              "width_nm": 120,
+              "merge_landing": true,
+              "merge_style": "gap_fill",
+              "merge_width_nm": 160
+            }
+          },
+          "ea_out": {
+            "VIA5": {
+              "dx_nm": 350,
+              "dy_nm": 0,
+              "width_nm": 120,
+              "merge_landing": true,
+              "merge_style": "gap_fill",
+              "merge_width_nm": 180
+            }
+          },
+          "nR1": {
+            "VIA5": {
+              "dx_nm": 0,
+              "dy_nm": 350,
+              "width_nm": 100,
+              "merge_landing": true,
+              "merge_style": "gap_fill",
+              "merge_width_nm": 160
+            }
+          },
+          "nR2": {
+            "VIA1": {
+              "dx_nm": -350,
+              "dy_nm": 0,
+              "width_nm": 100,
+              "merge_landing": true,
+              "merge_style": "gap_fill",
+              "merge_width_nm": 160
+            }
+          },
+          "VSS": {
+            "VIA8": {
+              "dx_nm": 350,
+              "dy_nm": 0,
+              "width_nm": 160,
+              "merge_landing": true,
+              "merge_style": "gap_fill",
+              "merge_width_nm": 520
+            }
+          }
+        },
+        "force_redundant_via_by_via": {
+          "VIA5": true,
+          "VIA6": true,
+          "VIA7": true
+        },
+        "force_redundant_via_by_net": {
+          "ea_out": {
+            "VIA5": true,
+            "VIA6": true
+          }
+        },
+        "redundant_via_axis": "y",
+        "landing_axis": "square",
+        "terminal_overrides": {
+          "capacitor.PLUS": {
+            "landing_direction": "right",
+            "landing_axis": "vertical",
+            "directional_landing_layers": ["M1"],
+            "rule_sources": {
+              "landing_direction": {
+                "rule_ids": ["lvs.short.nmoscap_PLUS_MINUS"],
+                "description": "CRN28 nmoscap PLUS/MINUS native extraction terminals are close on M1. Use a vertical PLUS landing and extend it away from the MINUS side while preserving via enclosure and metal min-area."
+              }
+            }
+          },
+          "capacitor.MINUS": {
+            "landing_direction": "left",
+            "landing_axis": "vertical",
+            "directional_landing_layers": ["M1"],
+            "route_escape": {
+              "layer": "M4",
+              "dx_nm": -220,
+              "width_nm": 100
+            },
+            "rule_sources": {
+              "landing_direction": {
+                "rule_ids": ["lvs.short.nmoscap_PLUS_MINUS"],
+                "description": "CRN28 nmoscap MINUS local landing must not expand toward the adjacent PLUS native terminal; the calibrated anchor is offset left for M1/M3 spacing margin."
+              },
+              "route_escape": {
+                "rule_ids": ["M4.S.3", "pcell_access.keepout"],
+                "description": "At COUT, keep the narrow VSS M4 terminal connection on the capacitor pad, then jog left before dropping the wide VSS M4 trunk so it does not violate spacing to the VOUT M4 via landing."
+              }
+            }
+          },
+          "nmos.G": {
+            "existing_landing_layers": ["M1"],
+            "redundant_via_cuts_by_via": {
+              "VIA1": 2
+            },
+            "redundant_via_axis_by_via": {
+              "VIA1": "x"
+            },
+            "rule_sources": {
+              "redundant_via_cuts_by_via.VIA1": {
+                "rule_ids": ["VIA1.R.2__VIA1.R.3"],
+                "description": "Gate M1 buses are long/wide enough to trigger CRN28 redundant VIA1 requirements. Use a 2-cut VIA1 access stack in full-SMT small-module mode instead of a single cut."
+              },
+              "redundant_via_axis_by_via.VIA1": {
+                "rule_ids": ["VIA1.EN.1", "VIA1.R.2__VIA1.R.3"],
+                "description": "Gate M1 buses are long in x but narrow in y. Place the two VIA1 cuts along x so all cuts stay enclosed by the existing calibrated M1 gate bus."
+              },
+              "existing_landing_layers": {
+                "rule_ids": ["M1.S.1", "pcell_access.reuse_gate_landing"],
+                "description": "CRN28 calibrated MOS access already creates legal gate M1 bus/landing/contact geometry. Structured routing must reuse that M1 landing and add only VIA1 plus upper-metal landings."
+              }
+            }
+          },
+          "nmos.B": {
+            "landing_direction": "up",
+            "landing_axis": "square",
+            "directional_landing_layers": ["M2", "M3", "M4", "M5", "M6", "M7", "M8"],
+            "directional_landing_overlap_nm": 10,
+            "rule_sources": {
+              "landing_direction": {
+                "rule_ids": ["lvs.short.nmos_body_to_drain_access", "pcell_access.keepout"],
+                "description": "CRN28 NMOS body tap sits below the active device. Grow upper-metal body via-stack landings upward so VSS body access does not overlap adjacent source/drain buses such as an LDO STAIL drain bus."
+              }
+            }
+          },
+          "nmos.S": {
+            "landing_direction": "down",
+            "landing_axis": "square",
+            "directional_landing_layers": ["M2", "M3", "M4", "M5", "M6", "M7", "M8"],
+            "directional_landing_overlap_nm": 10,
+            "rule_sources": {
+              "landing_direction": {
+                "rule_ids": ["M2.S.1", "M3.S.1", "M5.S.1", "M7.S.1", "M8.S.1", "pcell_access.keepout"],
+                "description": "CRN28 MOS source bus is the lower calibrated S/D bus; via-stack landings must grow away from the adjacent drain bus."
+              }
+            }
+          },
+          "nmos.D": {
+            "landing_direction": "up",
+            "landing_axis": "square",
+            "directional_landing_layers": ["M2", "M3", "M4", "M5", "M6", "M7", "M8"],
+            "directional_landing_overlap_nm": 10,
+            "rule_sources": {
+              "landing_direction": {
+                "rule_ids": ["M2.S.1", "M3.S.1", "M5.S.1", "M7.S.1", "M8.S.1", "pcell_access.keepout"],
+                "description": "CRN28 MOS drain bus is the upper calibrated S/D bus; via-stack landings must grow away from the adjacent source bus."
+              }
+            }
+          },
+          "M1A.G": {
+            "route_escape": {
+              "layer": "M5",
+              "dx_nm": 450,
+              "width_nm": 100
+            },
+            "rule_sources": {
+              "route_escape": {
+                "rule_ids": ["lvs.short.VREF_nR1", "pcell_access.keepout"],
+                "description": "Bandgap M1A gate is on the VREF/diode1 trunk. Jog the M5 branch sideways before the long vertical segment so it does not sweep through the R1.PLUS/nR1 resistor via stack."
+              }
+            }
+          },
+          "M7.G": {
+            "route_escape": {
+              "layers": ["M5", "M8"],
+              "dx_nm": 1800,
+              "dy_nm": 700,
+              "style": "vertical_first",
+              "width_nm": 100
+            },
+            "rule_sources": {
+              "route_escape": {
+                "rule_ids": ["lvs.short.BIAS_N_VREF", "pcell_access.keepout"],
+                "description": "Bandgap M7 gate is the BIAS_N anchor. Escape the branch to the right before the long vertical trunk so it does not intersect the VREF/diode1 branch from M1A.G."
+              }
+            }
+          },
+          "M7.D": {
+            "route_escape": {
+              "layer": "M6",
+              "dx_nm": 350,
+              "width_nm": 100
+            },
+            "rule_sources": {
+              "route_escape": {
+                "rule_ids": ["lvs.short.TAIL_VSS", "pcell_access.keepout"],
+                "description": "Bandgap tail NMOS drain connects to TAIL on M6. Escape horizontally before dropping to the TAIL trunk so the vertical branch does not pass through the adjacent VSS source/body access stack."
+              }
+            }
+          },
+          "M1A.D": {
+            "route_escape": {
+              "layer": "M7",
+              "dx_nm": 1500,
+              "dy_nm": 430,
+              "first_dx_nm": 500,
+              "style": "hvh",
+              "width_nm": 100
+            },
+            "rule_sources": {
+              "route_escape": {
+                "rule_ids": ["lvs.short.diode2_ea_out", "pcell_access.keepout"],
+                "description": "Bandgap M1A drain is on ea_out next to the diode2 sense bus. Move the branch to the right of the diode2 lower horizontal bus before rising toward the ea_out channel."
+              }
+            }
+          },
+          "M1B.D": {
+            "route_escape": {
+              "layer": "M7",
+              "dx_nm": 1500,
+              "dy_nm": 430,
+              "first_dx_nm": 350,
+              "style": "hvh",
+              "width_nm": 100
+            },
+            "rule_sources": {
+              "route_escape": {
+                "rule_ids": ["lvs.short.diode2_ea_out", "pcell_access.keepout"],
+                "description": "Bandgap M1B drain is on ea_out near diode2 gate/sense access. Escape to the right of that access window before rising and joining the ea_out trunk."
+              }
+            }
+          },
+          "M1A_u0.D": {
+            "route_escape": {
+              "layer": "M7",
+              "dx_nm": 1500,
+              "dy_nm": 430,
+              "first_dx_nm": 500,
+              "style": "hvh",
+              "width_nm": 100
+            }
+          },
+          "M1A_u1.D": {
+            "route_escape": {
+              "layer": "M7",
+              "dx_nm": 1500,
+              "dy_nm": 430,
+              "first_dx_nm": 700,
+              "style": "hvh",
+              "width_nm": 100
+            }
+          },
+          "M1B_u0.D": {
+            "route_escape": {
+              "layer": "M7",
+              "dx_nm": 1500,
+              "dy_nm": 430,
+              "first_dx_nm": 300,
+              "style": "hvh",
+              "width_nm": 100
+            },
+            "rule_sources": {
+              "route_escape": {
+                "rule_ids": ["lvs.short.diode2_ea_out", "pcell_access.keepout"],
+                "description": "The lower-left M1B drain starts before the VSS access obstacle. Rise into the narrow legal channel between VSS access and diode2 before continuing right."
+              }
+            }
+          },
+          "M1B_u1.D": {
+            "route_escape": {
+              "layer": "M7",
+              "dx_nm": 1500,
+              "dy_nm": 430,
+              "first_dx_nm": 300,
+              "style": "hvh",
+              "width_nm": 100
+            },
+            "rule_sources": {
+              "route_escape": {
+                "rule_ids": ["lvs.short.diode2_ea_out", "pcell_access.keepout"],
+                "description": "The lower-right M1B drain has only a short run before the VSS access obstacle. Use the same narrow channel between VSS and diode2 before joining the ea_out trunk."
+              }
+            }
+          },
+          "M3B.D": {
+            "route_escape": {
+              "layer": "M7",
+              "dx_nm": 350,
+              "dy_nm": 310,
+              "style": "vertical_first",
+              "width_nm": 100
+            },
+            "rule_sources": {
+              "route_escape": {
+                "rule_ids": ["lvs.short.diode2_ea_out", "pcell_access.keepout"],
+                "description": "Bandgap M3B drain is diode2. Lift the diode2 PMOS-drain branch above the ea_out PMOS-gate access row before joining the left-side diode2 channel."
+              }
+            }
+          },
+          "pmos.G": {
+            "existing_landing_layers": ["M1"],
+            "redundant_via_cuts_by_via": {
+              "VIA1": 2
+            },
+            "redundant_via_axis_by_via": {
+              "VIA1": "x"
+            },
+            "rule_sources": {
+              "redundant_via_cuts_by_via.VIA1": {
+                "rule_ids": ["VIA1.R.2__VIA1.R.3"],
+                "description": "Gate M1 buses are long/wide enough to trigger CRN28 redundant VIA1 requirements. Use a 2-cut VIA1 access stack in full-SMT small-module mode instead of a single cut."
+              },
+              "redundant_via_axis_by_via.VIA1": {
+                "rule_ids": ["VIA1.EN.1", "VIA1.R.2__VIA1.R.3"],
+                "description": "Gate M1 buses are long in x but narrow in y. Place the two VIA1 cuts along x so all cuts stay enclosed by the existing calibrated M1 gate bus."
+              },
+              "existing_landing_layers": {
+                "rule_ids": ["M1.S.1", "pcell_access.reuse_gate_landing"],
+                "description": "CRN28 calibrated MOS access already creates legal gate M1 bus/landing/contact geometry. Structured routing must reuse that M1 landing and add only VIA1 plus upper-metal landings."
+              }
+            }
+          },
+          "pmos.S": {
+            "landing_direction": "down",
+            "landing_axis": "square",
+            "directional_landing_layers": ["M2", "M3", "M4", "M5", "M6", "M7", "M8"],
+            "directional_landing_overlap_nm": 10,
+            "rule_sources": {
+              "landing_direction": {
+                "rule_ids": ["M2.S.1", "M3.S.1", "M5.S.1", "M5.S.3", "M5.S.13", "M7.S.1", "M8.S.1", "pcell_access.keepout"],
+                "description": "CRN28 PMOS source bus is the lower calibrated S/D bus; grow via-stack landings downward so VDD access does not squeeze the adjacent signal bus."
+              }
+            }
+          },
+          "MPASS.D": {
+            "route_escape": {
+              "layers": ["M4", "M5", "M7"],
+              "dx_nm": 600,
+              "dy_nm": 700,
+              "style": "vertical_first",
+              "width_nm": 100
+            },
+            "rule_sources": {
+              "route_escape": {
+                "rule_ids": ["M5.S.3", "M5.S.15", "pcell_access.keepout"],
+                "description": "LDO pass PMOS drain/VOUT escape needs more lateral clearance from adjacent VIN source/body M5 terminal-access landings than the generic pmos.D rule. Shift only the MPASS.D M5 leg rightward instead of moving the whole VOUT trunk to M6."
+              }
+            }
+          },
+          "pmos.D": {
+            "landing_direction": "up",
+            "landing_axis": "square",
+            "directional_landing_layers": ["M2", "M3", "M4", "M5", "M6", "M7", "M8"],
+            "directional_landing_overlap_nm": 10,
+            "route_escape": {
+              "layers": ["M4", "M5", "M7"],
+              "dx_nm": 350,
+              "dy_nm": 700,
+              "style": "vertical_first",
+              "width_nm": 100
+            },
+            "rule_sources": {
+              "landing_direction": {
+                "rule_ids": ["M2.S.1", "M3.S.1", "M5.S.1", "M5.S.3", "M5.S.13", "M7.S.1", "M8.S.1", "pcell_access.keepout"],
+                "description": "CRN28 PMOS drain bus is the upper calibrated S/D bus; grow via-stack landings upward so signal access does not squeeze the adjacent VDD/source bus."
+              },
+              "route_escape": {
+                "rule_ids": ["lvs.short.pmos_sd_access"],
+                "description": "For CRN28 multifinger PMOS in bandgap, the D and S/B access buses share x tracks. Jog drain-route drops sideways before long vertical descent so they do not sweep through source/body via landings or create M5 wide-parallel spacing to VDD."
+              }
+            }
+          },
+          "bjt.C": {
+            "share_via_stack_with_terminal": "B",
+            "shared_stack_bridge_width_nm": 100,
+            "route_escape": {
+              "layers": ["M4", "M5"],
+              "dx_nm": 250,
+              "width_nm": 100
+            }
+          },
+          "Q1.B": {
+            "route_escape": {
+              "layer": "M5",
+              "dx_nm": 250,
+              "dy_nm": 500,
+              "style": "vertical_first",
+              "width_nm": 160
+            },
+            "rule_sources": {
+              "route_escape": {
+                "rule_ids": ["lvs.short.VREF_diode2", "pcell_access.keepout"],
+                "description": "Q1 base belongs to diode1/VREF. Escape it above the BJT-array base row before joining the left VREF trunk so the VREF branch does not pass through diode2 base access on the same row."
+              }
+            }
+          },
+          "bjt.B": {
+            "landing_direction": "down",
+            "landing_axis": "square",
+            "directional_landing_layers": ["M1", "M2"],
+            "redundant_via_axis_by_via": {
+              "VIA1": "y"
+            },
+            "route_escape": {
+              "layers": ["M4", "M5"],
+              "dx_nm": 250,
+              "width_nm": 160
+            },
+            "rule_sources": {
+              "landing_direction": {
+                "rule_ids": ["M2.S.1", "pcell_access.keepout"],
+                "description": "BJT base access must overlap the native NPN M2 breakout instead of leaving a narrow 40nm spacing notch at the PCell edge."
+              },
+              "redundant_via_axis_by_via.VIA1": {
+                "rule_ids": ["M2.S.1", "VIA1.EN.1"],
+                "description": "Bias the VIA1 pair toward the NPN native M2 breakout so the external M2 landing merges with the PCell metal."
+              }
+            }
+          },
+          "bjt.E": {
+            "route_escape": {
+              "layers": ["M5", "M6", "M8"],
+              "dx_nm": -250,
+              "width_nm": 100
+            }
+          }
+        }
+      },
+      "net_routes": {
+        "by_net": {
+          "VREF": {
+            "style": "external_channel",
+            "channel_side": "left",
+            "channel_offset_nm": 1200,
+            "rule_sources": {
+              "style": {
+                "rule_ids": ["M5.S.3", "M5.S.13", "pcell_access.keepout", "supply.VDD"],
+                "description": "Route the sensitive VREF M5 trunk on a left-side external channel so compact bandgap placement does not let the trunk pass through PMOS VDD access or resistor-ladder nR1 landings."
+              }
+            }
+          },
+          "diode1": {
+            "style": "external_channel",
+            "channel_side": "left",
+            "channel_offset_nm": 1200,
+            "rule_sources": {
+              "style": {
+                "rule_ids": ["M5.S.3", "M5.S.13", "pcell_access.keepout", "supply.VDD"],
+                "description": "Bandgap VREF pin is aliased to diode1 in the topology graph; route diode1/VREF on the same left-side external M5 channel to avoid compact PMOS VDD access and resistor-ladder nR1 landings."
+              }
+            }
+          },
+          "diode2": {
+            "style": "external_channel",
+            "channel_side": "below",
+            "channel_orientation": "horizontal",
+            "channel_offset_nm": 900,
+            "rule_sources": {
+              "style": {
+                "rule_ids": ["lvs.short.VREF_diode2", "pcell_access.keepout"],
+                "description": "Route diode2 on an outside channel instead of a straight M4 trunk through the compact BJT/core row. The BJT/VREF local M4 landing is a required PCell terminal access shape, so the avoidable geometry is the long diode2 trunk."
+              }
+            }
+          },
+          "VDD": {
+            "style": "internal_channel",
+            "channel_side": "above",
+            "channel_orientation": "horizontal",
+            "channel_offset_nm": 1080,
+            "rule_sources": {
+              "style": {
+                "rule_ids": ["pcell_access.keepout", "critical.ea_out", "compact.right_device_cluster"],
+                "description": "Reference-packing mode keeps the VDD trunk inside the local upper routing envelope; local ECO should repair remaining access conflicts instead of reserving a high macro-external channel."
+              }
+            }
+          },
+          "ea_out": {
+            "style": "internal_channel",
+            "channel_side": "right",
+            "channel_orientation": "vertical",
+            "channel_offset_nm": 540,
+            "rule_sources": {
+              "style": {
+                "rule_ids": ["pcell_access.keepout", "lvs.short.ea_out_nR1"],
+                "description": "Reference-packing mode routes ea_out through a compact local vertical channel; fixed multi-micron terminal doglegs are avoided because they dominate final bbox whitespace."
+              }
+            }
+          }
+        },
+        "by_prefix": {
+          "r2_mid_": {
+            "style": "external_dogleg",
+            "dogleg_side": "below",
+            "dogleg_offset_nm": 800,
+            "dogleg_offset_step_nm": 200,
+            "prefer_horizontal": true,
+            "terminal_escape_style": "outward",
+            "terminal_escape_nm": 900,
+            "rule_sources": {
+              "style": {
+                "rule_ids": ["lvs.short.r2_mid_ladder", "pcell_access.keepout"],
+                "description": "Folded bandgap resistor ladder nodes must escape to an external channel before lateral routing; a straight trunk through collinear terminal anchors shorts adjacent series nodes."
+              }
+            }
+          }
+        }
+      }
+    },
+    "smt_design_rules": {
+      "enabled": true,
+      "site_nm": 10,
+      "rule_strategy": {
+        "default_mode": "hybrid",
+        "mode_by_block": {
+          "bandgap": "full",
+          "ldo": "full"
+        },
+        "timeout_ms_by_mode": {
+          "full": 120000,
+          "hybrid": 60000,
+          "critical": 30000
+        },
+        "rule_families": {
+          "gate_access_via_array": {
+            "rule_ids": ["VIA1.R.2__VIA1.R.3", "CO.R.*"],
+            "owner_by_mode": {
+              "full": "local_smt",
+              "hybrid": "local_smt",
+              "critical": "local_smt"
+            },
+            "description": "MOS gate/contact access via count and landing geometry should be solved with the terminal escape choices in full-SMT mode; otherwise use a local SMT repair around the gate stack."
+          },
+          "pmos_access_parallel_spacing": {
+            "rule_ids": ["M2.S.1", "M3.S.1", "M5.S.1", "M5.S.3", "M5.S.13", "pcell_access.keepout"],
+            "owner_by_mode": {
+              "full": "local_smt",
+              "hybrid": "local_smt",
+              "critical": "local_smt"
+            },
+            "description": "PMOS calibrated source/drain/body access straps and nearby route/via landings must be considered together; this prevents iterative one-off M2/M3/M5 spacing fixes."
+          },
+          "bjt_resistor_access_spacing": {
+            "rule_ids": ["M2.S.1", "M3.S.1", "pcell_access.keepout"],
+            "owner_by_mode": {
+              "full": "local_smt",
+              "hybrid": "local_smt",
+              "critical": "local_smt"
+            },
+            "description": "BJT/resistor terminal access spacing can affect array compactness and should be globally modeled for small-module full-SMT experiments."
+          },
+          "required_marker_layers": {
+            "rule_ids": ["DOD.R.1", "DPO.R.1", "SR_DOD.R.4"],
+            "owner_by_mode": {
+              "full": "signoff_only",
+              "hybrid": "signoff_only",
+              "critical": "signoff_only"
+            },
+            "description": "CRN28 requires certain CAD marker layers to exist. This is a stream/fill/ECO concern, not a placement/routing SMT variable."
+          }
+        }
+      },
+      "strongarm": {
+        "device_placement": {
+          "intra_row_spacing_nm": 180,
+          "row_spacing_nm": 250,
+          "max_matched_pair_gap_nm": 180,
+          "max_row_spacing_nm": 250,
+          "rule_sources": {
+            "row_spacing_nm": {
+              "rule_ids": ["PP.S.9", "NP.S.9"],
+              "minimum_nm": 250,
+              "parallel_run_length_nm": 330,
+              "description": "Implant long-parallel-edge separation for characterized StrongARM device rows."
+            },
+            "intra_row_spacing_nm": {
+              "rule_ids": ["PP.S.1", "NP.S.1", "OD.S.1"],
+              "minimum_nm": 180,
+              "description": "Conservative same-row active/implant separation budget used before native PCell DRC calibration."
+            }
+          }
+        },
+        "hierarchical_placement": {
+          "minimum_group_spacing_nm": 0,
+          "target_aspect": {"num": 3, "den": 2},
+          "rule_sources": {
+            "minimum_group_spacing_nm": {
+              "rule_ids": ["abstract.non_overlap"],
+              "description": "Group separation is carried by explicit routing corridors; device-level spacing is handled by characterized nf placement."
+            }
+          }
+        },
+        "routing_resource": {
+          "corridor_pitch_nm": 10,
+          "default_channel_gap_nm": 10,
+          "default_fixed_reserved_tracks": 1,
+          "default_estimated_noncritical_tracks": 0,
+          "default_base_capacity_tracks": 0,
+          "capacity_consumes_gap": false,
+          "require_orthogonal_overlap": true,
+          "critical_track_demand": {
+            "INPUT_DIFF": 2,
+            "OUTPUT_REGEN_DIFF": 3,
+            "TAIL_CURRENT": 2
+          },
+          "noncritical_track_demand": {
+            "CLK": 1,
+            "RST": 1
+          },
+          "corridors": {
+            "C_TAIL_INPUT": {
+              "rule_ids": ["critical.INP/INN", "critical.TAIL", "ctrl.CLK"]
+            },
+            "C_INPUT_LATCH": {
+              "rule_ids": ["critical.OUTP/OUTN", "critical.TAIL"]
+            },
+            "C_LATCH_RESET": {
+              "rule_ids": ["critical.OUTP/OUTN", "ctrl.RST"]
+            }
+          },
+          "rule_sources": {
+            "corridor_pitch_nm": {
+              "rule_ids": ["M2.S.1", "M3.S.1", "M4.S.1", "M5.S.1"],
+              "description": "Abstract track quantum for SMT resource accounting; local signoff geometry is repaired by routing/ECO rules."
+            },
+            "critical_track_demand": {
+              "description": "Critical route demands are topological/resource constraints and therefore belong in SMT."
+            }
+          }
+        }
+      },
+      "ldo": {
+        "hierarchical_placement": {
+          "minimum_group_spacing_nm": 0,
+          "target_aspect": {"num": 3, "den": 2}
+        },
+        "pair_placement": {
+          "spacing_nm_by_role": {
+            "load_pair": 2600
+          },
+          "rule_sources": {
+            "load_pair": {
+              "rule_ids": ["CO.R.4", "SR_DPO.S.13"],
+              "description": "CRN28 mirrored PMOS load pair needs calibrated PCell/access envelope spacing; isolated devices are clean but adjacent MY/R0 PMOS pairs create CO/SR_DPO markers when placed with the generic 0.5um gap. A 2.6um pair gap cleared the M3A/M3B pair-only Calibre reproduction."
+            }
+          }
+        },
+        "placement_pack_overrides": [
+          {
+            "name": "pass_feedback_local",
+            "patterns": ["pass_device", "feedback_output"],
+            "weight": 10,
+            "width_weight": 4,
+            "height_weight": 2,
+            "mode": "merge",
+            "rule_sources": {
+              "weight": {
+                "rule_ids": ["compact.local_pass_feedback", "critical.VOUT", "critical.VFB"],
+                "description": "The pass PCell and feedback/output passives share the VOUT/VFB closure window; compact this local envelope inside SMT instead of leaving right-side whitespace for ECO."
+              }
+            }
+          },
+          {
+            "name": "input_load_pass_local",
+            "patterns": ["input_pair", "load_pair", "pass_device"],
+            "weight": 7,
+            "width_weight": 3,
+            "height_weight": 2,
+            "mode": "merge",
+            "rule_sources": {
+              "weight": {
+                "rule_ids": ["compact.core_pass", "critical.VGATE_PASS"],
+                "description": "Keep the LDO error-amplifier core close to the pass gate before detailed A*/ECO routing."
+              }
+            }
+          }
+        ],
+        "routing_resource": {
+          "corridor_pitch_nm": 10,
+          "default_channel_gap_nm": 10,
+          "default_fixed_reserved_tracks": 1,
+          "default_estimated_noncritical_tracks": 0,
+          "default_base_capacity_tracks": 0,
+          "capacity_consumes_gap": false,
+          "require_orthogonal_overlap": true,
+          "critical_track_demand": {
+            "REFERENCE_FEEDBACK_SENSE": 2,
+            "LOAD_GATE_CONTROL": 2,
+            "PASS_GATE_CONTROL": 2,
+            "OUTPUT_CURRENT": 4,
+            "INPUT_SUPPLY_CURRENT": 4,
+            "GROUND_RETURN": 3
+          },
+          "noncritical_track_demand": {
+            "TAIL_BIAS": 1
+          },
+          "route_layers": {
+            "layer_by_net": {
+              "VFB": "M6",
+              "VGATE_LOAD": "M7",
+              "VGATE_PASS": "M8"
+            },
+            "min_layer_by_net": {
+              "VOUT": "M5",
+              "VREF": "M3"
+            },
+            "rule_sources": {
+              "VOUT": {
+                "rule_ids": ["M3.S.1", "lvs.short.nmoscap_PLUS_MINUS", "pcell_access.keepout"],
+                "description": "Keep the high-current VOUT trunk above the COUT M1/M2/M3 local access envelope; lower metals are used only for the narrow capacitor via stack."
+              },
+              "VREF": {
+                "rule_ids": ["lvs.short.VREF_VSS", "pcell_access.keepout"],
+                "description": "Keep the sensitive VREF trunk above local M1 MOS gate/body access. M1 is used only for the calibrated terminal landing/via stack."
+              }
+            }
+          },
+          "route_lanes": {
+            "lane_by_net": {
+              "VFB": 2,
+              "VREF": -2,
+              "VGATE_LOAD": -3,
+              "VGATE_PASS": 0,
+              "VSS": -2
+            },
+            "rule_sources": {
+              "VREF": {
+                "rule_ids": ["lvs.short.VREF_STAIL_VGATE_LOAD", "pcell_access.keepout"],
+                "description": "Move the VREF M3 trunk off the M1A source/drain access via-stack."
+              },
+              "VSS": {
+                "rule_ids": ["lvs.short.VSS_STAIL", "pcell_access.keepout"],
+                "description": "Move the VSS M4 backbone off the tail/source access via-stack."
+              }
+            }
+          },
+          "corridors": {
+            "C_TAIL_INPUT": {
+              "rule_ids": ["critical.TAIL", "bias.BIAS_N", "return.VSS"]
+            },
+            "C_INPUT_LOAD": {
+              "rule_ids": ["critical.VREF/VFB", "critical.VGATE_PASS"]
+            },
+            "C_LOAD_PASS": {
+              "rule_ids": ["critical.VGATE_PASS", "power.VIN", "power.VOUT"]
+            },
+            "C_PASS_FEEDBACK": {
+              "rule_ids": ["critical.VOUT", "critical.VFB", "return.VSS"]
+            }
+          },
+          "rule_sources": {
+            "critical_track_demand": {
+              "description": "LDO critical power/sense/pass-gate resources are planned in hierarchical SMT before detailed routing."
+            }
+          }
+        }
+      },
+      "bandgap": {
+        "hierarchical_placement": {
+          "minimum_group_spacing_nm": 0,
+          "target_aspect": {"num": 4, "den": 1}
+        },
+        "pair_placement": {
+          "spacing_nm_by_role": {
+            "pmos_mirror": 2600,
+            "load_pair": 2600
+          },
+          "rule_sources": {
+            "pmos_mirror": {
+              "rule_ids": ["CO.R.4", "SR_DPO.S.13"],
+              "description": "Use the same CRN28 PMOS pair PCell/access envelope spacing as LDO; this prevents pair-context CO/SR_DPO markers from recurring in Bandgap mirrors."
+            },
+            "load_pair": {
+              "rule_ids": ["CO.R.4", "SR_DPO.S.13"],
+              "description": "Bandgap PMOS load pairs share the CRN28 mirrored-pair PCell/access keepout budget."
+            }
+          }
+        },
+        "placement_relation_overrides": [
+          {
+            "source": "bjt_core",
+            "target": "pmos_mirror",
+            "kind": "above",
+            "min_gap_nm": 2000,
+            "mode": "max",
+            "rule_sources": {
+              "min_gap_nm": {
+                "rule_ids": ["DNW.S.2", "NW.S.2", "NW.S.9"],
+                "description": "Bandgap BJT deep-nwell/native well envelope must be kept away from PMOS well rows; this is promoted into SMT group placement instead of ECOing after Calibre."
+              }
+            }
+          },
+          {
+            "source": "bjt_core",
+            "target": "load_pair",
+            "kind": "above",
+            "min_gap_nm": 2000,
+            "mode": "max",
+            "rule_sources": {
+              "min_gap_nm": {
+                "rule_ids": ["DNW.S.2", "NW.S.2", "NW.S.9"],
+                "description": "Same BJT-to-PMOS well keepout for the bandgap load pair row."
+              }
+            }
+          }
+        ],
+        "placement_pack_overrides": [
+          {
+            "name": "bjt_res_input_local",
+            "patterns": ["bjt_core", "resistor_ladder", "input_pair", "tail_source"],
+            "weight": 10,
+            "width_weight": 4,
+            "height_weight": 2,
+            "mode": "merge",
+            "rule_sources": {
+              "weight": {
+                "rule_ids": ["compact.bjt_res_window", "critical.VREF", "critical.diode1/diode2"],
+                "description": "BJT core, folded resistor ladder, and input/tail devices form the local reference-generation window; minimize this envelope directly in SMT."
+              }
+            }
+          },
+          {
+            "name": "pmos_load_local",
+            "patterns": ["pmos_mirror", "load_pair"],
+            "weight": 7,
+            "width_weight": 3,
+            "height_weight": 2,
+            "mode": "merge",
+            "rule_sources": {
+              "weight": {
+                "rule_ids": ["compact.pmos_load_window", "critical.ea_out", "supply.VDD"],
+                "description": "PMOS mirror/load rows are one upper-device local window; compress it instead of relying only on global bbox minimization."
+              }
+            }
+          }
+        ],
+        "routing_resource": {
+          "corridor_pitch_nm": 10,
+          "default_channel_gap_nm": 10,
+          "default_fixed_reserved_tracks": 1,
+          "default_estimated_noncritical_tracks": 0,
+          "default_base_capacity_tracks": 0,
+          "capacity_consumes_gap": false,
+          "require_orthogonal_overlap": true,
+          "critical_track_demand": {
+            "DELTA_VBE_SENSE": 2,
+            "EA_OUTPUT": 2,
+            "REFERENCE_OUTPUT": 3,
+            "SUPPLY_RETURN": 4
+          },
+          "noncritical_track_demand": {
+            "BIAS_N": 1
+          },
+          "route_layers": {
+            "layer_by_net": {
+              "VDD": "M10",
+              "VSS": "M9",
+              "TAIL": "M2",
+              "BIAS_N": "M7",
+              "diode2": "M4",
+              "diode1": "M5",
+              "VREF": "M5",
+              "ea_out": "M7",
+              "nR1": "M8",
+              "nR2": "M6"
+            },
+            "cyclic_layer_by_net_prefix": {
+              "r2_mid_": ["M3", "M4", "M5"]
+            },
+            "min_layer_by_net": {
+              "BIAS_N": "M3",
+              "diode1": "M3"
+            },
+            "rule_sources": {
+              "BIAS_N": {
+                "rule_ids": ["pcell_access.keepout"],
+                "description": "Bias trunks should not run as long M1 shapes through dense MOS/BJT/passive access envelopes; M1 remains local landing only."
+              },
+              "diode1": {
+                "rule_ids": ["matched_sense.keepout", "pcell_access.keepout"],
+                "description": "Matched diode sense trunks are promoted above local access metal unless an explicit higher layer is already selected."
+              },
+              "diode2": {
+                "rule_ids": ["lvs.short.VREF_diode2", "pcell_access.keepout"],
+                "description": "Promote the diode2 trunk above M4 so it cannot intersect required VREF/BJT M4 terminal-access landings in compact bandgap placements."
+              },
+              "r2_mid_": {
+                "rule_ids": ["lvs.short.r2_mid_ladder", "pcell_access.keepout"],
+                "description": "Keep folded resistor-ladder intermediate trunks off M2, because adjacent series-node terminal access uses local M2 landings."
+              }
+            }
+          },
+          "route_lanes": {
+            "lane_by_net": {
+              "VDD": 2,
+              "VSS": 2,
+              "VREF": 2,
+              "diode1": 2,
+              "BIAS_N": 7,
+              "diode2": 2,
+              "TAIL": 2,
+              "ea_out": 2,
+              "nR1": 2,
+              "nR2": -2
+            },
+            "prefix_lane_by_net": {
+              "r2_mid_": 0
+            },
+            "rule_sources": {
+              "VREF": {
+                "rule_ids": ["M5.S.3", "M5.S.13", "pcell_access.keepout"],
+                "description": "Move the VREF M5 trunk one SMT lane away from the upper-left PMOS VDD access stack to satisfy wide/parallel M5 spacing."
+              },
+              "VDD": {
+                "rule_ids": ["M6.S.1", "pcell_access.keepout", "critical.ea_out"],
+                "description": "Route the bandgap VDD M6 trunk on the upper side of the local corridor so vertical supply drops do not sweep through compact NMOS ea_out access stacks."
+              }
+            }
+          },
+          "corridors": {
+            "C_TAIL_INPUT": {
+              "rule_ids": ["bias.BIAS_N", "tail.TAIL"]
+            },
+            "C_INPUT_LOAD": {
+              "rule_ids": ["critical.ea_out", "supply.VDD/VSS"]
+            },
+            "C_BJT_MIRROR": {
+              "rule_ids": ["critical.diode1/diode2", "supply.VDD"]
+            },
+            "C_BJT_RES": {
+              "rule_ids": ["critical.VREF", "resistor.R1/R2"]
+            },
+            "C_BJT_INPUT": {
+              "rule_ids": ["critical.diode1/diode2", "critical.VREF"]
+            },
+            "C_MIRROR_LOAD": {
+              "rule_ids": ["critical.ea_out", "supply.VDD"]
+            }
+          },
+          "rule_sources": {
+            "critical_track_demand": {
+              "description": "Bandgap matched BJT sense, resistor ladder, EA output, and supply resources are planned in hierarchical SMT."
+            }
+          }
+        }
+      }
+    },
+    "smt_placement": {
+      "strongarm_characterized_nf": {
+        "intra_row_spacing_nm": 180,
+        "row_spacing_nm": 250,
+        "max_matched_pair_gap_nm": 180,
+        "max_row_spacing_nm": 250,
+        "rule_sources": {
+          "row_spacing_nm": {
+            "rule_ids": ["PP.S.9", "NP.S.9"],
+            "minimum_nm": 250,
+            "parallel_run_length_nm": 330,
+            "description": "Long parallel implant edges between characterized device rows."
+          }
+        }
+      }
+    },
+    "power_geometry": {
+      "guard_ring": {
+        "enabled": true,
+        "smt_enabled_blocks": ["bandgap", "ldo"],
+        "net": "VSS",
+        "kind": "substrate",
+        "spacing_nm": 600,
+        "contact_pitch_nm": 1000,
+        "implant_enclosure_nm_by_layer": {
+          "PP": 70
+        },
+        "top_extra_spacing_nm": 65,
+        "rule_sources": {
+          "implant_enclosure_nm_by_layer.PP": {
+            "rule_id": "PP.EX.1",
+            "minimum_nm": 65,
+            "calibre_grid_nm": 5,
+            "description": "Use one outward grid quantum beyond the minimum so stream-out snapping cannot reduce the enclosure."
+          },
+          "top_extra_spacing_nm": {
+            "rule_id": "NW.S.5",
+            "minimum_nm": 65,
+            "description": "Move the top substrate guard-ring active away from the nwell-tap cover; shrinking NW would violate NW_OD enclosure."
+          }
+        }
+      },
+      "guard_ring_tap_join": {
+        "enabled": true,
+        "marker_layers": ["PP"],
+        "maximum_gap_nm": 160,
+        "minimum_overlap_nm": 5,
+        "rule_sources": {
+          "maximum_gap_nm": {
+            "rule_ids": ["PP.S.1", "PP.S.9"],
+            "minimum_nm": 160,
+            "description": "Only close a short, facing guard-ring/body-tap implant gap; no arbitrary implant regions are merged."
+          }
+        }
+      }
+    },
+    "routing_geometry": {
+      "local_drc_eco": {
+        "enabled": true,
+        "max_iterations": 3,
+        "halo_nm": 20,
+        "marker_padding_nm": 1,
+        "same_net_spacing_fill_padding_nm": 25,
+        "same_net_spacing_fill_bridge_max_gap_nm": 0,
+        "same_net_spacing_fill_cluster_by_shape": false,
+        "same_net_spacing_fill_merge_touching": false,
+        "fill_enforce_min_area": true,
+        "enabled_action_kinds": ["remove_short_jog", "add_min_area_patch", "same_net_spacing_fill", "widen_shape"],
+        "candidate_rule_families": ["G.4", "M*.W.*", "M*.A.*", "M*.S.*"],
+        "same_net_fill_rule_families": ["M*.S.*"],
+        "width_fill_requires_expandable_shape": true,
+        "contact_enclosure_rules": {
+          "CO": {
+            "outer_layer": "PO",
+            "enclosure_nm": 20,
+            "rule_families": ["CO.EN.*"],
+            "description": "Experimental fallback only. Global use is disabled because isolated PO patches around router-generated gate CO create PO/implant violations; prefer PCell/native M1 gate access with router gate CO disabled."
+          }
+        },
+        "rule_sources": {
+          "CO.EN.*": {
+            "rule_ids": ["CO.EN.4__CO.EN.5"],
+            "description": "CRN28 gate CO needs legal PO/implant context. Reference-comparable routing should avoid top-level gate CO and connect to PCell/native M1 access; local PO enclosure ECO is opt-in experimental only."
+          },
+          "M*.W.*": {
+            "rule_ids": ["M1.W.1", "M1.W.4", "M2.W.1", "M2.W.4", "M3.W.1", "M3.W.4", "M4.W.1", "M4.W.4", "M5.W.1", "M5.W.4", "M6.W.1", "M6.W.4", "M7.W.1", "M7.W.4", "M8.W.1", "M8.W.4"],
+            "description": "Calibre Mx.W.* flags local width or short-edge jog issues. CRN28 default ECO only handles expandable router gate M1 landings as full bbox expansions; arbitrary marker-window width fills remain disabled because they can trade Mx.W.1 for G.4/Mx.W.4."
+          },
+          "G.4": {
+            "rule_ids": ["G.4:M*i"],
+            "description": "Grid-derived local jog markers are treated as same-net fill candidates only when marker ownership resolves to one routing net."
+          },
+          "M*.A.*": {
+            "rule_ids": ["M*.A.*"],
+            "description": "Small local metal area markers may be fixed with additive same-net fill; density markers remain outside this local ECO loop."
+          },
+          "M*.S.*": {
+            "rule_ids": ["M1.S.*", "M2.S.*", "M3.S.*", "M4.S.*", "M5.S.*", "M6.S.*", "M7.S.*", "M8.S.*", "M9.S.*"],
+            "description": "Configured metal spacing markers may be treated as same-net notch/slot fill candidates only when marker localization resolves to one routing net and the proposed fill has no other-net same-layer spacing conflict."
+          }
+        }
+      },
+      "calibre_eco_closure": {
+        "enabled": true,
+        "max_iterations": 8,
+        "stage_order": ["local_routing_drc_eco", "safe_redundant_via_neighbor"],
+        "acceptance": {
+          "require_routing_drc_reduction": true,
+          "allow_lvs_regression": false,
+          "require_lvs_reduction_for_lvs_eco": true,
+          "allow_routing_drc_regression_for_lvs_eco": false
+        },
+        "lvs_eco": {
+          "enabled": true,
+          "max_iterations": 2,
+          "auto_apply_plan_kinds": ["pin_label_patch", "pin_label_fallback", "open_route_patch", "short_replacement"],
+          "description": "Generate an owner-scoped LVS repair proposal, materialize only an executable OA candidate, and retain it only after fresh Calibre LVS improves without routing-DRC regression."
+        },
+        "safe_redundant_via_neighbor": {
+          "include_landing_enclosures": true,
+          "allow_same_net_landing_spacing": false,
+          "max_via_index": 9,
+          "rule_families": ["VIA*.R.*"],
+          "description": "Append one legal neighboring redundant via cut, then require streamout and Calibre rerun before any further routing ECO."
+        },
+        "rule_sources": {
+          "local_routing_drc_eco": {
+            "rule_ids": ["G.4", "M*.W.*", "M*.A.*", "M*.S.*"],
+            "description": "First-stage append-only local same-net fill/landing expansion for routing-owned Calibre markers."
+          },
+          "safe_redundant_via_neighbor": {
+            "rule_ids": ["VIA*.R.*"],
+            "description": "Second-stage additive redundant via repair. It intentionally runs only after the current Calibre DB is known, and any post-via metal spacing must be fixed in a later Calibre-proven iteration."
+          }
+        }
+      },
+      "path_layer_promotion_eco": {
+        "enabled": true,
+        "halo_nm": 20,
+        "source_layer": "M1",
+        "target_layer": "M3",
+        "via_stack": ["VIA1", "VIA2"],
+        "trigger_rule_families": ["M1.A.4"],
+        "route_fill_kinds": ["route_fill"],
+        "route_fill_sources": ["local_routing_drc_eco"],
+        "require_other_net": true,
+        "via_dedupe_tolerance_nm": 6,
+        "rule_sources": {
+          "M1.A.4": {
+            "rule_ids": ["M1.A.4"],
+            "description": "When additive local M1 route_fill and a neighboring different-net M1 path create a small enclosed-area marker, promote the boundary path to M3 and add VIA1/VIA2 endpoint stacks instead of adding more M1 fill."
+          }
+        }
+      },
+      "reference_drc_closure_eco": {
+        "enabled": true,
+        "stages": [
+          {
+            "name": "srdpo_body_tap_assist_filter",
+            "kind": "body_tap_diffusion_marker_filter",
+            "config": {
+              "trigger_rule_families": ["SR_DPO."],
+              "active_kinds": ["crn28_mos_body_tap_active"],
+              "removal_kinds": [
+                "crn28_mos_body_tap_active",
+                "crn28_mos_body_tap_implant",
+                "crn28_mos_body_tap_contact"
+              ],
+              "marker_overlap_tolerance_nm": 20
+            }
+          },
+          {
+            "name": "local_fill_min_area_and_same_net_spacing",
+            "kind": "local_drc_eco",
+            "config": {}
+          },
+          {
+            "name": "m1_hole_boundary_path_promotion",
+            "kind": "path_layer_promotion",
+            "config": {}
+          },
+          {
+            "name": "m2_spacing_signal_path_promotion",
+            "kind": "path_layer_promotion",
+            "config": {
+              "source_layer": "M2",
+              "target_layer": "M4",
+              "via_stack": ["VIA2", "VIA3"],
+              "trigger_rule_families": ["M2.S.6"],
+              "route_fill_kinds": [],
+              "route_fill_sources": [],
+              "require_other_net": true,
+              "allow_spacing_path_promotion": true,
+              "protected_nets": ["VSS", "VDD", "VDDHV", "AVSS", "AVDD"],
+              "max_promoted_paths_per_marker": 1
+            }
+          }
+        ],
+        "rule_sources": {
+          "local_drc_eco": {
+            "rule_ids": ["M*.A.*", "M*.S.*", "M*.W.*", "G.4"],
+            "description": "First repair local fill/min-area/same-net notch issues with additive same-net geometry."
+          },
+          "m1_hole_boundary_path_promotion": {
+            "rule_ids": ["M1.A.4"],
+            "description": "Promote M1 boundary paths around fill-induced enclosed-area markers to M3."
+          },
+          "m2_spacing_signal_path_promotion": {
+            "rule_ids": ["M2.S.6"],
+            "description": "When a long M2 spacing marker localizes to supply and signal paths, keep protected supply trunks and promote one signal path to M4."
+          }
+        }
+      },
+      "strongarm_pmos_nwell_bridge": {
+        "enabled": true,
+        "layer": "NW",
+        "mode": "cover_bbox",
+        "cover_margin_nm": 0,
+        "max_row_gap_nm": 800,
+        "max_tap_gap_nm": 300,
+        "overlap_nm": 60,
+        "rule_ids": ["LUP.6", "NW.S.1", "NW.S.2", "NW.S.9", "OD2.S.5"],
+        "description": "Merge native PMOS PCell nwell islands into the explicit VDD nwell tap so Calibre sees the PMOS devices and NW strap in the same NW region."
+      },
+      "strongarm_gate_contact_escape": {
+        "enabled": true,
+        "default_y_offset_nm": -40,
+        "default_x_offset_nm": 0,
+        "draw_poly_bridge": false,
+        "offset_nm_by_logical": {
+          "nmos": -40,
+          "pmos": -40
+        },
+        "rule_ids": ["CO.S.6"],
+        "rule_sources": {
+          "default_y_offset_nm": {
+            "rule_id": "CO.S.6",
+            "minimum_nm": 35,
+            "description": "Move the top-level PO/CO/M1 gate contact outside the MOS OD edge while keeping the CO cut enclosed by the native gate PO pin."
+          }
+        },
+        "description": "CRN28 StrongARM gate terminal-stack ECO: keep real gate connectivity while satisfying CO-to-OD spacing for CO inside PO."
+      },
+      "landing_pads": {
+        "default": {
+          "minimum_square_side_nm": 135,
+          "area_margin_nm": 5,
+          "rule_ids": ["M*.A.1", "M*.A.3", "G.4:M*i"]
+        }
+      },
+      "same_net_slot_fill": {
+        "enabled": false,
+        "layers": ["M1", "M4", "M5"],
+        "maximum_gap_nm": 70,
+        "minimum_overlap_nm": 5,
+        "rule_ids": ["M*.A.4", "M*.S.1", "G.4:M*i"]
+      },
+      "strongarm_supply_jog_fills": {
+        "enabled": true,
+        "fills": [
+          {
+            "net": "VSS",
+            "layer": "M1",
+            "bbox_um": [1.745, -0.45, 2.04, 0.0],
+            "rule_ids": ["G.4:M1i", "M1.W.4"]
+          },
+          {
+            "net": "OUTN",
+            "layer": "M5",
+            "bbox_um": [2.202, 6.93, 2.253, 7.07],
+            "rule_ids": ["G.4:M5i", "M5.S.1"],
+            "source": "local_drc_eco_solver:jog-only:accepted_by_calibre_ab"
+          },
+          {
+            "net": "VDD",
+            "layer": "M1",
+            "bbox_um": [0.035, 7.06, 0.085, 7.65],
+            "rule_ids": ["M1.A.4", "M1.S.2"],
+            "source": "local_drc_eco_solver:minarea:accepted_by_calibre_ab:subset_a"
+          },
+          {
+            "net": "VDD",
+            "layer": "M1",
+            "bbox_um": [2.425, 5.5, 2.545, 5.62],
+            "rule_ids": ["M1.S.1"],
+            "source": "targeted_ab:combo_m1shrink2345_m5move:vdd_right_terminal_rect"
+          },
+          {
+            "net": "VDD",
+            "layer": "M1",
+            "bbox_um": [0.5, 4.1, 0.975, 4.5],
+            "rule_ids": ["M1.S.1"],
+            "source": "strongarm_supply_jog_fill:vdd_right_contact_to_branch_slot"
+          },
+          {
+            "net": "OUTP",
+            "layer": "M4",
+            "bbox_um": [0.845, 4.07, 0.965, 5.51],
+            "rule_ids": ["M4.A.4"],
+            "source": "local_drc_eco_solver:minarea:accepted_by_calibre_ab:subset_a"
+          },
+          {
+            "net": "OUTN",
+            "layer": "M5",
+            "bbox_um": [1.905, 4.07, 2.025, 4.89],
+            "rule_ids": ["M5.A.4"],
+            "source": "local_drc_eco_solver:minarea:accepted_by_calibre_ab:subset_a"
+          },
+          {
+            "net": "OUTN",
+            "layer": "M5",
+            "bbox_um": [2.125, 7.07, 2.255, 7.9],
+            "rule_ids": ["M5.A.4"],
+            "source": "local_drc_eco_solver:minarea:accepted_by_calibre_ab:subset_a:align_short_jog"
+          },
+          {
+            "net": "OUTN",
+            "layer": "M5",
+            "bbox_um": [2.6, 7.05, 2.72, 7.9],
+            "rule_ids": ["M5.A.4"],
+            "source": "targeted_ab:combo_m1shrink2345_m5move:right_m5_hole_area"
+          },
+          {
+            "net": "OUTP",
+            "layer": "M1",
+            "bbox_um": [2.39, 4.87, 2.44, 5.01],
+            "rule_ids": ["M1.S.1"],
+            "source": "targeted_ab:outp_m1_same_net_notch"
+          },
+          {
+            "net": "OUTP",
+            "layer": "M4",
+            "bbox_um": [1.38, 4.07, 1.495, 5.51],
+            "rule_ids": ["M4.A.4"],
+            "source": "targeted_ab:clip35_same_net_m4_hole_fill"
+          },
+          {
+            "net": "OUTP",
+            "layer": "M3",
+            "bbox_um": [0.385, 3.95, 0.655, 4.09],
+            "rule_ids": ["VIA3.R.4:M4"],
+            "source": "targeted_ab:clip39_redundant_via3_lower_landing"
+          },
+          {
+            "net": "OUTP",
+            "layer": "M4",
+            "bbox_um": [0.385, 3.95, 0.655, 4.09],
+            "rule_ids": ["VIA3.R.4:M4"],
+            "source": "targeted_ab:clip39_redundant_via3_lower_landing"
+          },
+          {
+            "net": "OUTP",
+            "layer": "VIA3",
+            "bbox_um": [0.56, 3.995, 0.61, 4.045],
+            "rule_ids": ["VIA3.R.4:M4"],
+            "source": "targeted_ab:clip39_redundant_via3_lower_cut"
+          },
+          {
+            "net": "OUTP",
+            "layer": "M3",
+            "bbox_um": [0.305, 5.49, 0.575, 5.63],
+            "rule_ids": ["VIA3.R.4:M4"],
+            "source": "targeted_ab:clip39_redundant_via3_upper_landing"
+          },
+          {
+            "net": "OUTP",
+            "layer": "M4",
+            "bbox_um": [0.305, 5.49, 0.575, 5.63],
+            "rule_ids": ["VIA3.R.4:M4"],
+            "source": "targeted_ab:clip39_redundant_via3_upper_landing"
+          },
+          {
+            "net": "OUTP",
+            "layer": "VIA3",
+            "bbox_um": [0.48, 5.535, 0.53, 5.585],
+            "rule_ids": ["VIA3.R.4:M4"],
+            "source": "targeted_ab:clip39_redundant_via3_upper_cut"
+          }
+        ],
+        "description": "Localized same-net metal jog/min-area fills selected by Calibre A/B experiments; kept configurable so it can be replaced by marker-driven ECO journals later."
+      },
+      "strongarm_output_trunk_spread": {
+        "enabled": true,
+        "minimum_top_y_um": 7.5,
+        "entries": [
+          {
+            "net": "OUTP",
+            "layer": "M4",
+            "pitch_nm": 220,
+            "rule_ids": ["G.4:M4i", "M4.W.4", "M4.A.4"]
+          },
+          {
+            "net": "OUTN",
+            "layer": "M5",
+            "pitch_nm": 220,
+            "rule_ids": ["G.4:M5i", "M5.S.1", "M5.A.4"]
+          }
+        ],
+        "description": "Spread only the upper vertical output trunks while preserving device access points; derived from the m1_vss_and_outputs_spread_220 Calibre experiment."
+      },
+      "strongarm_tail_escape_offsets": {
+        "enabled": true,
+        "entries": [
+          {
+            "instance": "MCLK",
+            "terminal": "D",
+            "x_offset_nm": 10,
+            "rule_ids": ["M2.S.1"],
+            "source": "targeted_ab:tail_m2_escape_r10"
+          }
+        ],
+        "description": "Small terminal-preserving StrongARM TAIL escape nudges selected by Calibre A/B; only the escape/trunk coordinate moves, terminal access remains at the native PCell landing."
+      },
+      "strongarm_path_rewrites": {
+        "enabled": true,
+        "match_tolerance_nm": 2,
+        "entries": [
+          {
+            "net": "VSS",
+            "layer": "M1",
+            "match_points_um": [[0.135, 0.94], [0.135, -0.3]],
+            "replacement_points_um": [[0.135, 0.94], [0.11, 0.94], [0.11, -0.3]],
+            "rule_ids": ["M1.S.1"],
+            "source": "targeted_ab:m1_left_offsets:vss_clk_spacing"
+          },
+          {
+            "net": "VSS",
+            "layer": "M1",
+            "match_points_um": [[1.135, 0.94], [1.135, -0.3]],
+            "replacement_points_um": [[1.135, 0.95], [1.1, 0.95], [1.1, -0.3]],
+            "rule_ids": ["M1.S.1"],
+            "source": "targeted_ab:centered_mclk:vss_clk_spacing:align_pin_top"
+          },
+          {
+            "net": "VDD",
+            "layer": "M1",
+            "match_points_um": [[0.145, 5.56], [0.145, 7.75]],
+            "replacement_points_um": [[0.12, 5.56], [0.12, 7.751]],
+            "rule_ids": ["M1.S.1"],
+            "source": "targeted_ab:m1_left_offsets:vdd_rst_spacing:resynced_to_current_grid"
+          },
+          {
+            "net": "VDD",
+            "layer": "M1",
+            "match_points_um": [[0.145, 7.0], [-0.025, 7.0], [-0.025, 7.75]],
+            "remove": true,
+            "rule_ids": ["G.4:M1i", "M1.W.4", "M1.S.1"],
+            "source": "targeted_ab:remove_redundant_left_vdd_branch"
+          },
+          {
+            "net": "VDD",
+            "layer": "M1",
+            "match_points_um": [[2.425, 5.56], [2.425, 7.75]],
+            "replacement_points_um": [[2.485, 5.56], [2.485, 7.751]],
+            "rule_ids": ["M1.S.1", "M1.S.2", "M1.A.4"],
+            "source": "targeted_ab:combo_m1shrink2345_m5move:right_vdd_drop_no_path_cap:resynced_to_current_grid"
+          },
+          {
+            "net": "VDD",
+            "layer": "M1",
+            "match_points_um": [[2.425, 7.0], [2.595, 7.0], [2.595, 7.75]],
+            "remove": true,
+            "rule_ids": ["M1.S.2", "M1.S.3", "M1.A.4"],
+            "source": "targeted_ab:m1_r60_remove_p34:remove_redundant_right_vdd_branch:resynced_to_current_grid"
+          },
+          {
+            "net": "OUTN",
+            "layer": "M5",
+            "match_points_um": [[2.125, 2.68], [2.295, 2.68], [2.295, 7.95]],
+            "replacement_points_um": [[2.105, 2.68], [2.105, 7.95]],
+            "rule_ids": ["M5.A.4", "M5.S.13"],
+            "source": "targeted_ab:combo_m1shrink2345_m5move:left_m5_hole_area_without_short_jog"
+          },
+          {
+            "net": "OUTN",
+            "layer": "M5",
+            "match_points_um": [[0.34, 4.94], [3.58, 4.94], [3.58, 7.95]],
+            "replacement_points_um": [[0.34, 4.94], [2.635, 4.94], [2.635, 7.95]],
+            "rule_ids": ["M5.A.4"],
+            "source": "targeted_ab:combo_m1shrink2345_m5move:right_m5_hole_area:resynced_to_current_grid"
+          },
+          {
+            "net": "OUTN",
+            "layer": "M5",
+            "match_points_um": [[3.83, 7.0], [3.8, 7.0], [3.8, 7.95]],
+            "replacement_points_um": [[3.83, 6.98], [3.8, 6.98], [3.8, 7.95]],
+            "rule_ids": ["G.4:M5i"],
+            "source": "targeted_ab:clip35_align_outn_m5_top_jog"
+          }
+        ],
+        "description": "Terminal-preserving StrongARM top-level path rewrites selected by Calibre A/B for power-drop spacing closure."
+      },
+      "strongarm_rect_rewrites": {
+        "enabled": true,
+        "entries": [
+          {
+            "net": "OUTN",
+            "layer": "M1",
+            "match_bbox_um": [2.065, 5.49, 2.365, 5.63],
+            "replacement_bbox_um": [2.065, 5.49, 2.345, 5.63],
+            "rule_ids": ["M1.S.1"],
+            "source": "targeted_ab:combo_m1shrink2345_m5move:outn_landing_relief"
+          },
+          {
+            "net": "OUTN",
+            "layer": "M1",
+            "match_bbox_um": [2.225, 5.49, 2.365, 5.63],
+            "replacement_bbox_um": [2.225, 5.49, 2.345, 5.63],
+            "max_matches": 2,
+            "rule_ids": ["M1.S.1"],
+            "source": "targeted_ab:combo_m1shrink2345_m5move:outn_landing_relief"
+          },
+          {
+            "net": "OUTN",
+            "layer": "M1",
+            "match_bbox_um": [0.23, 4.87, 0.41, 5.01],
+            "replacement_bbox_um": [0.23, 4.87, 0.37, 5.01],
+            "rule_ids": ["M1.S.1"],
+            "source": "targeted_ab:clip35_left_outn_landing_relief"
+          },
+          {
+            "net": "OUTN",
+            "layer": "M1",
+            "match_bbox_um": [0.27, 4.87, 0.41, 5.01],
+            "replacement_bbox_um": [0.27, 4.87, 0.37, 5.01],
+            "max_matches": 2,
+            "rule_ids": ["M1.S.1"],
+            "source": "targeted_ab:clip35_left_outn_landing_relief"
+          },
+          {
+            "net": "OUTP",
+            "layer": "M1",
+            "match_bbox_um": [3.41, 4.87, 3.59, 5.01],
+            "replacement_bbox_um": [3.41, 4.87, 3.55, 5.01],
+            "rule_ids": ["M1.S.1"],
+            "source": "targeted_ab:clip35_right_outp_landing_relief"
+          },
+          {
+            "net": "OUTP",
+            "layer": "M1",
+            "match_bbox_um": [3.45, 4.87, 3.59, 5.01],
+            "replacement_bbox_um": [3.45, 4.87, 3.55, 5.01],
+            "max_matches": 2,
+            "rule_ids": ["M1.S.1"],
+            "source": "targeted_ab:clip35_right_outp_landing_relief"
+          }
+        ],
+        "description": "Terminal/landing bbox rewrites selected by Calibre A/B; matcher is net/layer/bbox based and can rewrite duplicate landing rectangles."
+      },
+      "strongarm_via_rewrites": {
+        "enabled": false,
+        "match_tolerance_nm": 2,
+        "entries": [
+          {
+            "net": "OUTP",
+            "via_def": "VIA3",
+            "xy_um": [0.455, 4.02],
+            "rows": 1,
+            "cols": 2,
+            "force_oa_via": true,
+            "rule_ids": ["VIA3.R.4:M4"],
+            "source": "targeted_ab:clip39_force_oa_redundant_outp_via3_lower"
+          },
+          {
+            "net": "OUTP",
+            "via_def": "VIA3",
+            "xy_um": [0.375, 5.56],
+            "rows": 1,
+            "cols": 2,
+            "force_oa_via": true,
+            "rule_ids": ["VIA3.R.4:M4"],
+            "source": "targeted_ab:clip39_force_oa_redundant_outp_via3_upper"
+          }
+        ],
+        "description": "Configured redundant via arrays for Calibre VIAx.R.4 branch-near-wide-metal requirements."
+      }
+    },
+    "smt_router": {
+      "same_net_access_pitch_multiplier": 2.0,
+      "pruning": {
+        "enabled_checks": [
+          "width",
+          "via_enclosure",
+          "bounds",
+          "intrinsic_cost"
+        ],
+        "disabled_layers": [],
+        "rule_sources": {
+          "width": "rules.min_width_nm",
+          "spacing": "rules.min_spacing_nm",
+          "enclosure": "rules.enclosure_nm",
+          "eol": "rules.eol_spacing_nm",
+          "area": "rules.min_area_nm2"
+        }
+      }
+    },
+    "pcell_drc_sweep": {
+      "strongarm_mos": {
+        "description": "Native T28 MOS construction candidates derived from foundry-rule parameters; all dimensions are CDF strings.",
+        "mos_finger_constraints": {
+          "enabled": true,
+          "max_finger_width_nm_by_logical": {
+            "nmos": 2900,
+            "pmos": 2900
+          },
+          "min_finger_width_nm": 500,
+          "max_nf": 128,
+          "max_m": 64,
+          "prefer_even_nf": true,
+          "variant": "legal_dummy_geometry_matched_dpo",
+          "rule_ids": ["OD.W.3", "OD.W.4", "PO.W.18", "PO.S.5", "PO.EX.3", "SR_DPO.S.4", "SR_DPO.S.6", "PMET.EX.7"]
+        },
+        "targets": [
+          {"logical_name": "nmos", "total_width_nm": 4000, "fingers": 5, "length_nm": 180},
+          {"logical_name": "nmos", "total_width_nm": 8000, "fingers": 5, "length_nm": 180},
+          {"logical_name": "pmos", "total_width_nm": 6000, "fingers": 5, "length_nm": 180},
+          {"logical_name": "pmos", "total_width_nm": 3000, "fingers": 5, "length_nm": 180}
+        ],
+        "candidate_selection": {
+          "enabled": true,
+          "width_match_tolerance_nm": 1,
+          "fallback_policy": "preserve_width_match_calibrated_wfg",
+          "wfg_relative_tolerance": 0.25,
+          "max_width_preserving_nf": 64,
+          "allow_width_reduction": false,
+          "max_width_scale": 5.0,
+          "notes": "Reference-inspired SARADC/PLL flow keeps nominal electrical W when total-width calibration is missing, and selects nf so Wfg aligns with calibrated sweep candidates. Width quantization remains available as an explicit fallback but is not the default because it can inflate area and DRC overlap pressure."
+        },
+        "native_footprint": {
+          "source": "crn28 native nch_mac/pch_mac streamout bbox isolation; used as placement lower-left anchor metadata, not as drawn geometry",
+          "layout_bbox_origin_um_by_logical": {
+            "nmos": {"x0": -0.32, "y0": -0.145},
+            "pmos": {"x0": -0.32, "y0": -0.145}
+          },
+          "support_bbox_extension_um_by_logical": {
+            "nmos": {"x0": -0.40, "y0": -1.35, "x1": 0.40, "y1": 0.00},
+            "pmos": {"x0": -0.40, "y0": -1.52, "x1": 0.40, "y1": 0.00}
+          },
+          "placement_keepout_um": {
+            "x": 0.28,
+            "y": 0.72
+          }
+        },
+        "calibrated_candidates": [
+          {"name": "nf_nmos_4000_10", "logical_name": "nmos", "total_width_nm": 4000, "fingers": 10, "length_nm": 180, "ok": true, "actionable_results": 10, "total_results": 25, "actionable_rule_counts": {"PO.EX.3": 2, "PO.S.5": 2, "PO.W.18": 2, "SR_DPO.S.4": 2, "SR_DPO.S.6": 2}},
+          {"name": "nf_nmos_4000_8", "logical_name": "nmos", "total_width_nm": 4000, "fingers": 8, "length_nm": 180, "ok": true, "actionable_results": 10, "total_results": 23, "actionable_rule_counts": {"PO.EX.3": 2, "PO.S.5": 2, "PO.W.18": 2, "SR_DPO.S.4": 2, "SR_DPO.S.6": 2}},
+          {"name": "nf_nmos_4000_5", "logical_name": "nmos", "total_width_nm": 4000, "fingers": 5, "length_nm": 180, "ok": true, "actionable_results": 10, "total_results": 20, "actionable_rule_counts": {"PO.EX.3": 2, "PO.S.5": 2, "PO.W.18": 2, "SR_DPO.S.4": 2, "SR_DPO.S.6": 2}},
+          {"name": "nf_nmos_4000_4", "logical_name": "nmos", "total_width_nm": 4000, "fingers": 4, "length_nm": 180, "ok": true, "actionable_results": 10, "total_results": 19, "actionable_rule_counts": {"PO.EX.3": 2, "PO.S.5": 2, "PO.W.18": 2, "SR_DPO.S.4": 2, "SR_DPO.S.6": 2}},
+          {"name": "nf_nmos_4000_2", "logical_name": "nmos", "total_width_nm": 4000, "fingers": 2, "length_nm": 180, "ok": true, "actionable_results": 10, "total_results": 17, "actionable_rule_counts": {"PO.EX.3": 2, "PO.S.5": 2, "PO.W.18": 2, "SR_DPO.S.4": 2, "SR_DPO.S.6": 2}},
+          {"name": "nf_nmos_4000_1", "logical_name": "nmos", "total_width_nm": 4000, "fingers": 1, "length_nm": 180, "ok": true, "actionable_results": 12, "total_results": 18, "actionable_rule_counts": {"OD.W.3": 2, "PO.EX.3": 2, "PO.S.5": 2, "PO.W.18": 2, "SR_DPO.S.4": 2, "SR_DPO.S.6": 2}},
+          {"name": "nf_nmos_8000_10", "logical_name": "nmos", "total_width_nm": 8000, "fingers": 10, "length_nm": 180, "ok": true, "actionable_results": 10, "total_results": 25, "actionable_rule_counts": {"PO.EX.3": 2, "PO.S.5": 2, "PO.W.18": 2, "SR_DPO.S.4": 2, "SR_DPO.S.6": 2}},
+          {"name": "nf_nmos_8000_8", "logical_name": "nmos", "total_width_nm": 8000, "fingers": 8, "length_nm": 180, "ok": true, "actionable_results": 10, "total_results": 23, "actionable_rule_counts": {"PO.EX.3": 2, "PO.S.5": 2, "PO.W.18": 2, "SR_DPO.S.4": 2, "SR_DPO.S.6": 2}},
+          {"name": "nf_nmos_8000_16", "logical_name": "nmos", "total_width_nm": 8000, "fingers": 16, "length_nm": 180, "ok": true, "actionable_results": 10, "total_results": 31, "actionable_rule_counts": {"PO.EX.3": 2, "PO.S.5": 2, "PO.W.18": 2, "SR_DPO.S.4": 2, "SR_DPO.S.6": 2}},
+          {"name": "nf_nmos_8000_5", "logical_name": "nmos", "total_width_nm": 8000, "fingers": 5, "length_nm": 180, "ok": true, "actionable_results": 10, "total_results": 20, "actionable_rule_counts": {"PO.EX.3": 2, "PO.S.5": 2, "PO.W.18": 2, "SR_DPO.S.4": 2, "SR_DPO.S.6": 2}},
+          {"name": "nf_nmos_8000_4", "logical_name": "nmos", "total_width_nm": 8000, "fingers": 4, "length_nm": 180, "ok": true, "actionable_results": 10, "total_results": 19, "actionable_rule_counts": {"PO.EX.3": 2, "PO.S.5": 2, "PO.W.18": 2, "SR_DPO.S.4": 2, "SR_DPO.S.6": 2}},
+          {"name": "nf_nmos_8000_2", "logical_name": "nmos", "total_width_nm": 8000, "fingers": 2, "length_nm": 180, "ok": true, "actionable_results": 14, "total_results": 21, "actionable_rule_counts": {"OD.W.3": 4, "PO.EX.3": 2, "PO.S.5": 2, "PO.W.18": 2, "SR_DPO.S.4": 2, "SR_DPO.S.6": 2}},
+          {"name": "nf_pmos_6000_12", "logical_name": "pmos", "total_width_nm": 6000, "fingers": 12, "length_nm": 180, "ok": true, "actionable_results": 34, "total_results": 51, "actionable_rule_counts": {"PMET.EX.7": 24, "PO.EX.3": 2, "PO.S.5": 2, "PO.W.18": 2, "SR_DPO.S.4": 2, "SR_DPO.S.6": 2}},
+          {"name": "nf_pmos_6000_10", "logical_name": "pmos", "total_width_nm": 6000, "fingers": 10, "length_nm": 180, "ok": true, "actionable_results": 30, "total_results": 45, "actionable_rule_counts": {"PMET.EX.7": 20, "PO.EX.3": 2, "PO.S.5": 2, "PO.W.18": 2, "SR_DPO.S.4": 2, "SR_DPO.S.6": 2}},
+          {"name": "nf_pmos_6000_15", "logical_name": "pmos", "total_width_nm": 6000, "fingers": 15, "length_nm": 180, "ok": true, "actionable_results": 40, "total_results": 60, "actionable_rule_counts": {"PMET.EX.7": 30, "PO.EX.3": 2, "PO.S.5": 2, "PO.W.18": 2, "SR_DPO.S.4": 2, "SR_DPO.S.6": 2}},
+          {"name": "nf_pmos_6000_8", "logical_name": "pmos", "total_width_nm": 6000, "fingers": 8, "length_nm": 180, "ok": true, "actionable_results": 26, "total_results": 39, "actionable_rule_counts": {"PMET.EX.7": 16, "PO.EX.3": 2, "PO.S.5": 2, "PO.W.18": 2, "SR_DPO.S.4": 2, "SR_DPO.S.6": 2}},
+          {"name": "nf_pmos_6000_6", "logical_name": "pmos", "total_width_nm": 6000, "fingers": 6, "length_nm": 180, "ok": true, "actionable_results": 22, "total_results": 33, "actionable_rule_counts": {"PMET.EX.7": 12, "PO.EX.3": 2, "PO.S.5": 2, "PO.W.18": 2, "SR_DPO.S.4": 2, "SR_DPO.S.6": 2}},
+          {"name": "nf_pmos_6000_5", "logical_name": "pmos", "total_width_nm": 6000, "fingers": 5, "length_nm": 180, "ok": true, "actionable_results": 20, "total_results": 30, "actionable_rule_counts": {"PMET.EX.7": 10, "PO.EX.3": 2, "PO.S.5": 2, "PO.W.18": 2, "SR_DPO.S.4": 2, "SR_DPO.S.6": 2}},
+          {"name": "nf_pmos_6000_4", "logical_name": "pmos", "total_width_nm": 6000, "fingers": 4, "length_nm": 180, "ok": true, "actionable_results": 18, "total_results": 27, "actionable_rule_counts": {"PMET.EX.7": 8, "PO.EX.3": 2, "PO.S.5": 2, "PO.W.18": 2, "SR_DPO.S.4": 2, "SR_DPO.S.6": 2}},
+          {"name": "nf_pmos_6000_3", "logical_name": "pmos", "total_width_nm": 6000, "fingers": 3, "length_nm": 180, "ok": true, "actionable_results": 16, "total_results": 24, "actionable_rule_counts": {"PMET.EX.7": 6, "PO.EX.3": 2, "PO.S.5": 2, "PO.W.18": 2, "SR_DPO.S.4": 2, "SR_DPO.S.6": 2}},
+          {"name": "nf_pmos_6000_2", "logical_name": "pmos", "total_width_nm": 6000, "fingers": 2, "length_nm": 180, "ok": true, "actionable_results": 14, "total_results": 21, "actionable_rule_counts": {"PMET.EX.7": 4, "PO.EX.3": 2, "PO.S.5": 2, "PO.W.18": 2, "SR_DPO.S.4": 2, "SR_DPO.S.6": 2}},
+          {"name": "nf_pmos_3000_6", "logical_name": "pmos", "total_width_nm": 3000, "fingers": 6, "length_nm": 180, "ok": true, "actionable_results": 22, "total_results": 33, "actionable_rule_counts": {"PMET.EX.7": 12, "PO.EX.3": 2, "PO.S.5": 2, "PO.W.18": 2, "SR_DPO.S.4": 2, "SR_DPO.S.6": 2}},
+          {"name": "nf_pmos_3000_5", "logical_name": "pmos", "total_width_nm": 3000, "fingers": 5, "length_nm": 180, "ok": true, "actionable_results": 20, "total_results": 30, "actionable_rule_counts": {"PMET.EX.7": 10, "PO.EX.3": 2, "PO.S.5": 2, "PO.W.18": 2, "SR_DPO.S.4": 2, "SR_DPO.S.6": 2}},
+          {"name": "nf_pmos_3000_4", "logical_name": "pmos", "total_width_nm": 3000, "fingers": 4, "length_nm": 180, "ok": true, "actionable_results": 18, "total_results": 27, "actionable_rule_counts": {"PMET.EX.7": 8, "PO.EX.3": 2, "PO.S.5": 2, "PO.W.18": 2, "SR_DPO.S.4": 2, "SR_DPO.S.6": 2}},
+          {"name": "nf_pmos_3000_3", "logical_name": "pmos", "total_width_nm": 3000, "fingers": 3, "length_nm": 180, "ok": true, "actionable_results": 16, "total_results": 24, "actionable_rule_counts": {"PMET.EX.7": 6, "PO.EX.3": 2, "PO.S.5": 2, "PO.W.18": 2, "SR_DPO.S.4": 2, "SR_DPO.S.6": 2}},
+          {"name": "nf_pmos_3000_2", "logical_name": "pmos", "total_width_nm": 3000, "fingers": 2, "length_nm": 180, "ok": true, "actionable_results": 14, "total_results": 21, "actionable_rule_counts": {"PMET.EX.7": 4, "PO.EX.3": 2, "PO.S.5": 2, "PO.W.18": 2, "SR_DPO.S.4": 2, "SR_DPO.S.6": 2}},
+          {"name": "nf_pmos_3000_1", "logical_name": "pmos", "total_width_nm": 3000, "fingers": 1, "length_nm": 180, "ok": true, "actionable_results": 12, "total_results": 18, "actionable_rule_counts": {"PMET.EX.7": 2, "PO.EX.3": 2, "PO.S.5": 2, "PO.W.18": 2, "SR_DPO.S.4": 2, "SR_DPO.S.6": 2}}
+        ],
+        "rule_parameter_sources": {
+          "PO.W.18": {"minimum_nm": 40, "parameters": ["dummyPolyWidth", "dummyPolyWidth2", "secondDummyPolyWidth"]},
+          "PO.S.5": {"minimum_nm": 120, "parameters": ["firstDummyPolySpacing"]},
+          "SR_DPO.S.4": {"minimum_nm": 25, "parameters": ["firstDummyPolySpacing", "secondDummyPolySpacing"]},
+          "SR_DPO.S.6": {"minimum_nm": 120, "parameters": ["secondDummyPolySpacing"]},
+          "PO.EX.3": {"minimum_nm": 95, "parameters": ["LdiffExt", "RdiffExt"]},
+          "PMET.EX.7": {"minimum_nm": 50, "parameters": ["pMetalEncNS", "pMetalEncEW"]}
+        },
+        "variants": [
+          {"name": "baseline", "params": {}},
+          {
+            "name": "legal_dummy_geometry",
+            "params": {
+              "firstDummyPolySpacing": "120n",
+              "secondDummyPolySpacing": "120n",
+              "dummyPolyWidth": "40n",
+              "dummyPolyWidth2": "40n",
+              "secondDummyPolyWidth": "40n"
+            }
+          },
+          {
+            "name": "legal_dummy_geometry_and_od_extension",
+            "params": {
+              "firstDummyPolySpacing": "120n",
+              "secondDummyPolySpacing": "120n",
+              "dummyPolyWidth": "40n",
+              "dummyPolyWidth2": "40n",
+              "secondDummyPolyWidth": "40n",
+              "LdiffExt": "10n",
+              "RdiffExt": "10n"
+            }
+          },
+          {
+            "name": "legal_dummy_geometry_matched_dpo",
+            "params": {
+              "firstDummyPolySpacing": "120n",
+              "secondDummyPolySpacing": "120n",
+              "dummyPolyWidth": "40n",
+              "dummyPolyWidth2": "40n",
+              "secondDummyPolyWidth": "40n",
+              "LdiffExt": "10n",
+              "RdiffExt": "10n",
+              "MatchDpoWithGate": "ON"
+            }
+          },
+          {
+            "name": "single_dummy_legal_geometry",
+            "params": {
+              "secondLeftDummy": "OFF",
+              "secondRightDummy": "OFF",
+              "firstDummyPolySpacing": "120n",
+              "dummyPolyWidth": "40n",
+              "LdiffExt": "10n",
+              "RdiffExt": "10n"
+            }
+          },
+          {
+            "name": "po_dummy_legal_geometry",
+            "params": {
+              "dummyPolyLayer": "PO",
+              "firstDummyPolySpacing": "120n",
+              "secondDummyPolySpacing": "120n",
+              "dummyPolyWidth": "40n",
+              "dummyPolyWidth2": "40n",
+              "secondDummyPolyWidth": "40n",
+              "LdiffExt": "10n",
+              "RdiffExt": "10n"
+            }
+          }
+        ],
+        "pmos_params": {
+          "pMetalOption": "ON",
+          "pMetalEncNS": "50n",
+          "pMetalEncEW": "50n"
+        }
+      }
+    }
+  }
+}

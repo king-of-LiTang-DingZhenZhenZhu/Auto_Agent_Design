@@ -1,0 +1,274 @@
+{
+  "name": "tsmcn7",
+  "layer_map": {
+    "active": "OD",
+    "gate": "PO",
+    "contact": "VD",
+    "metals": ["M0", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9"],
+    "vias": ["VIA0", "VIA1", "VIA2", "VIA3", "VIA4", "VIA5", "VIA6", "VIA7", "VIA8"],
+    "wells": {"nwell": "NW"},
+    "implants": {"pplus": "PP", "nplus": "NP", "pmetal": "PM"}
+  },
+  "rules": {
+    "grid_nm": 5,
+    "min_width_nm": {
+      "OD": 60,
+      "PO": 30,
+      "CO": 40,
+      "MD": 30,
+      "VD": 40,
+      "VIA0": 20,
+      "M0": 32,
+      "M1": 32,
+      "M2": 32,
+      "M3": 33,
+      "M4": 34,
+      "M5": 35,
+      "M6": 36,
+      "M7": 37,
+      "M8": 38,
+      "M9": 39,
+      "VIA1": 50,
+      "VIA2": 52,
+      "VIA3": 53,
+      "VIA4": 54,
+      "VIA5": 55,
+      "VIA6": 56,
+      "VIA7": 57,
+      "VIA8": 58,
+      "VIA9": 59,
+      "NW": 180,
+      "PP": 65,
+      "NP": 65,
+      "PM": 50
+    },
+    "legal_width_nm": {
+      "M0": [20, 22, 24, 26, 28, 40, 60, 80, 100, 120, 140],
+      "M1": [60, 80, 100, 120, 140]
+    },
+    "unrestricted_width_min_nm": {
+      "M0": 180,
+      "M1": 180
+    },
+    "min_spacing_nm": {
+      "OD": 60,
+      "PO": 100,
+      "CO": 70,
+      "MD": 30,
+      "VD": 40,
+      "M0": 60,
+      "M1": 60,
+      "M2": 50,
+      "M3": 50,
+      "M4": 50,
+      "M5": 50,
+      "M6": 50,
+      "M7": 50,
+      "M8": 50,
+      "M9": 50,
+      "VIA1": 70,
+      "VIA2": 70,
+      "VIA3": 70,
+      "VIA4": 70,
+      "VIA5": 70,
+      "VIA6": 70,
+      "VIA7": 70,
+      "VIA8": 70,
+      "VIA9": 70,
+      "NW": 180,
+      "PP": 65,
+      "NP": 65,
+      "PM": 50
+    },
+    "enclosure_nm": {
+      "CO_OD": 30,
+      "CO_PO": 45,
+      "CO_M1": 35,
+      "VD_M0": 16,
+      "VIA0_M0": 30,
+      "VIA0_M1": 30,
+      "VIA1_M1": 30,
+      "VIA1_M0": 30,
+      "VIA1_M2": 30,
+      "VIA2_M2": 30,
+      "VIA2_M3": 30,
+      "NW_OD": 180,
+      "PP_OD": 65,
+      "NP_OD": 65
+    }
+  },
+  "via_stack": [
+    {"via_def": "M0_SUB", "lower_layer": "OD", "upper_layer": "M0", "default_rows": 1, "default_cols": 1, "max_rows": 1, "max_cols": 1, "max_current_ma_per_cut": 4.0, "kind": "helper_contact"},
+    {"via_def": "M0_NW", "lower_layer": "OD", "upper_layer": "M0", "default_rows": 1, "default_cols": 1, "max_rows": 1, "max_cols": 1, "max_current_ma_per_cut": 4.0, "kind": "helper_contact"},
+    {"via_def": "M0_PO", "lower_layer": "PO", "upper_layer": "M0", "default_rows": 1, "default_cols": 1, "max_rows": 1, "max_cols": 1, "max_current_ma_per_cut": 4.0, "kind": "native_contact"},
+    {"via_def": "M0_PO_VD", "lower_layer": "PO", "upper_layer": "M0", "default_rows": 1, "default_cols": 1, "max_rows": 1, "max_cols": 1, "max_current_ma_per_cut": 4.0, "kind": "native_contact"},
+    {"via_def": "VIA0", "lower_layer": "M0", "upper_layer": "M1", "default_rows": 1, "default_cols": 1, "max_rows": 4, "max_cols": 4, "max_current_ma_per_cut": 4.0},
+    {"via_def": "VIA1", "lower_layer": "M1", "upper_layer": "M2", "default_rows": 1, "default_cols": 1, "max_rows": 4, "max_cols": 4, "max_current_ma_per_cut": 4.0},
+    {"via_def": "VIA2", "lower_layer": "M2", "upper_layer": "M3", "default_rows": 1, "default_cols": 1, "max_rows": 4, "max_cols": 4, "max_current_ma_per_cut": 4.0},
+    {"via_def": "VIA3", "lower_layer": "M3", "upper_layer": "M4", "default_rows": 1, "default_cols": 1, "max_rows": 4, "max_cols": 4, "max_current_ma_per_cut": 4.0},
+    {"via_def": "VIA4", "lower_layer": "M4", "upper_layer": "M5", "default_rows": 1, "default_cols": 1, "max_rows": 4, "max_cols": 4, "max_current_ma_per_cut": 4.0},
+    {"via_def": "VIA5", "lower_layer": "M5", "upper_layer": "M6", "default_rows": 1, "default_cols": 1, "max_rows": 4, "max_cols": 4, "max_current_ma_per_cut": 4.0},
+    {"via_def": "VIA6", "lower_layer": "M6", "upper_layer": "M7", "default_rows": 1, "default_cols": 1, "max_rows": 4, "max_cols": 4, "max_current_ma_per_cut": 4.0},
+    {"via_def": "VIA7", "lower_layer": "M7", "upper_layer": "M8", "default_rows": 1, "default_cols": 1, "max_rows": 4, "max_cols": 4, "max_current_ma_per_cut": 4.0},
+    {"via_def": "VIA8", "lower_layer": "M8", "upper_layer": "M9", "default_rows": 1, "default_cols": 1, "max_rows": 4, "max_cols": 4, "max_current_ma_per_cut": 4.0}
+  ],
+  "preferred_signal_layers": ["M1", "M2"],
+  "preferred_power_layers": ["M2", "M3"],
+  "routing_layers": {
+    "M0": {"direction": "h", "preferred": false, "role": "signal", "track_pitch_nm": 80, "max_current_ma": 4.0},
+    "M1": {"direction": "v", "preferred": true, "role": "signal", "track_pitch_nm": 80, "max_current_ma": 6.0},
+    "M2": {"direction": "h", "preferred": true, "role": "mixed", "track_pitch_nm": 80, "max_current_ma": 8.0},
+    "M3": {"direction": "v", "preferred": true, "role": "power", "track_pitch_nm": 100, "max_current_ma": 10.0},
+    "M4": {"direction": "h", "preferred": false, "role": "power", "track_pitch_nm": 120, "max_current_ma": 12.0},
+    "M5": {"direction": "v", "preferred": false, "role": "power", "track_pitch_nm": 160, "max_current_ma": 16.0},
+    "M6": {"direction": "h", "preferred": false, "role": "power", "track_pitch_nm": 200, "max_current_ma": 20.0},
+    "M7": {"direction": "v", "preferred": false, "role": "power", "track_pitch_nm": 240, "max_current_ma": 24.0},
+    "M8": {"direction": "h", "preferred": false, "role": "power", "track_pitch_nm": 320, "max_current_ma": 32.0},
+    "M9": {"direction": "v", "preferred": false, "role": "power", "track_pitch_nm": 400, "max_current_ma": 40.0}
+  },
+  "pcell_templates": {
+    "nmos": {
+      "lib_name": "tsmcN7",
+      "cell_name": "nch_svt_mac",
+      "view_name": "layout",
+      "layout_lib_name": "tsmcN7",
+      "layout_cell_name": "nch_svt_macx",
+      "layout_view_name": "layout",
+      "parameter_ranges": {
+        "W": [1.2e-07, 1.0e-03],
+        "L": [2.8e-08, 1.0e-05],
+        "nf": [1, 128],
+        "m": [1, 64]
+      },
+      "default_params": {},
+      "parameter_map": {"Wfg": "W / nf", "fingers": "nf", "l": "L", "simM": "m"},
+      "layout_parameter_map": {"fingers": "nf", "nfin": "max(1, round(W / 1.2e-07))", "l": "L", "simM": "m"},
+      "schematic_parameter_map": {"w": "W", "l": "L", "nf": "nf", "m": "m"},
+      "instantiation_method": "dbCreateParamInst",
+      "terminal_access": {
+        "G": {"xy": [0.015, -0.04], "layer": "PO", "contact_layer": "M0_PO"},
+        "S": {"xy": [-0.05, "Wfg / 2"], "layer": "M0", "contact_layer": "VD"},
+        "D": {"xy": [0.08, "Wfg / 2"], "layer": "M0", "contact_layer": "VD"},
+        "B": {"xy": [0.07, 0.019], "layer": "PDK", "contact_layer": "M0_SUB"}
+      }
+    },
+    "pmos": {
+      "lib_name": "tsmcN7",
+      "cell_name": "pch_svt_mac",
+      "view_name": "layout",
+      "layout_lib_name": "tsmcN7",
+      "layout_cell_name": "pch_svt_macx",
+      "layout_view_name": "layout",
+      "parameter_ranges": {
+        "W": [1.2e-07, 1.0e-03],
+        "L": [2.8e-08, 1.0e-05],
+        "nf": [1, 128],
+        "m": [1, 64]
+      },
+      "default_params": {},
+      "parameter_map": {"Wfg": "W / nf", "fingers": "nf", "l": "L", "simM": "m"},
+      "layout_parameter_map": {"fingers": "nf", "nfin": "max(1, round(W / 1.2e-07))", "l": "L", "simM": "m"},
+      "schematic_parameter_map": {"w": "W", "l": "L", "nf": "nf", "m": "m"},
+      "instantiation_method": "dbCreateParamInst",
+      "terminal_access": {
+        "G": {"xy": [0.015, -0.04], "layer": "PO", "contact_layer": "M0_PO"},
+        "S": {"xy": [-0.05, "Wfg / 2"], "layer": "M0", "contact_layer": "VD"},
+        "D": {"xy": [0.08, "Wfg / 2"], "layer": "M0", "contact_layer": "VD"},
+        "B": {"xy": [0.07, 0.019], "layer": "NW", "contact_layer": "M0_NW"}
+      }
+    },
+    "bjt": {
+      "lib_name": "tsmcN7",
+      "cell_name": "npn_i_mac",
+      "view_name": "layout",
+      "parameter_ranges": {
+        "M": [1, 64]
+      },
+      "default_params": {},
+      "parameter_map": {},
+      "schematic_parameter_map": {},
+      "instantiation_method": "dbCreateInstByMasterName",
+      "terminal_access": {
+        "C": {"xy": [4.6, 9.2], "layer": "M1", "contact_layer": "CO"},
+        "B": {"xy": [0.0, 4.6], "layer": "M1", "contact_layer": "CO"},
+        "E": {"xy": [4.6, 0.0], "layer": "M1", "contact_layer": "CO"}
+      }
+    },
+    "resistor": {
+      "lib_name": "tsmcN7",
+      "cell_name": "metal_res",
+      "view_name": "layout",
+      "parameter_ranges": {
+        "R": [1.0, 1.0e9],
+        "W": [1.0e-07, 1.0e-04]
+      },
+      "default_params": {},
+      "parameter_map": {},
+      "schematic_parameter_map": {},
+      "instantiation_method": "dbCreateInstByMasterName",
+      "terminal_access": {
+        "PLUS": {"xy": [0.0, 0.5], "layer": "M1", "contact_layer": "CO"},
+        "MINUS": {"xy": [5.0, 0.5], "layer": "M1", "contact_layer": "CO"}
+      }
+    },
+    "capacitor": {
+      "lib_name": "tsmcN7",
+      "cell_name": "nmoscap",
+      "view_name": "layout",
+      "parameter_ranges": {
+        "C": [1.0e-18, 1.0e-08]
+      },
+      "default_params": {},
+      "parameter_map": {},
+      "schematic_parameter_map": {},
+      "instantiation_method": "dbCreateInstByMasterName",
+      "terminal_access": {
+        "PLUS": {"xy": [0.2, 0.5], "layer": "M1", "contact_layer": "CO"},
+        "MINUS": {"xy": [0.2, 0.0], "layer": "M1", "contact_layer": "CO"}
+      }
+    }
+  },
+  "pcell_aliases": {
+    "nfet": "nmos",
+    "nch": "nmos",
+    "nch_mac": "nmos",
+    "nch_svt_mac": "nmos",
+    "pfet": "pmos",
+    "pch": "pmos",
+    "pch_mac": "pmos",
+    "pch_svt_mac": "pmos",
+    "npn": "bjt",
+    "npn_i_mac": "bjt",
+    "pnp": "bjt",
+    "pnp_i_mac": "bjt",
+    "res": "resistor",
+    "resistor": "resistor",
+    "metal_res": "resistor",
+    "cap": "capacitor",
+    "nmoscap": "capacitor",
+    "pcapacitor": "capacitor"
+  },
+  "metadata": {
+    "node": "7nm",
+    "source": "tsmcn7",
+    "inline_calibre_correlation": {
+      "inline_rule_map": {
+        "min_width": "metal_width",
+        "width": "metal_width",
+        "min_spacing": "metal_spacing",
+        "spacing": "metal_spacing",
+        "min_area": "metal_area",
+        "via_enclosure": "via_enclosure",
+        "off_grid": "stream_grid"
+      },
+      "calibre_rule_map": {},
+      "bbox_halo_um": 0.01,
+      "min_overlap_ratio": 0.0,
+      "require_layer_match": true,
+      "status": "blocked_until_foundry_calibre_rule_map_is_configured"
+    },
+    "metal_scheme": "1P9M_1X_h_1Xa_v_1Ya_h_4Y_vhvh_1Z",
+    "voltage": "0.75V/1.8V",
+    "process": "LO"
+  }
+}

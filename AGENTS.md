@@ -8,6 +8,8 @@
 - `system_decomposition.py`：系统架构、block graph、child 指标/预算与 `system_design.json`。
 - `hierarchical_flow.py`：child-parent 依赖、资格调用、frozen artifact 与嵌入。
 - `design_flow_graph.py`：单个 BO/Review 结果的 Design Audit、Review gate、PVT 和导出。
+- `run_full_flow.py`：统一执行前端资格流程和内置版图后端。
+- `analogskills/imported_design/`：只消费前端最终网表，负责 PCell、OA、GDS、Calibre DRC/LVS 和 ECO；不得参与拓扑选择或前端 sizing。
 - `review_optimization.py`：生成 Review context、校验 patch plan、生成并验证 candidate。
 
 
@@ -22,11 +24,13 @@ conda activate Auto_Agent_Design
 
 运行真实 Spectre/BO/PVT 仿真前，先根据当前所在机器选择入口；不要假设本机已经安装 Cadence 或挂载 PDK。
 
-- 从本地电脑运行：先执行 `ssh ic-vm` 进入本地虚拟机，再在虚拟机内进入项目目录、激活 `Auto_Agent_Design` 环境并运行仿真。
-- 从机房服务器运行：先执行 `ssh chenhaonan@10.131.254.102`，登录后再进入项目目录、激活环境并运行仿真。
+- 如果当前是虚拟机的 Linux 环境，可直接进行仿真
+- 本地是Mac，则从机房服务器运行：先执行 `ssh chenhaonan@10.131.254.102`，登录后再进入项目目录、激活环境并运行仿真。
 - 登录密码等敏感信息只记录在仓库根目录的 `LOCAL_SIMULATION_ACCESS.md`。该文件必须保持 Git ignored；若文件不存在或凭据失效，向用户确认，不要猜测。
 - 密码仅在 SSH 的交互式提示中输入；不要把密码拼进 shell 命令、脚本、日志、测试输出或提交内容，也不要使用 `sshpass`/`expect` 自动注入密码。
 - 登录后先用 `hostname`、`pwd` 确认目标机器和项目目录，再运行 `python pdk_profiles.py --validate --require-gmid --require-virtuoso --check-files`；验证通过后才开始真实仿真。
+
+全流程版图 sign-off 默认采用“复制整个仓库到服务器后本地执行”的方式；当前不实现从 Mac 自动 SSH 调度 Virtuoso/Calibre。服务器上必须先安装 `requirements/physical.txt`，并按 `config/physical.example.env` 配置工具、PDK library 和 DRC/LVS deck。
 
 ## 标准流程
 
@@ -37,7 +41,29 @@ conda activate Auto_Agent_Design
 5. 叶子模块运行 `main.py`；层级项目运行 `hierarchical_flow.py`。
 6. 读取 `results.json`：达标则执行 Design Audit，未达标则进入 `failure_repair`；Audit blocker 进入 `audit_repair`。
 7. nominal 与 Design Audit 合格后运行 PVT；parent gap 必要时回传并重分配 child targets。
-8. nominal/PVT 合格后用 `export_to_virtuoso.py` 导出。
+8. 只需要原理图时，nominal/PVT 合格后用 `export_to_virtuoso.py` 导出。
+9. 需要全流程时，从仓库根目录运行 `run_full_flow.py --run-signoff`，依次生成 handoff、OA schematic/layout、GDS，并执行 Calibre DRC/LVS 与有界 ECO。
+
+## 单仓库物理流程
+
+- `Auto_Agent_Design` 是唯一项目根；内置 `analogskills` 不依赖另一个 checkout，也不得反向调用本项目的模拟设计前端。
+- 最终电气真值只能是 `select_export_netlist()` 选择出的 Review candidate 或 BO best 快照；版图后端不得替换拓扑或重连网络。
+- 首版物理 adapter 只支持当前 `two_stage_ota` 和当前 11 管 `strongarm_latch`。未知或发生结构变化的 topology 必须返回 `physical_adapter_required`。
+- 只有真实 `pvt/pvt_results.json` 中 `pvt_pass=true` 才能进入物理实现；dry-run PVT、缺失 evidence 或 Audit blocker 均不得绕过。
+- sign-off 必须使用 native PCell，禁止 fallback/drawn preview geometry 冒充最终版图。
+- ECO 最多 5 轮。候选只有在 DRC/LVS 都不退化且至少一项严格改善时才接受；拒绝后恢复最近 accepted checkpoint。
+- 只有非空 GDS、DRC 零真实 violation 且 LVS 无 issue 时，`physical_state.json` 才能标为 `done`；否则为 `physical_blocked`。
+
+```bash
+python run_full_flow.py \
+  --project outputs/<project> \
+  --run-pvt --simulate \
+  --run-signoff \
+  --lib BO_Designs \
+  --max-eco-iterations 5
+```
+
+物理产物统一位于 `outputs/<project>/physical/`。服务器安装和环境变量见根目录 `PHYSICAL_FLOW.md`。
 
 `main.py` 不自动运行 Review/PVT。`design_flow_graph.py` 负责状态编排，不替代 BO，也不自动填写 `patch_plan.json`。
 
@@ -172,6 +198,7 @@ python -m unittest discover -s tests
 ## 文档入口
 
 - 完整项目流程：`FILE_FLOW.md`
+- 统一物理流程与服务器部署：`PHYSICAL_FLOW.md`
 - 系统架构：`knowledge_base/System_knowledge_base/system_architecture_selection_guide.md`
 - 运放 topology：`knowledge_base/Opamp_knowledge_base/topology_selection_guide.md`
 - topology Review：`knowledge_base/Opamp_knowledge_base/topologies/*_optimization.md`

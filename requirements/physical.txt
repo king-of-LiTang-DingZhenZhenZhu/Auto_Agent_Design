@@ -1,0 +1,5 @@
+-r base.txt
+sympy>=1.12
+z3-solver>=4.12
+gdstk>=0.9
+pyzmq>=25

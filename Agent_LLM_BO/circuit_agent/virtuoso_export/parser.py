@@ -6,6 +6,8 @@ import re
 import shlex
 from pathlib import Path
 
+from pdk_profiles import get_pdk_profile
+
 from .models import Instance, SchematicIR
 
 
@@ -14,6 +16,17 @@ _ENDS_RE = re.compile(r"^\.?ends\b", re.IGNORECASE)
 _SPECTRE_INSTANCE_RE = re.compile(
     r"^(\S+)\s+\(([^)]+)\)\s+(\S+)(?:\s+(.*))?$"
 )
+_PROFILE = get_pdk_profile()
+_MOS_MODELS = {
+    str(value).lower()
+    for value in (
+        _PROFILE.nmos_model,
+        _PROFILE.pmos_model,
+        _PROFILE.nmos_lvt_model,
+        _PROFILE.pmos_lvt_model,
+    )
+    if value
+}
 
 
 def parse_netlist(path_or_content: str | Path) -> SchematicIR:
@@ -145,7 +158,10 @@ def _parse_spectre_instance(
             nodes=nodes,
             params=_normalize_params(params, param_values),
         )
-    if len(nodes) == 4 and name.upper().startswith("M"):
+    # Spectre instance names are user-defined.  Topologies in this repository
+    # use S1-S4 for StrongARM precharge MOS devices, so classify four-terminal
+    # instances by their known PDK MOS model instead of an M-name convention.
+    if len(nodes) == 4 and primitive_lower in _MOS_MODELS:
         return Instance(
             name=name,
             kind="mos",

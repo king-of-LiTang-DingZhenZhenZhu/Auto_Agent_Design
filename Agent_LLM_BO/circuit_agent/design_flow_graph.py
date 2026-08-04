@@ -28,6 +28,9 @@ class DesignFlowState(TypedDict, total=False):
     run_pvt: bool
     simulate: bool
     export_virtuoso: bool
+    prepare_physical: bool
+    run_signoff: bool
+    max_eco_iterations: int
     lib_name: str
     nominal_pass: bool | None
     review_available: bool
@@ -44,6 +47,18 @@ class DesignFlowState(TypedDict, total=False):
     final_source: str | None
     final_netlist: str | None
     virtuoso_skill: str | None
+    physical_requested: bool
+    physical_status: str | None
+    physical_root: str | None
+    physical_handoff: str | None
+    physical_layout_plan: str | None
+    physical_gds: str | None
+    physical_drc_report: str | None
+    physical_lvs_report: str | None
+    physical_drc_violations: int | None
+    physical_lvs_issues: int | None
+    physical_eco_iterations: int
+    physical_blocker: str | None
     next_action: str
     errors: list[str]
     langgraph_available: bool
@@ -54,10 +69,15 @@ def run_design_flow(
     run_pvt: bool = False,
     simulate: bool = False,
     export_virtuoso: bool = False,
+    prepare_physical: bool = False,
+    run_signoff: bool = False,
+    max_eco_iterations: int = 5,
     lib_name: str = "BO_Designs",
     pvt_targets: DesignTarget | None = None,
     pvt_profile: PDKProfile | None = None,
 ) -> DesignFlowState:
+    if not 0 <= max_eco_iterations <= 5:
+        raise ValueError("max_eco_iterations must be between 0 and 5")
     project_dir = Path(project)
     initial: DesignFlowState = {
         "project_dir": str(project_dir),
@@ -65,18 +85,31 @@ def run_design_flow(
         "run_pvt": run_pvt,
         "simulate": simulate,
         "export_virtuoso": export_virtuoso,
+        "prepare_physical": prepare_physical or run_signoff,
+        "run_signoff": run_signoff,
+        "max_eco_iterations": max_eco_iterations,
         "lib_name": lib_name,
         "errors": [],
         "pvt_requested": run_pvt,
         "pvt_targets": pvt_targets,
         "pvt_profile": pvt_profile,
         "langgraph_available": StateGraph is not None,
+        "physical_requested": prepare_physical or run_signoff,
     }
     if StateGraph is None:
         state = _run_fallback(initial)
     else:
         graph = _build_graph()
         state = graph.invoke(initial)
+    if prepare_physical or run_signoff:
+        from physical_bridge import execute_physical_from_state
+
+        state = execute_physical_from_state(
+            state,
+            prepare_physical=prepare_physical or run_signoff,
+            run_signoff=run_signoff,
+            max_eco_iterations=max_eco_iterations,
+        )
     _write_flow_outputs(state)
     return state
 
@@ -340,6 +373,14 @@ def _render_flow_report(state: DesignFlowState) -> str:
         f"- PVT requested: `{state.get('pvt_requested')}`",
         f"- PVT pass: `{state.get('pvt_pass')}`",
         f"- Virtuoso SKILL: `{state.get('virtuoso_skill')}`",
+        f"- Physical status: `{state.get('physical_status')}`",
+        f"- Physical handoff: `{state.get('physical_handoff')}`",
+        f"- Physical layout: `{state.get('physical_layout_plan')}`",
+        f"- Physical GDS: `{state.get('physical_gds')}`",
+        f"- Physical DRC violations: `{state.get('physical_drc_violations')}`",
+        f"- Physical LVS issues: `{state.get('physical_lvs_issues')}`",
+        f"- Physical ECO iterations: `{state.get('physical_eco_iterations')}`",
+        f"- Physical blocker: `{state.get('physical_blocker')}`",
         f"- Next action: `{state.get('next_action')}`",
     ]
     if state.get("errors"):
@@ -355,6 +396,9 @@ def main() -> None:
         run_pvt=args.run_pvt,
         simulate=args.simulate,
         export_virtuoso=args.export_virtuoso,
+        prepare_physical=args.prepare_physical or args.run_signoff,
+        run_signoff=args.run_signoff,
+        max_eco_iterations=args.max_eco_iterations,
         lib_name=args.lib,
     )
     print(f"Flow report: {Path(state['project_dir']) / 'flow' / 'flow_report.md'}")
@@ -369,6 +413,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-pvt", action="store_true")
     parser.add_argument("--simulate", action="store_true")
     parser.add_argument("--export-virtuoso", action="store_true")
+    parser.add_argument("--prepare-physical", action="store_true")
+    parser.add_argument("--run-signoff", action="store_true")
+    parser.add_argument("--max-eco-iterations", type=int, default=5)
     parser.add_argument("--lib", default="BO_Designs")
     return parser.parse_args()
 

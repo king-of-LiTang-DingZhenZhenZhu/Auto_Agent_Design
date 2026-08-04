@@ -1,9 +1,11 @@
 # Auto Agent Design — 模拟电路自动设计优化系统
 
-基于 **拓扑库 + gm/Id 查找表 + 贝叶斯优化** 的模拟电路自动设计闭环系统。用户描述需求后，系统生成 Spectre native 网表、调用 Spectre 仿真、解析结果并运行 BO 优化迭代，最终输出最优设计参数、诊断文件和可复现实验目录。
+基于 **拓扑库 + gm/Id 查找表 + 贝叶斯优化 + 自动版图后端** 的模拟电路自动设计闭环系统。用户描述需求后，系统生成 Spectre native 网表、调用 Spectre 仿真、解析结果并运行 BO 优化迭代；PVT 合格后可继续生成 native PCell 版图、OA/GDS，并执行 Calibre DRC/LVS 与有界 ECO。
 
 当前完整的叶子电路、系统分解、层级优化、Review、PVT 和导出流程见
 [`FILE_FLOW.md`](FILE_FLOW.md)。
+统一仓库的服务器部署与版图 sign-off 命令见
+[`PHYSICAL_FLOW.md`](PHYSICAL_FLOW.md)。
 
 ## 项目结构
 
@@ -13,6 +15,17 @@ Auto_Agent_Design/
 ├── CLAUDE.md                          # Claude Code 配置（已合并至 AGENTS.md）
 ├── README.md                          # 本文件
 ├── FILE_FLOW.md                       # 当前完整项目流程与文件流
+├── PHYSICAL_FLOW.md                   # 单仓库部署、版图和 sign-off 说明
+├── run_full_flow.py                   # 模拟前端到 DRC/LVS 的统一入口
+├── analogskills/                      # 内置并裁剪后的物理实现后端
+│   ├── imported_design/               # handoff、adapter、物理编排和 ECO policy
+│   ├── layout/                        # placement/routing/power/layout IR
+│   ├── pcell/                         # native PCell realization
+│   ├── eda/                           # OA、Virtuoso、GDS、Calibre
+│   ├── repair/                        # DRC/LVS ECO
+│   └── pdk_data/                      # CRN28 物理配置
+├── config/physical.example.env        # 服务器 EDA/PDK/deck 配置模板
+├── requirements/physical.txt          # 物理后端依赖
 ├── Agent_LLM_BO/
 │   └── circuit_agent/                 # 核心设计与优化引擎
 │       ├── main.py                    # 固定 topology 的 BO 入口
@@ -50,7 +63,9 @@ Auto_Agent_Design/
   |     -> main.py: gm/Id + BO + Spectre
   |     -> Design Audit / audit_repair 或 failure_repair
   |     -> PVT
-  |     -> Virtuoso 导出
+  |     -> Virtuoso schematic 导出
+  |     -> handoff → native PCell layout → OA/GDS
+  |     -> Calibre DRC/LVS → bounded ECO
   |
   +-- 系统级电路：Bandgap/LDO/ADC
         -> system_decomposition.py
@@ -69,6 +84,26 @@ child targets、PVT targets、预算和 topology；`hierarchical_flow.py`
 
 当前系统级规则只实现了 Bandgap。LDO 和 ADC 尚未实现系统规则和 parent
 topology。
+
+## 单仓库全流程
+
+`Auto_Agent_Design` 现在包含模拟设计前端和裁剪后的版图后端，服务器只需复制这一份仓库。版图后端不重新执行拓扑选择或 gm/Id/BO；`select_export_netlist()` 选出的 Review candidate 或 BO best 是唯一电气真值。
+
+首版物理实现支持当前 `two_stage_ota` 和当前 11 管 `strongarm_latch`。只有真实 27-corner PVT 合格结果才能进入版图；其它 topology 会明确返回 `physical_adapter_required`。
+
+```bash
+conda activate Auto_Agent_Design
+python -m pip install -r requirements/physical.txt
+
+python run_full_flow.py \
+  --project outputs/<project> \
+  --run-pvt --simulate \
+  --run-signoff \
+  --lib BO_Designs \
+  --max-eco-iterations 5
+```
+
+物理产物写入 `outputs/<project>/physical/`。只有真实 GDS、DRC clean 和 LVS correct 都具备时流程状态才是 `done`；缺少服务器工具、PDK/deck 或 sign-off 未收敛时保持 `physical_blocked`。
 
 ## 快速开始
 

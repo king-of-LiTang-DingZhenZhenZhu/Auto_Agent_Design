@@ -1,7 +1,7 @@
 # 项目流程与文件流
 
 本文是当前项目的总流程说明，覆盖叶子电路、系统级电路、BO、Review、
-PVT、层级工件和 Virtuoso 导出。操作约束分别见 `AGENTS.md` 和
+PVT、层级工件、Virtuoso 导出以及版图 DRC/LVS。操作约束分别见 `AGENTS.md` 和
 `CLAUDE.md`；具体模块细节见文末链接。
 
 ## 1. 分层架构
@@ -22,6 +22,10 @@ PVT、层级工件和 Virtuoso 导出。操作约束分别见 `AGENTS.md` 和
 硬约束生成层
   topologies/
   程序化生成 DUT 和 testbench，不让 Agent 直接手写最终网表
+
+物理实现层
+  run_full_flow.py + analogskills/imported_design/
+  只消费最终合格网表，生成 PCell/OA/GDS 并执行 Calibre DRC/LVS/ECO
 ```
 
 `system_decomposition.py` 与 `hierarchical_flow.py` 不重复：
@@ -205,7 +209,19 @@ outputs/<project>/
 ├── agent_review/
 ├── design_audit/
 ├── pvt/
-└── virtuoso/
+├── virtuoso/
+└── physical/
+    ├── input/final.cir
+    ├── handoff.json
+    ├── layout/
+    ├── oa/
+    ├── lvs/
+    ├── signoff/drc/
+    ├── signoff/lvs/
+    ├── eco/
+    ├── physical_state.json
+    ├── physical_report.md
+    └── run_manifest.json
 ```
 
 优先读取：
@@ -473,21 +489,48 @@ results.json gap
   -> parent architecture
 ```
 
-## 12. 当前自动化边界
+## 12. 单仓库物理实现
+
+```text
+Review candidate 或 BO best
+  -> 真实 PVT pass evidence
+  -> ImportedDesignHandoff + final.cir 快照
+  -> exact topology adapter
+  -> TopologyGraph + sizing
+  -> native PCell realization
+  -> placement/routing/power/tap/well/guard ring
+  -> schematic OA + layout OA
+  -> GDS stream-out
+  -> Calibre DRC + LVS
+  -> 最多 5 轮严格改善 ECO
+  -> done 或 physical_blocked
+```
+
+- 唯一根目录是 `Auto_Agent_Design`，无需另一个 `analog_skills` checkout。
+- 物理后端不调用设计意图、gm/Id、拓扑选择或 BO，不得替换前端网表连接。
+- 首版 adapter 固定支持当前 `two_stage_ota` 和 11 管 `strongarm_latch`。
+- StrongARM 的 `S1-S4` 按 PDK MOS model 和四端连接识别，不依赖实例名前缀。
+- `--prepare-physical` 只生成物理执行包；`--run-signoff` 继续运行真实 OA/GDS/Calibre。
+- DRC/LVS 任一退化的 ECO candidate 会被拒绝并回滚；最多 5 轮。
+- 服务器本地运行，不包含自动 SSH 登录或密码管理。完整命令与环境变量见 `PHYSICAL_FLOW.md`。
+
+## 13. 当前自动化边界
 
 - Agent 负责需求理解、架构/拓扑决策、代码和 Review 判断。
 - topology Python 代码负责网表结构硬约束。
 - BO 只在固定 topology 和参数空间内优化。
 - `system_decomposition.py` 当前只有 Bandgap 规则。
 - LDO/ADC 的系统规则、预算器和 parent topology 尚未实现。
-- 默认不由 Codex 直接运行真实 Spectre、PVT 或 Virtuoso。
+- 真实 Spectre、PVT、Virtuoso 和 Calibre 只在具备 PDK/license 的服务器本地执行。
+- PEX 和 post-layout Spectre 回灌尚未接入。
 
-## 13. 相关文档
+## 14. 相关文档
 
 - 系统分解：`Agent_LLM_BO/circuit_agent/SYSTEM_DECOMPOSITION.md`
 - 层级优化：`Agent_LLM_BO/circuit_agent/HIERARCHICAL_OPTIMIZATION.md`
 - BO 指标策略：`Agent_LLM_BO/circuit_agent/METRIC_GOALS.md`
 - gm/Id：`Agent_LLM_BO/circuit_agent/SIZING_MODES.md`
 - Review：`Agent_LLM_BO/circuit_agent/AGENT_REVIEW.md`
+- 单仓库物理流程：`PHYSICAL_FLOW.md`
 - 系统架构知识：`knowledge_base/System_knowledge_base/system_architecture_selection_guide.md`
 - Bandgap 知识：`knowledge_base/Bandgap_knowledge_base/topologies/bandgap_ptat_optimization.md`
