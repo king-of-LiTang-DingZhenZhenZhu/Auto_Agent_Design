@@ -12,6 +12,20 @@ from simulator import Simulator
 
 
 class SimulatorPathTests(unittest.TestCase):
+    def test_nonzero_spectre_exit_uses_error_from_log_when_stderr_is_empty(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            testbench = run_dir / "tb.scs"
+            testbench.write_text("simulator lang=spectre\n", encoding="utf-8")
+            log = "ERROR (SFE-123): No section found: top_ss\n"
+
+            with patch("simulator.subprocess.run") as run:
+                run.return_value = SimpleNamespace(returncode=1, stdout=log, stderr="")
+                success, _, error = Simulator(Settings(dry_run=False)).run_spectre(testbench, run_dir)
+
+            self.assertFalse(success)
+            self.assertIn("No section found", error)
+
     def test_run_spectre_uses_absolute_paths_with_run_dir_as_cwd(self):
         with tempfile.TemporaryDirectory() as tmp:
             original_cwd = Path.cwd()

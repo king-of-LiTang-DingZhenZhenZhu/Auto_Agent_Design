@@ -174,6 +174,30 @@ def ensure_physical_topology_supported(topology: str) -> None:
         )
 
 
+def load_pvt_targets(
+    *,
+    requirements_file: str | Path | None = None,
+    pvt_requirements_file: str | Path | None = None,
+) -> DesignTarget | None:
+    """Load a PVT acceptance budget from an explicit file or embedded input."""
+    if pvt_requirements_file:
+        payload = json.loads(Path(pvt_requirements_file).resolve().read_text(encoding="utf-8"))
+        return _targets_from_requirements(payload)
+    if not requirements_file:
+        return None
+    payload = json.loads(Path(requirements_file).resolve().read_text(encoding="utf-8"))
+    targets = payload.get("pvt_targets")
+    if not isinstance(targets, dict):
+        return None
+    return _targets_from_requirements(
+        {
+            "targets": targets,
+            "metric_goals": payload.get("pvt_metric_goals", {}),
+            "topology_hint": payload.get("topology_hint", ""),
+        }
+    )
+
+
 def _targets_from_requirements(payload: dict[str, Any]) -> DesignTarget:
     data = dict(payload.get("targets", payload))
     return DesignTarget(

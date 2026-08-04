@@ -17,6 +17,7 @@ for path in (ROOT, CIRCUIT_AGENT):
 from design_flow_graph import run_design_flow  # noqa: E402
 from full_flow_frontend import (  # noqa: E402
     ensure_physical_topology_supported,
+    load_pvt_targets,
     prepare_frontend_project,
     run_automatic_review,
     run_frontend_optimization,
@@ -44,6 +45,10 @@ def parse_args() -> argparse.Namespace:
         help="Auto_Agent_Design BO workspace used by automatic Review",
     )
     parser.add_argument("--run-pvt", action="store_true")
+    parser.add_argument(
+        "--pvt-requirements",
+        help="optional JSON with PVT acceptance targets, separate from nominal BO targets",
+    )
     parser.add_argument("--simulate", action="store_true")
     parser.add_argument("--export-virtuoso", action="store_true")
     parser.add_argument("--prepare-physical", action="store_true")
@@ -58,6 +63,10 @@ def main() -> int:
     if not 0 <= args.max_eco_iterations <= 5:
         raise SystemExit("--max-eco-iterations must be between 0 and 5")
     starting_from_requirements = bool(args.request or args.requirements)
+    pvt_targets = load_pvt_targets(
+        requirements_file=args.requirements,
+        pvt_requirements_file=args.pvt_requirements,
+    )
     physical_requested = args.prepare_physical or args.run_signoff
     if args.dry_run and physical_requested:
         raise SystemExit("--dry-run cannot provide sign-off PVT evidence")
@@ -109,6 +118,7 @@ def main() -> int:
         run_signoff=args.run_signoff,
         max_eco_iterations=args.max_eco_iterations,
         lib_name=args.lib,
+        pvt_targets=pvt_targets,
     )
     report = Path(state["project_dir"]) / "flow" / "flow_report.md"
     print(f"Flow report: {report}")

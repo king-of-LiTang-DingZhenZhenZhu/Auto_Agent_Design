@@ -22,6 +22,18 @@ from topologies import get_topology
 
 
 class OptimizerConfigTest(unittest.TestCase):
+    def test_process_sections_override_is_accepted_from_dotenv(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env_file = Path(tmp) / ".env"
+            env_file.write_text("PDK_PROCESS_SECTIONS=tt:ttmacro,ss:ssmacro,ff:ffmacro\n", encoding="utf-8")
+
+            settings = Settings(_env_file=env_file)
+
+            self.assertEqual(
+                settings.pdk_process_sections,
+                "tt:ttmacro,ss:ssmacro,ff:ffmacro",
+            )
+
     def _write_unit_profile(
         self,
         root: Path,

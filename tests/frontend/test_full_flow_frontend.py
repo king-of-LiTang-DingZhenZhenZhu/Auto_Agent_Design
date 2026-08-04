@@ -15,6 +15,7 @@ sys.path[:0] = [str(ROOT), str(CIRCUIT_AGENT)]
 from config import Settings
 from full_flow_frontend import (
     ensure_physical_topology_supported,
+    load_pvt_targets,
     optimizer_command,
     prepare_frontend_project,
     run_automatic_review,
@@ -22,6 +23,39 @@ from full_flow_frontend import (
 
 
 class FullFlowFrontendTest(unittest.TestCase):
+    def test_embedded_pvt_targets_are_separate_from_nominal_targets(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            requirements = Path(tmp) / "requirements.json"
+            requirements.write_text(
+                json.dumps({
+                    "targets": {"gain_db": 45, "phase_margin_deg": 60},
+                    "pvt_targets": {"gain_db": 20, "phase_margin_deg": 30},
+                }),
+                encoding="utf-8",
+            )
+
+            targets = load_pvt_targets(requirements_file=requirements)
+
+            self.assertIsNotNone(targets)
+            self.assertEqual(targets.gain_db, 20)
+            self.assertEqual(targets.phase_margin_deg, 30)
+
+    def test_explicit_pvt_requirements_override_embedded_budget(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            requirements = root / "requirements.json"
+            requirements.write_text(json.dumps({"pvt_targets": {"gain_db": 20}}), encoding="utf-8")
+            explicit = root / "pvt.json"
+            explicit.write_text(json.dumps({"targets": {"gain_db": 25}}), encoding="utf-8")
+
+            targets = load_pvt_targets(
+                requirements_file=requirements,
+                pvt_requirements_file=explicit,
+            )
+
+            self.assertIsNotNone(targets)
+            self.assertEqual(targets.gain_db, 25)
+
     def test_structured_requirements_use_native_project_generator(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

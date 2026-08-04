@@ -351,6 +351,7 @@ def _row_from_corner(
     status: dict[str, bool],
     all_met: bool,
 ) -> dict[str, Any]:
+    simulation_failed = not result.converged
     return {
         "corner_id": corner.corner_id,
         "process": corner.process,
@@ -358,6 +359,7 @@ def _row_from_corner(
         "vdd_label": corner.vdd_label,
         "vdd(V)": _fmt_csv(corner.vdd, 3),
         "temp(C)": _fmt_csv(corner.temperature_c, 1),
+        "simulation_status": "failed" if simulation_failed else "ok",
         "all_targets_met": all_met,
         "gain_db(dB)": _fmt_csv(result.gain_db, 2),
         "gbw_hz(MHz)": _fmt_csv(result.bandwidth_hz, 2, 1e-6),
@@ -378,8 +380,8 @@ def _row_from_corner(
         "startup_success": result.startup_success,
         "failed_metrics": ";".join(
             name for name, passed in sorted(status.items()) if not passed
-        ),
-        "error_message": result.error_message,
+        ) if not simulation_failed else "",
+        "error_message": result.error_message or ("Simulation did not converge" if simulation_failed else ""),
     }
 
 
@@ -391,6 +393,7 @@ def _write_pvt_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         "vdd_label",
         "vdd(V)",
         "temp(C)",
+        "simulation_status",
         "all_targets_met",
         "gain_db(dB)",
         "gbw_hz(MHz)",

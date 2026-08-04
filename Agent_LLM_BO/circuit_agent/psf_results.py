@@ -437,7 +437,8 @@ def calculate_comparator_decision_metrics(
     cycle_power = np.abs(power[rise_index:cycle_stop])
     if cycle_time.size < 2:
         raise ValueError("Comparator energy window has too few samples")
-    energy = float(np.trapezoid(cycle_power, cycle_time))
+    trapezoid = getattr(np, "trapezoid", np.trapz)
+    energy = float(trapezoid(cycle_power, cycle_time))
     period = float(cycle_time[-1] - cycle_time[0])
     average_power = energy / period if period > 0 else float("inf")
     return decision_margin, propagation_delay, energy, average_power

@@ -39,6 +39,9 @@ class PreparePhysicalIntegrationTest(unittest.TestCase):
                 text = Path(result.layout_skill_path).read_text(encoding="utf-8")
                 self.assertNotIn("drawn_primitive", text)
                 self.assertIn('ddCreateLib("BO_Designs")', text)
+                self.assertTrue(text.rstrip().endswith("exit()"))
+                streamout = Path(result.physical_root) / "oa" / "streamout.il"
+                self.assertTrue(streamout.read_text(encoding="utf-8").rstrip().endswith("exit()"))
                 mapping = json.loads((Path(result.physical_root) / "instance_mapping.json").read_text(encoding="utf-8"))
                 self.assertEqual(set(mapping), {row.name for row in handoff.devices})
                 if topology == "two_stage_ota":

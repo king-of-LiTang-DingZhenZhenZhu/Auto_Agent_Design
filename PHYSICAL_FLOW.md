@@ -37,6 +37,9 @@ python run_full_flow.py \
   --max-eco-iterations 5
 ```
 
+结构化输入可用顶层 `pvt_targets`/`pvt_metric_goals` 声明独立于 nominal BO
+指标的 PVT 验收预算；也可通过 `--pvt-requirements <json>` 单独提供，后者优先。
+
 该命令依次执行 Auto 前端需求分析、topology 选择、网表/testbench 生成、
 gm/Id/BO、Design Audit、必要的自动 Review、真实 PVT，以及物理后端。
 自然语言入口为 `--request "..."`，并复用 Auto 前端的 DeepSeek LLM 配置。

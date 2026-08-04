@@ -156,7 +156,9 @@ class Simulator:
                 logger.debug(f"Appended {len(measure_files)} .measure file(s) to log")
 
             if result.returncode != 0:
-                error_msg = result.stderr or "Spectre returned non-zero exit code"
+                error_msg = result.stderr.strip() or self._spectre_error_from_log(log_content)
+                if not error_msg:
+                    error_msg = f"Spectre returned non-zero exit code {result.returncode}"
                 logger.warning(f"Spectre failed (rc={result.returncode}): {error_msg[:200]}")
                 return False, log_content, error_msg
 
@@ -411,6 +413,20 @@ class Simulator:
             return "timeout"
 
         return "unknown"
+
+    @staticmethod
+    def _spectre_error_from_log(log_content: str) -> str:
+        """Return the first actionable Spectre read-in/runtime error line."""
+        for line in log_content.splitlines():
+            stripped = line.strip()
+            lowered = stripped.lower()
+            if stripped and (
+                lowered.startswith(("error", "fatal"))
+                or "no section found" in lowered
+                or "spectre terminated" in lowered
+            ):
+                return stripped
+        return ""
 
     # --- Mock simulation for development/testing ---
 

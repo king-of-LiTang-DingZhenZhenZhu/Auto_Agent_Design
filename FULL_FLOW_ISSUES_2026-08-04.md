@@ -35,7 +35,7 @@ Strict project validation subsequently passed.
 
 ## 2. Physical Python dependencies selected incompatible source builds
 
-Status: resolved locally, dependency constraints should be tightened.
+Status: resolved; dependency versions are pinned in `requirements/physical.txt`.
 
 Installing the unbounded physical requirements selected source builds that
 were incompatible with GCC 4.8. Compatible wheels were installed instead:
@@ -82,7 +82,7 @@ are actually defined in that file.
 
 ## 4. `.env` cannot contain every PDK override understood by `pdk_profiles.py`
 
-Status: open configuration consistency issue.
+Status: fixed with `.env` regression coverage.
 
 `pdk_profiles.py` reads `PDK_PROCESS_SECTIONS` directly from the environment,
 but the current `pydantic-settings` model rejects that key as an extra field
@@ -110,7 +110,7 @@ invalid values. A focused export regression test covers a nested
 
 ## 6. Failed simulations were reported as failed metrics with empty errors
 
-Status: open reporting issue.
+Status: fixed with regression coverage.
 
 When Spectre failed because `top_ss/top_ff` did not exist, the PVT CSV showed
 all metrics as blank and listed every metric under `failed_metrics`, while
@@ -122,7 +122,7 @@ not classify unavailable metrics as ordinary spec misses.
 
 ## 7. Nominal and PVT targets need separate budgets
 
-Status: supported by the API, not exposed clearly by the unified CLI/input.
+Status: fixed in the unified CLI and structured input.
 
 Setting nominal gain to 45 dB also made every PVT corner require 45 dB. A
 nominal solution at 45.9 dB then failed six 0.9 V/125 C corners even though
@@ -155,7 +155,7 @@ metrics alone.
 
 ## 9. Physical bridge overwrote qualification actions
 
-Status: observed, not yet fixed.
+Status: fixed with regression coverage.
 
 In the first strict 60 dB example, nominal BO and Review did not pass, but the
 physical bridge returned `next_action=run_pvt`. Physical preparation must not
@@ -199,7 +199,7 @@ run, so generated OA/GDS paths and replay commands are absolute.
 
 ## 12. Virtuoso `-nograph` cannot start its internal Xvnc on this host
 
-Status: current physical blocker.
+Status: code fix complete; requires verification on the physical host.
 
 With correct absolute paths, Virtuoso reaches its display startup. In
 `-nograph` mode it ignores the existing `DISPLAY` and tries internal displays
@@ -223,9 +223,14 @@ successful exit call after saving/closing the OA cellview.
 
 No GDS has been produced yet, so Calibre DRC/LVS has not run.
 
+The batch command now supports `ANALOGSKILLS_VIRTUOSO_NOGRAPH=false` for an
+existing display, and generated OA/stream-out replay scripts explicitly call
+`exit()` after saving/closing. The server-side run still needs to confirm that
+display `:18` remains usable through GDS generation.
+
 ## 13. Physical failure state loses the blocker detail
 
-Status: open state-reporting issue.
+Status: fixed with regression coverage.
 
 `physical_state.json` correctly contains `errors: ["schematic_oa failed"]`,
 but the parent `flow_state.json` can show:
@@ -243,7 +248,7 @@ the top-level report is actionable.
 
 ## 14. Full test suite has pre-existing environment/version failures
 
-Status: open, unrelated to the PDK/export fixes.
+Status: fixed; the complete circuit-agent suite passes on the current branch.
 
 The complete circuit-agent suite ran 197 tests and reported these additional
 failures:

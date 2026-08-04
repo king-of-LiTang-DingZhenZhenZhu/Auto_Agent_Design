@@ -847,6 +847,7 @@ def write_oa_skill(
     allow_label_only_top_level_nets: bool = False,
     rect_chunk_size: int = 0,
     rect_chunk_dir: str | Path | None = None,
+    exit_after_write: bool = False,
 ) -> Path:
     path = Path(path)
     if grid is not None:
@@ -983,6 +984,8 @@ def write_oa_skill(
         )
     lines.append('dbSave(cv)')
     lines.append('dbClose(cv)')
+    if exit_after_write:
+        lines.append('exit()')
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
 

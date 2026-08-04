@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     # PDK — Spectre format (.scs)
     pdk_spectre_path: str = _DEFAULT_PDK.spectre_model_path
     pdk_spectre_section: str = _DEFAULT_PDK.spectre_section
+    # Parsed by pdk_profiles.py; declared here so the shared .env is accepted.
+    pdk_process_sections: str = ""
 
     vdd: float = _DEFAULT_PDK.vdd
     vdd_min: float = _DEFAULT_PDK.vdd_min

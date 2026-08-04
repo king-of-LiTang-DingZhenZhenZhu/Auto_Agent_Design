@@ -219,9 +219,15 @@ def prepare_imported_physical_run(
         top_level_nets=handoff_obj.ports,
         require_lvs_labels=True,
         replace_cellview=True,
+        exit_after_write=True,
     )
     schematic_plan = build_oa_schematic_plan(graph, lib=lib_name, cell=cell, sizing=sizing, pdk=pdk)
-    schematic_skill = write_oa_skill(schematic_plan, oa_dir / "schematic.il", replace_cellview=True)
+    schematic_skill = write_oa_skill(
+        schematic_plan,
+        oa_dir / "schematic.il",
+        replace_cellview=True,
+        exit_after_write=True,
+    )
     lvs_source = export_lvs_netlist(
         graph,
         sizing,
@@ -321,7 +327,13 @@ def run_imported_design_signoff(
             candidate = merge_oa_write_plans(accepted_plan, getattr(decision, "patch"), cellview=accepted_plan.cellview, grid=pdk)
             iteration_dir = root / "eco" / f"{index:03d}"
             iteration_dir.mkdir(parents=True, exist_ok=True)
-            skill = write_oa_skill(candidate, iteration_dir / "candidate.il", grid=pdk, replace_cellview=True)
+            skill = write_oa_skill(
+                candidate,
+                iteration_dir / "candidate.il",
+                grid=pdk,
+                replace_cellview=True,
+                exit_after_write=True,
+            )
             save_oa_plan_json(candidate, iteration_dir / "candidate.oa_plan.json")
             candidate_runs, candidate_drc, candidate_lvs = _rerun_candidate(
                 root, iteration_dir, skill, cell, base, config, pdk,
@@ -348,7 +360,13 @@ def run_imported_design_signoff(
                 latest.update({"drc": candidate_drc, "lvs": candidate_lvs, "plan": candidate})
                 _checkpoint_signoff_artifacts(gds, drc_results, drc_summary, lvs_report, accepted_artifacts)
             else:
-                rollback = write_oa_skill(accepted_plan, iteration_dir / "rollback.il", grid=pdk, replace_cellview=True)
+                rollback = write_oa_skill(
+                    accepted_plan,
+                    iteration_dir / "rollback.il",
+                    grid=pdk,
+                    replace_cellview=True,
+                    exit_after_write=True,
+                )
                 run_eda_command(EdaCommand(make_virtuoso_batch_command(rollback, binary=config["virtuoso"]).command, cwd=root, timeout_s=600.0))
                 run_eda_command(EdaCommand(make_virtuoso_batch_command(root / "oa" / "streamout.il", binary=config["virtuoso"]).command, cwd=root, timeout_s=600.0))
                 _restore_signoff_artifacts(accepted_artifacts, gds, drc_results, drc_summary, lvs_report)
@@ -365,7 +383,13 @@ def run_imported_design_signoff(
         _write_json(root / "eco" / "checkpoint_journal.json", eco_summary)
 
     save_oa_plan_json(latest["plan"], base.layout_plan_path)
-    write_oa_skill(latest["plan"], base.layout_skill_path, grid=pdk, replace_cellview=True)
+    write_oa_skill(
+        latest["plan"],
+        base.layout_skill_path,
+        grid=pdk,
+        replace_cellview=True,
+        exit_after_write=True,
+    )
 
     drc_count = len(latest["drc"])
     lvs_count = len(latest["lvs"])

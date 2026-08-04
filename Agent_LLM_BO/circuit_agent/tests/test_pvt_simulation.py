@@ -18,11 +18,27 @@ from pvt_simulation import (
     _resolve_source,
     run_pvt_verification,
     summarize_pvt,
+    _row_from_corner,
 )
 from topologies import get_topology
 
 
 class PVTSimulationTests(unittest.TestCase):
+    def test_failed_simulation_is_not_reported_as_metric_misses(self):
+        corner = PVTCorner("ss", "ssmacro_mos_moscap", "vmin", 0.9, 125)
+        result = SimResult(converged=False, error_message="No section found: top_ss")
+
+        row = _row_from_corner(
+            corner,
+            result,
+            {"gain_db": False, "phase_margin_deg": False},
+            False,
+        )
+
+        self.assertEqual(row["simulation_status"], "failed")
+        self.assertEqual(row["failed_metrics"], "")
+        self.assertEqual(row["error_message"], "No section found: top_ss")
+
     def test_relative_results_path_resolves_absolute_project_root(self):
         with tempfile.TemporaryDirectory() as tmp:
             original_cwd = Path.cwd()

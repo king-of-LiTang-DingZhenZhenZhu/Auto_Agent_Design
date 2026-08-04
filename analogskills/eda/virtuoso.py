@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import os
 from pathlib import Path
 from typing import Sequence
 
@@ -41,7 +42,20 @@ def write_virtuoso_layout_skill(shapes: Sequence[LayoutShape], placements: Seque
 def make_virtuoso_batch_command(skill_file: str | Path, *, binary: str = "virtuoso"):
     from .command import EdaCommand
 
-    return EdaCommand([binary, "-nograph", "-replay", str(skill_file)])
+    command = [binary]
+    if _virtuoso_nograph_enabled():
+        command.append("-nograph")
+    command.extend(("-replay", str(skill_file)))
+    return EdaCommand(command)
+
+
+def _virtuoso_nograph_enabled() -> bool:
+    value = os.environ.get("ANALOGSKILLS_VIRTUOSO_NOGRAPH", "true").strip().lower()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError("ANALOGSKILLS_VIRTUOSO_NOGRAPH must be a boolean value")
 
 
 def write_layout_streamout_skill(
@@ -54,6 +68,7 @@ def write_layout_streamout_skill(
     stream_format: str = "gds",
     layer_map: str | Path | None = None,
     object_map: str | Path | None = None,
+    exit_after_export: bool = False,
 ) -> Path:
     """Emit a reviewable Virtuoso batch script that exports layout to GDS/OASIS."""
 
@@ -80,6 +95,8 @@ def write_layout_streamout_skill(
         f'when(boundp(\'{export_cmd}) {export_cmd}())',
         'dbClose(cv)',
     ]
+    if exit_after_export:
+        lines.append('exit()')
     out.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return out
 
@@ -113,8 +130,10 @@ def build_layout_streamout_plan(
         stream_format=stream_format,
         layer_map=layer_map,
         object_map=object_map,
+        exit_after_export=True,
     )
-    command = EdaCommand([binary, "-nograph", "-replay", str(script)], cwd=cwd, timeout_s=timeout_s, env=env)
+    batch = make_virtuoso_batch_command(script, binary=binary)
+    command = EdaCommand(batch.command, cwd=cwd, timeout_s=timeout_s, env=env)
     return LayoutStreamOutPlan(
         skill_path=str(script),
         output_path=str(output_path),

@@ -30,6 +30,8 @@ def execute_physical_from_state(
 ) -> dict[str, Any]:
     if not (prepare_physical or run_signoff):
         return state
+    if not (state.get("nominal_pass") or state.get("review_pass")) or state.get("audit_status") == "block":
+        return {**state, "physical_requested": True}
     if state.get("pvt_pass") is not True:
         return {**state, "next_action": "run_pvt" if state.get("pvt_pass") is None else "inspect_pvt_report"}
     final_netlist = state.get("final_netlist")
@@ -68,6 +70,7 @@ def execute_physical_from_state(
     except Exception as exc:
         return _physical_error(state, str(exc), "fix_physical_blocker")
 
+    blocker = "; ".join(str(item) for item in result.errors if str(item)) or None
     return {
         **state,
         "physical_requested": True,
@@ -81,6 +84,7 @@ def execute_physical_from_state(
         "physical_drc_violations": result.drc_violations,
         "physical_lvs_issues": result.lvs_issues,
         "physical_eco_iterations": result.eco_iterations,
+        "physical_blocker": blocker,
         "next_action": "done" if result.passed else ("run_signoff" if result.status == "prepared" else "fix_physical_blocker"),
     }
 
