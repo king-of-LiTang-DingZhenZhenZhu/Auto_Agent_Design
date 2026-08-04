@@ -32,8 +32,13 @@ from analogskills.eda.oa import (
     write_oa_skill,
 )
 from analogskills.eda.reports import parse_drc_report, parse_lvs_report
-from analogskills.eda.virtuoso import build_layout_streamout_plan, make_virtuoso_batch_command
+from analogskills.eda.virtuoso import (
+    build_layout_streamout_plan,
+    make_strmout_command,
+    make_virtuoso_batch_command,
+)
 from analogskills.layout.placement import Placement
+from analogskills.layout.physical import analyze_plan_physical_connectivity
 from analogskills.layout.power import (
     plan_guard_ring,
     plan_power_rails,
@@ -227,6 +232,7 @@ def prepare_imported_physical_run(
         oa_dir / "schematic.il",
         replace_cellview=True,
         exit_after_write=True,
+        tech_lib=pdk.pcell_template_for("nmos").lib_name,
     )
     lvs_source = export_lvs_netlist(
         graph,
@@ -293,10 +299,25 @@ def run_imported_design_signoff(
     pdk = resolve_pdk_config("crn28hpcp")
 
     runs: list[dict[str, Any]] = []
+    physical_precheck = analyze_plan_physical_connectivity(
+        _load_oa_plan(base.layout_plan_path),
+        pdk=pdk,
+        include_via_landing_shorts=True,
+        include_opens=True,
+    )
+    _write_json(root / "signoff" / "physical_precheck.json", physical_precheck)
+    if not physical_precheck["passed"]:
+        return _signoff_failure(
+            base,
+            runs,
+            "physical connectivity precheck failed: "
+            f"{len(physical_precheck['shorts'])} short(s), "
+            f"{len(physical_precheck['opens'])} open net(s)",
+        )
     for name, command in (
         ("schematic_oa", make_virtuoso_batch_command(base.schematic_skill_path, binary=config["virtuoso"])),
         ("layout_oa", make_virtuoso_batch_command(base.layout_skill_path, binary=config["virtuoso"])),
-        ("streamout", make_virtuoso_batch_command(root / "oa" / "streamout.il", binary=config["virtuoso"])),
+        ("streamout", _streamout_command(root, cell, base, config)),
     ):
         run = run_eda_command(EdaCommand(command.command, cwd=root, timeout_s=600.0))
         runs.append(_run_record(name, run))
@@ -368,7 +389,7 @@ def run_imported_design_signoff(
                     exit_after_write=True,
                 )
                 run_eda_command(EdaCommand(make_virtuoso_batch_command(rollback, binary=config["virtuoso"]).command, cwd=root, timeout_s=600.0))
-                run_eda_command(EdaCommand(make_virtuoso_batch_command(root / "oa" / "streamout.il", binary=config["virtuoso"]).command, cwd=root, timeout_s=600.0))
+                run_eda_command(_streamout_command(root, cell, base, config))
                 _restore_signoff_artifacts(accepted_artifacts, gds, drc_results, drc_summary, lvs_report)
             return {"plan": candidate, "results": candidate_drc, "accepted": accepted, "acceptance_reason": reason, "artifacts": {}}
 
@@ -492,15 +513,20 @@ def _realization_mapping(handoff: ImportedDesignHandoff, pcell_plan: object, lvs
 
 
 def _preflight(root: Path, lib_name: str) -> dict[str, str]:
+    virtuoso = os.environ.get("ANALOGSKILLS_VIRTUOSO_BINARY", "")
+    strmout = os.environ.get("ANALOGSKILLS_STRMOUT_BINARY", "")
+    if not strmout and virtuoso and os.path.sep in virtuoso:
+        strmout = str(Path(virtuoso).with_name("strmout"))
     values = {
-        "virtuoso": os.environ.get("ANALOGSKILLS_VIRTUOSO_BINARY", ""),
+        "virtuoso": virtuoso,
+        "strmout": strmout or "strmout",
         "calibre": os.environ.get("ANALOGSKILLS_CALIBRE_BINARY", ""),
         "drc_deck": os.environ.get("ANALOGSKILLS_CRN28HPCP_DRC_DECK", ""),
         "lvs_deck": os.environ.get("ANALOGSKILLS_CRN28HPCP_LVS_DECK", ""),
         "pdk_lib": os.environ.get("ANALOGSKILLS_VIRTUOSO_PDK_LIB_PATH", ""),
     }
     errors: list[str] = []
-    for key in ("virtuoso", "calibre"):
+    for key in ("virtuoso", "strmout", "calibre"):
         value = values[key]
         if not value or (os.path.sep in value and not Path(value).is_file()) or (os.path.sep not in value and shutil.which(value) is None):
             errors.append(f"{key} binary is unavailable: {value or '<unset>'}")
@@ -548,11 +574,20 @@ def _materialize_lvs_deck(root: Path, cell: str, gds: Path, source: Path, templa
         ("SOURCE PRIMARY", cell), ("LVS REPORT", str(report)),
     ):
         text = _replace_directive(text, directive, value)
-    meta = dict(getattr(pdk, "metadata", {}).get("calibre", {}).get("generated_lvs_run", {}))
+    calibre_meta = dict(getattr(pdk, "metadata", {}).get("calibre", {}))
+    meta = dict(calibre_meta.get("generated_lvs_run", {}))
     if meta.get("mos_parallel_reduction") is False:
         for kind in meta.get("mos_parallel_reduction_device_types", ("MN", "MP")):
             text = _replace_bool_statement(text, f"LVS REDUCE {kind} PARALLEL", "NO")
         text = _replace_bool_statement(text, "LVS REDUCE PARALLEL MOS", "NO")
+    port_layers = tuple(dict.fromkeys(int(layer) for layer in dict(calibre_meta.get("lvs", {})).get("streamout_text_port_layers", ())))
+    missing_port_lines = [
+        f"PORT LAYER TEXT {layer}"
+        for layer in port_layers
+        if not _has_port_layer_text(text, layer)
+    ]
+    if missing_port_lines:
+        text += "\n// Generated top-level port text layers from the PDK profile.\n" + "\n".join(missing_port_lines) + "\n"
     deck = out / f"{cell}.lvs.calibre"
     deck.write_text(text, encoding="utf-8")
     return deck, report
@@ -562,7 +597,7 @@ def _rerun_candidate(root: Path, iteration_dir: Path, skill: Path, cell: str, ba
     records: list[dict[str, Any]] = []
     for name, command in (
         ("layout_oa", make_virtuoso_batch_command(skill, binary=config["virtuoso"])),
-        ("streamout", make_virtuoso_batch_command(root / "oa" / "streamout.il", binary=config["virtuoso"])),
+        ("streamout", _streamout_command(root, cell, base, config)),
     ):
         run = run_eda_command(EdaCommand(command.command, cwd=root, timeout_s=600.0))
         records.append(_run_record(name, run))
@@ -577,6 +612,22 @@ def _rerun_candidate(root: Path, iteration_dir: Path, skill: Path, cell: str, ba
         run = run_eda_command(EdaCommand(command.command, cwd=cwd, timeout_s=1800.0))
         records.append(_run_record(name, run))
     return records, tuple(parse_drc_report(drc_results)) if drc_results.is_file() else ("drc_report_missing",), tuple(parse_lvs_report(lvs_report)) if lvs_report.is_file() else ("lvs_report_missing",)
+
+
+def _streamout_command(root: Path, cell: str, base: ImportedPhysicalResult, config: Mapping[str, str]) -> EdaCommand:
+    return EdaCommand(
+        make_strmout_command(
+            lib=json.loads((root / "run_manifest.json").read_text(encoding="utf-8"))["cellview"]["lib"],
+            cell=cell,
+            output_path=base.gds_path,
+            binary=config["strmout"],
+            run_dir=root,
+            log_file=root / "signoff" / "streamout.log",
+            summary_file=root / "signoff" / "streamout.summary",
+        ).command,
+        cwd=root,
+        timeout_s=600.0,
+    )
 
 
 def _replace_directive(text: str, directive: str, value: str) -> str:
@@ -598,6 +649,11 @@ def _replace_bool_statement(text: str, statement: str, value: str) -> str:
     import re
     pattern = re.compile(rf"(?im)^(\s*{re.escape(statement)}\s+)(YES|NO)(\s*)$")
     return pattern.sub(rf"\g<1>{value}\g<3>", text, count=1)
+
+
+def _has_port_layer_text(text: str, layer: int) -> bool:
+    import re
+    return re.search(rf"(?im)^\s*PORT\s+LAYER\s+TEXT\s+{int(layer)}\s*(?://.*)?$", text) is not None
 
 
 def _load_oa_plan(path: str | Path) -> OaWritePlan:

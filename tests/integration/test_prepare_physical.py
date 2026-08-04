@@ -39,6 +39,8 @@ class PreparePhysicalIntegrationTest(unittest.TestCase):
                 text = Path(result.layout_skill_path).read_text(encoding="utf-8")
                 self.assertNotIn("drawn_primitive", text)
                 self.assertIn('ddCreateLib("BO_Designs")', text)
+                self.assertIn('techBindTechFile(libObj "tsmcN28")', text)
+                self.assertLess(text.index("techBindTechFile"), text.index("dbOpenCellViewByType"))
                 self.assertTrue(text.rstrip().endswith("exit()"))
                 streamout = Path(result.physical_root) / "oa" / "streamout.il"
                 self.assertTrue(streamout.read_text(encoding="utf-8").rstrip().endswith("exit()"))

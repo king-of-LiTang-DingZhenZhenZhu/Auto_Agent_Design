@@ -3,15 +3,17 @@
 ## Scope and current state
 
 - Branch: `feature/unified-physical-flow`
-- Inspected commit: `657a3b2 feat: complete requirements-to-signoff orchestration`
+- Base commit: `ffeebcf fix: stabilize physical signoff and separate PVT acceptance budget`
 - Host: `mn01`
 - EDA: Spectre 18.1, Virtuoso IC6.1.8, Calibre 2024.2
 - PDK root: `/share/home/chenhaonan/PDKS/TSMC28nm`
 - The electrical flow is operational through real BO, Design Audit, and PVT.
 - A two-stage OTA result has passed all 27 PVT corners when nominal and PVT
   budgets are supplied separately.
-- The physical flow currently stops in the first Virtuoso OA replay step.
-  GDS, DRC, and LVS have therefore not completed.
+- OA schematic/layout creation and non-interactive XStream Out have now run.
+- A real 108 KiB GDS and real Calibre DRC/LVS reports were produced.
+- The current physical blocker is the `two_stage_ota` adapter's invalid routing:
+  the in-memory precheck finds 82 cross-net shorts before OA/sign-off.
 
 ## 1. PDK installation was incomplete after the initial copy
 
@@ -48,7 +50,7 @@ supported Python/platform combination.
 
 ## 3. `models/spectre/toplevel.scs` only supports TT
 
-Status: fixed in the project PDK profile and local ignored `.env`.
+Status: fixed in the local PDK wrapper, project PDK profile, and ignored `.env`.
 
 The PDK `models/spectre/toplevel.scs` is a valid direct include for nominal
 simulation, but it defines only:
@@ -75,6 +77,17 @@ Directly selecting the lower-level `tt/ss/ff` sections in the large model
 file is also insufficient: those sections define BSIM models but do not make
 the `nch_mac/pch_mac` wrapper subcircuits available. The `*macro_mos_moscap`
 sections are required for the generated topology netlists.
+
+The first workaround configured the project profile to include that embedded
+usage file directly. The final local setup instead extends
+`models/spectre/toplevel.scs` with `top_ss`, `top_ff`, `top_fs`, and `top_sf`
+wrappers, all pointing to the existing 1.8 V embedded-usage model family. The
+profile now selects `top_tt/top_ss/top_ff`, so resistor, diode, MOM, and metal
+resistor corner models are loaded alongside MOS/MOSCAP models. The original
+TT-only wrapper is retained locally as `toplevel.scs.tt_only.bak`.
+
+Real SS and FF OTA DC/AC Spectre smoke tests both completed with zero errors
+after this change.
 
 `pdk_profiles.py --check-files` previously checked only that the model file
 existed. It now also checks that the configured nominal and process sections
@@ -199,7 +212,7 @@ run, so generated OA/GDS paths and replay commands are absolute.
 
 ## 12. Virtuoso `-nograph` cannot start its internal Xvnc on this host
 
-Status: code fix complete; requires verification on the physical host.
+Status: host startup workaround verified; interactive exit prompt remains open.
 
 With correct absolute paths, Virtuoso reaches its display startup. In
 `-nograph` mode it ignores the existing `DISPLAY` and tries internal displays
@@ -221,12 +234,12 @@ which connected without the previous display/font errors but did not exit on
 its own. The generated replay SKILL or batch wrapper likely needs an explicit
 successful exit call after saving/closing the OA cellview.
 
-No GDS has been produced yet, so Calibre DRC/LVS has not run.
-
 The batch command now supports `ANALOGSKILLS_VIRTUOSO_NOGRAPH=false` for an
 existing display, and generated OA/stream-out replay scripts explicitly call
-`exit()` after saving/closing. The server-side run still needs to confirm that
-display `:18` remains usable through GDS generation.
+`exit()` after saving/closing. Display `:18` works, but each OA process asks
+whether to save modified layer display data when `exit()` runs. Selecting
+`Cancel` exits successfully without writing a `display.drf`. This prompt still
+prevents unattended execution and must be suppressed in the batch environment.
 
 ## 13. Physical failure state loses the blocker detail
 
@@ -248,10 +261,11 @@ the top-level report is actionable.
 
 ## 14. Full test suite has pre-existing environment/version failures
 
-Status: fixed; the complete circuit-agent suite passes on the current branch.
+Status: partially fixed; one local-environment failure remains.
 
-The complete circuit-agent suite ran 197 tests and reported these additional
-failures:
+The latest complete circuit-agent suite ran 200 tests: 198 passed, one was
+skipped, and one failed because the ignored local `.env` `GMID_TABLE_PATH`
+overrode a temporary external profile's gm/Id table. Earlier runs also exposed:
 
 - Two StrongARM tests fail because NumPy 1.26 does not provide
   `np.trapezoid`; the project requirements allow versions where only
@@ -260,8 +274,79 @@ failures:
   `GMID_TABLE_PATH`, causing its temporary unit-profile gm/Id data to be
   ignored.
 
-Focused tests for PDK section validation, PVT patching, physical preparation,
-and structured export targets passed.
+The repository-root suite passes all 23 tests. Focused tests for PDK section
+validation, PVT patching, physical preparation, structured export targets,
+XStream command construction, and LVS port-layer generation passed.
+
+## 15. Virtuoso replay returned success without running XStream Out
+
+Status: fixed locally with focused regression coverage.
+
+The generated stream-out replay guarded every XStream call with `boundp`.
+In a plain Virtuoso replay session, `xstSetField` and `xstOutDoTranslate` were
+not loaded, so all export calls were silently skipped. Virtuoso returned zero,
+but no GDS was produced.
+
+The physical flow now calls the installed non-interactive `strmout` binary
+directly. On this host it exported the native PCells and generated top-level
+geometry with zero XStream errors. `ANALOGSKILLS_STRMOUT_BINARY` is documented
+and checked during preflight.
+
+## 16. Generated OA library was not bound to the PDK tech library
+
+Status: fixed locally with focused regression coverage.
+
+`write_oa_skill()` created `BO_Designs` but did not call `techBindTechFile`.
+PCell instances could be created from `tsmcN28`, while all generated M1/M2/CO,
+pin, and label geometry failed with `Invalid layer/purpose`. Virtuoso replay
+still returned zero, producing an incomplete 38 KiB GDS.
+
+Generated OA scripts now bind `BO_Designs` to `tsmcN28` before opening the
+cellview. The binding must be unconditional: an earlier empty/local tech file
+made `techGetTechFile(libObj)` truthy even though the library had no valid PDK
+layer-purpose pairs. After the fix, the OA log had no SKILL errors and XStream
+exported a 108 KiB GDS containing 50 paths and 1521 rectangles.
+
+## 17. LVS deck did not promote PDK text layers to ports
+
+Status: fixed locally; awaits rerun after routing is valid.
+
+The foundry deck attaches stream-out text datatypes 625-636 to conductors but
+does not declare them as `PORT LAYER TEXT`. Calibre therefore extracted zero
+layout ports even though six top-level labels were present. The generated deck
+now consumes `metadata.calibre.lvs.streamout_text_port_layers` and adds the
+missing port declarations. A focused deck-generation test covers all 12
+configured layers.
+
+## 18. Current two-stage OTA physical adapter generates cross-net shorts
+
+Status: open physical-adapter blocker; fail-closed precheck added locally.
+
+With valid OA tech binding, real Calibre reported 1277 DRC violations and 54
+LVS issues. The dominant DRC groups were 5 nm grid checks: `G.1:CO` 768,
+`G.1:M3i` 49, `G.1:M2i` 48, and `G.1:M4i` 32. LVS found all six labels on one
+extracted net, zero ports before the deck fix, and MOS/connectivity mismatches.
+
+The existing in-memory physical analyzer finds the root routing problem before
+OA: 82 cross-net shorts and zero open nets. Cumulative reconstruction showed:
+
+- device + generic interconnect: 23 shorts
+- after power rails: 30 shorts
+- after source/body drops: 61 shorts
+- after taps/wells/guard ring: 82 shorts
+
+The largest pair is VDD-VSS (37 short shapes). Terminal via landing boxes also
+overlap adjacent device terminals, and the power rail/drop geometry crosses on
+M1. This is not suitable for the bounded spacing ECO loop; terminal access,
+route-layer allocation, supply planning, and PCell parameter/grid presets need
+adapter-level repair.
+
+`run_signoff` now writes `signoff/physical_precheck.json` and stops before
+Virtuoso/Calibre when this check fails. The current actionable blocker is:
+
+```text
+physical connectivity precheck failed: 82 short(s), 0 open net(s)
+```
 
 ## Run evidence
 
@@ -284,24 +369,24 @@ and structured export targets passed.
 - 30-iteration nominal design with gain margin
 - Nominal: gain 45.9 dB, GBW 34.9 MHz, PM 67.6 degrees, power 139 uW,
   SR 36.6 MV/s, settling 19.3 ns
-- With separate PVT acceptance target gain >= 20 dB: 27/27 corners passed
+- Real PVT: 27/27 corners passed with the separate PVT acceptance budget
 - Worst PVT values included gain 39.1 dB, GBW 27.4 MHz, PM 62.9 degrees,
   power 140 uW, SR 34.3 MV/s, and settling 25.1 ns
-- Physical handoff, OA plans/SKILL, instance mapping, CDS library, and LVS CDL
-  were generated
-- Physical sign-off currently stops at `schematic_oa` due to the Virtuoso
-  batch/display/exit issue described above
+- Valid OA tech binding and XStream Out completed; GDS size 108 KiB
+- Diagnostic Calibre baseline: 1277 DRC violations, 54 LVS issues
+- Current fail-closed state: 82 precheck shorts, zero opens; Calibre is not
+  rerun until the adapter produces a short-free physical plan
 
 ## Recommended next actions
 
-1. Add an explicit Virtuoso runtime mode that uses an existing `DISPLAY` and
-   omits `-nograph`, while keeping `-nograph` as the default.
-2. Ensure every generated OA/stream-out replay script exits Virtuoso with a
-   success/failure status after closing databases.
-3. Add an integration test for relative `--project` paths and replay command
-   paths.
-4. Expose separate nominal budgets and `pvt_targets` in `run_full_flow.py` and
-   structured requirements.
-5. Propagate simulator errors and physical blockers into top-level reports.
-6. After Virtuoso batch completion, verify a non-empty GDS, then inspect real
-   Calibre DRC/LVS reports and bounded ECO behavior.
+1. Repair the two-stage OTA adapter's calibrated terminal access and via
+   landing geometry so the generic interconnect plan passes the short gate.
+2. Redesign VDD/VSS rail and source/body drops to use non-conflicting layers;
+   do not cross top/bottom M1 rails with opposite-net M1 drops.
+3. Constrain topology sizing/placement to PCell parameter and origin phases
+   that satisfy the foundry 5 nm stream grid.
+4. Suppress the `Save Display Information` prompt for unattended OA replay and
+   capture a per-stage Virtuoso log so SKILL errors cannot hide behind rc=0.
+5. Rerun the fixed plan through XStream, verify the generated port-layer deck,
+   then enable bounded ECO only after the precheck and initial LVS are sane.
+6. Isolate external-profile tests from the ignored local `.env` gm/Id override.

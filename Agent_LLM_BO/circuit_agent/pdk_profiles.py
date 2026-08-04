@@ -128,11 +128,8 @@ class PDKProfile:
 PDK_PROFILES: dict[str, PDKProfile] = {
     "tsmc28": PDKProfile(
         name="tsmc28",
-        spectre_model_path=(
-            "/PDKS/TSMC28nm/models/spectre/"
-            "cln28hpcp_1d8_elk_v1d0_2p2_shrink0d9_embedded_usage.scs"
-        ),
-        spectre_section="ttmacro_mos_moscap",
+        spectre_model_path="/PDKS/TSMC28nm/models/spectre/toplevel.scs",
+        spectre_section="top_tt",
         hspice_model_path="/PDKS/TSMC28nm/models/hspice/toplevel.l",
         hspice_section="TOP_TT",
         nmos_model="nch_mac",
@@ -140,9 +137,9 @@ PDK_PROFILES: dict[str, PDKProfile] = {
         nmos_lvt_model="nch_lvt_mac",
         pmos_lvt_model="pch_lvt_mac",
         process_sections={
-            "tt": "ttmacro_mos_moscap",
-            "ss": "ssmacro_mos_moscap",
-            "ff": "ffmacro_mos_moscap",
+            "tt": "top_tt",
+            "ss": "top_ss",
+            "ff": "top_ff",
         },
         vdd=0.9,
         vdd_min=0.9,

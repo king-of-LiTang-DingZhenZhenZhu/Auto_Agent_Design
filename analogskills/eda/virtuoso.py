@@ -49,6 +49,43 @@ def make_virtuoso_batch_command(skill_file: str | Path, *, binary: str = "virtuo
     return EdaCommand(command)
 
 
+def make_strmout_command(
+    *,
+    lib: str,
+    cell: str,
+    output_path: str | Path,
+    view: str = "layout",
+    binary: str = "strmout",
+    run_dir: str | Path | None = None,
+    layer_map: str | Path | None = None,
+    object_map: str | Path | None = None,
+    log_file: str | Path | None = None,
+    summary_file: str | Path | None = None,
+):
+    """Build a non-interactive XStream Out command for a GDS export."""
+
+    from .command import EdaCommand
+
+    command = [
+        binary,
+        "-library", str(lib),
+        "-strmFile", str(output_path),
+        "-topCell", str(cell),
+        "-view", str(view),
+    ]
+    if run_dir is not None:
+        command.extend(("-runDir", str(run_dir)))
+    if layer_map is not None:
+        command.extend(("-layerMap", str(layer_map)))
+    if object_map is not None:
+        command.extend(("-objectMap", str(object_map)))
+    if log_file is not None:
+        command.extend(("-logFile", str(log_file)))
+    if summary_file is not None:
+        command.extend(("-summaryFile", str(summary_file)))
+    return EdaCommand(command, cwd=run_dir)
+
+
 def _virtuoso_nograph_enabled() -> bool:
     value = os.environ.get("ANALOGSKILLS_VIRTUOSO_NOGRAPH", "true").strip().lower()
     if value in {"1", "true", "yes", "on"}:

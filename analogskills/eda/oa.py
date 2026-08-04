@@ -848,6 +848,7 @@ def write_oa_skill(
     rect_chunk_size: int = 0,
     rect_chunk_dir: str | Path | None = None,
     exit_after_write: bool = False,
+    tech_lib: str | None = None,
 ) -> Path:
     path = Path(path)
     if grid is not None:
@@ -873,10 +874,16 @@ def write_oa_skill(
             raise ValueError("OA write plan has LVS pin/label stamping issues: " + "; ".join(str(issue) for issue in report["issues"]))
     pdk_for_write = grid if isinstance(grid, PdkConfig) else None
     cv = plan.cellview
+    resolved_tech_lib = str(tech_lib or "")
+    if not resolved_tech_lib and pdk_for_write is not None:
+        resolved_tech_lib = pdk_for_write.pcell_template_for("nmos").lib_name
     lines = [
-        f'unless(ddGetObj("{cv.lib}") ddCreateLib("{cv.lib}"))',
-        f'cv = dbOpenCellViewByType("{cv.lib}" "{cv.cell}" "{cv.view}" "{cv.view_type}" "{cv.mode}")',
+        f'libObj = ddGetObj("{cv.lib}")',
+        f'unless(libObj libObj = ddCreateLib("{cv.lib}"))',
     ]
+    if resolved_tech_lib:
+        lines.append(f'when(libObj techBindTechFile(libObj "{resolved_tech_lib}"))')
+    lines.append(f'cv = dbOpenCellViewByType("{cv.lib}" "{cv.cell}" "{cv.view}" "{cv.view_type}" "{cv.mode}")')
     lines.append('unless(cv error("failed to open cellview"))')
     if replace_cellview:
         lines.extend(_clear_cellview_skill_lines())
