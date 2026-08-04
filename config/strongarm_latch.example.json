@@ -1,0 +1,26 @@
+{
+  "project_name": "strongarm_latch_full_flow",
+  "original_requirement": "Design a 0.9 V StrongARM latch comparator for a 10 mV differential input.",
+  "topology_name": "strongarm_latch",
+  "topology_hint": "StrongARM latch comparator",
+  "targets": {
+    "power_w": 0.0001
+  },
+  "custom_specs": {
+    "input_common_mode_v": 0.45,
+    "input_difference_v": 0.01,
+    "clock_period_s": 4e-9,
+    "load_cap_f": 5e-15
+  },
+  "metric_goals": {
+    "decision_positive_margin_v": {"constraint": "min", "target": 0.45},
+    "decision_negative_margin_v": {"constraint": "min", "target": 0.45},
+    "propagation_delay_positive_s": {"constraint": "max", "target": 1e-9},
+    "propagation_delay_negative_s": {"constraint": "max", "target": 1e-9},
+    "energy_per_decision_j": {
+      "constraint": "max",
+      "target": 2e-13,
+      "objective": "minimize"
+    }
+  }
+}

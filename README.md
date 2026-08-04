@@ -87,7 +87,7 @@ topology。
 
 ## 单仓库全流程
 
-`Auto_Agent_Design` 现在包含模拟设计前端和裁剪后的版图后端，服务器只需复制这一份仓库。版图后端不重新执行拓扑选择或 gm/Id/BO；`select_export_netlist()` 选出的 Review candidate 或 BO best 是唯一电气真值。
+`Auto_Agent_Design` 现在包含模拟设计前端和裁剪后的版图后端，服务器只需复制这一份仓库。统一入口会直接复用现有 Auto 前端完成需求解析、topology 选择、网表/testbench 生成、gm/Id/BO、Design Audit 和必要的自动 Review；版图后端不重新执行这些设计决策。`select_export_netlist()` 选出的 Review candidate 或 BO best 是唯一电气真值。
 
 首版物理实现支持当前 `two_stage_ota` 和当前 11 管 `strongarm_latch`。只有真实 27-corner PVT 合格结果才能进入版图；其它 topology 会明确返回 `physical_adapter_required`。
 
@@ -96,14 +96,18 @@ conda activate Auto_Agent_Design
 python -m pip install -r requirements/physical.txt
 
 python run_full_flow.py \
-  --project outputs/<project> \
+  --requirements config/two_stage_ota.example.json \
+  --project-name my_ota \
+  --max-iter 50 \
   --run-pvt --simulate \
   --run-signoff \
   --lib BO_Designs \
   --max-eco-iterations 5
 ```
 
-物理产物写入 `outputs/<project>/physical/`。只有真实 GDS、DRC clean 和 LVS correct 都具备时流程状态才是 `done`；缺少服务器工具、PDK/deck 或 sign-off 未收敛时保持 `physical_blocked`。
+也可用 `--request "..."` 输入自然语言需求；该模式严格调用现有 `LLMClient.parse_user_requirements()`，因此需要配置 `DEEPSEEK_API_KEY`。不希望调用 LLM 时使用结构化 `--requirements`。`--project Agent_LLM_BO/circuit_agent/outputs/<project>` 用于从已有 BO 项目恢复。
+
+物理产物写入 `Agent_LLM_BO/circuit_agent/outputs/<project>/physical/`。只有真实 GDS、DRC clean 和 LVS correct 都具备时流程状态才是 `done`；缺少服务器工具、PDK/deck 或 sign-off 未收敛时保持 `physical_blocked`。
 
 ## 快速开始
 

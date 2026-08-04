@@ -492,7 +492,13 @@ results.json gap
 ## 12. 单仓库物理实现
 
 ```text
-Review candidate 或 BO best
+用户自然语言或结构化 requirements
+  -> Auto 前端需求解析与 topology 选择
+  -> write_project() 生成 DUT/testbench/requirements
+  -> main.py 执行 gm/Id + Spectre + BO
+  -> Design Audit
+  -> 必要时 review_optimization.py 自动 Review，再回到 Audit gate
+  -> Review candidate 或 BO best
   -> 真实 PVT pass evidence
   -> ImportedDesignHandoff + final.cir 快照
   -> exact topology adapter
@@ -507,6 +513,7 @@ Review candidate 或 BO best
 ```
 
 - 唯一根目录是 `Auto_Agent_Design`，无需另一个 `analog_skills` checkout。
+- `run_full_flow.py --request/--requirements` 是从用户需求开始的统一入口；`--project` 只恢复已有 BO 输出。
 - 物理后端不调用设计意图、gm/Id、拓扑选择或 BO，不得替换前端网表连接。
 - 首版 adapter 固定支持当前 `two_stage_ota` 和 11 管 `strongarm_latch`。
 - StrongARM 的 `S1-S4` 按 PDK MOS model 和四端连接识别，不依赖实例名前缀。

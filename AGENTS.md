@@ -42,7 +42,7 @@ conda activate Auto_Agent_Design
 6. 读取 `results.json`：达标则执行 Design Audit，未达标则进入 `failure_repair`；Audit blocker 进入 `audit_repair`。
 7. nominal 与 Design Audit 合格后运行 PVT；parent gap 必要时回传并重分配 child targets。
 8. 只需要原理图时，nominal/PVT 合格后用 `export_to_virtuoso.py` 导出。
-9. 需要全流程时，从仓库根目录运行 `run_full_flow.py --run-signoff`，依次生成 handoff、OA schematic/layout、GDS，并执行 Calibre DRC/LVS 与有界 ECO。
+9. 需要全流程时，从仓库根目录用 `run_full_flow.py --requirements <json> --run-pvt --simulate --run-signoff`；统一入口必须先复用 Auto 前端完成需求解析、网表生成、BO、Audit/Review，再生成 handoff、OA schematic/layout、GDS 并执行 Calibre DRC/LVS 与有界 ECO。
 
 ## 单仓库物理流程
 
@@ -56,16 +56,17 @@ conda activate Auto_Agent_Design
 
 ```bash
 python run_full_flow.py \
-  --project outputs/<project> \
+  --requirements config/two_stage_ota.example.json \
+  --project-name my_ota \
   --run-pvt --simulate \
   --run-signoff \
   --lib BO_Designs \
   --max-eco-iterations 5
 ```
 
-物理产物统一位于 `outputs/<project>/physical/`。服务器安装和环境变量见根目录 `PHYSICAL_FLOW.md`。
+`--request` 会调用 Auto 前端现有的自然语言解析器并需要 `DEEPSEEK_API_KEY`；`--requirements` 走离线结构化输入。`--project Agent_LLM_BO/circuit_agent/outputs/<project>` 仅用于恢复已有项目。物理产物统一位于该项目的 `physical/`。服务器安装和环境变量见根目录 `PHYSICAL_FLOW.md`。
 
-`main.py` 不自动运行 Review/PVT。`design_flow_graph.py` 负责状态编排，不替代 BO，也不自动填写 `patch_plan.json`。
+`main.py` 单独使用时不自动运行 Review/PVT。统一入口会在状态机要求 Review 时调用现有 `review_optimization.py` 内置规则；`design_flow_graph.py` 继续负责资格状态，不替代 BO，也不自动填写 `patch_plan.json`。
 
 ## 指标策略
 
