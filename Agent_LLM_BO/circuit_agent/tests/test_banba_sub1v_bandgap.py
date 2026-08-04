@@ -83,6 +83,7 @@ class BanbaSub1VBandgapTest(unittest.TestCase):
             files.testbenches[0],
         )
         self.assertIn("startupTran tran stop=100u", files.testbenches[0])
+        self.assertNotIn("Xdut.vrs", files.testbenches[0])
         self.assertIn("psrrAC ac", files.testbenches[1])
         self.assertIn("tempSweep dc", files.testbenches[2])
         self.assertIn(

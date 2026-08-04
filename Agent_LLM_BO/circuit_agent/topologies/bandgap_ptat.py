@@ -19,6 +19,8 @@ from topologies.two_stage_ota import TwoStageOTA
 class BandgapPTAT(BaseTopology):
     """PNP bandgap core with a frozen two-stage OTA error amplifier."""
 
+    STARTUP_INTERNAL_SAVES = "save Xdut.vrs Xdut.sup Xdut.cmp_out"
+
     meta = TopologyMeta(
         name="bandgap_ptat",
         display_name="Bandgap/PTAT Reference",
@@ -35,10 +37,19 @@ class BandgapPTAT(BaseTopology):
     )
 
     DEFAULT_PARAMS: dict[str, float] = {
-        # NMOS startup path.
+        # Boni startup circuit III. Keep legacy keys as the external parameter
+        # API: large maps to MX (IX), small maps to MY (IY).
         "Wstart_small": 300e-9,
         "Wstart_large": 600e-9,
-        "Lstart_n": 30e-9,
+        "Lstart_n": 300e-9,
+        "Rstart_ref": 100e3,
+        "Rstart_bias": 100e3,
+        "Wstart_bias_p": 1e-6,
+        "Wstart_cmp_p": 1e-6,
+        "Wstart_cmp_n": 500e-9,
+        "Wstart_inv_p": 1e-6,
+        "Wstart_inv_n": 500e-9,
+        "Lstart_cmp": 300e-9,
         # PMOS bandgap mirrors and startup stack.
         "Wmirror_p": 6e-6,
         "Lmirror_p": 600e-9,
@@ -71,6 +82,14 @@ class BandgapPTAT(BaseTopology):
             Wstart_small=_fmt(p["Wstart_small"]),
             Wstart_large=_fmt(p["Wstart_large"]),
             Lstart_n=_fmt(p["Lstart_n"]),
+            Rstart_ref=_fmt(p["Rstart_ref"]),
+            Rstart_bias=_fmt(p["Rstart_bias"]),
+            Wstart_bias_p=_fmt(p["Wstart_bias_p"]),
+            Wstart_cmp_p=_fmt(p["Wstart_cmp_p"]),
+            Wstart_cmp_n=_fmt(p["Wstart_cmp_n"]),
+            Wstart_inv_p=_fmt(p["Wstart_inv_p"]),
+            Wstart_inv_n=_fmt(p["Wstart_inv_n"]),
+            Lstart_cmp=_fmt(p["Lstart_cmp"]),
             Wmirror_p=_fmt(p["Wmirror_p"]),
             Lmirror_p=_fmt(p["Lmirror_p"]),
             MREF_RATIO=int(round(p["MREF_RATIO"])),
@@ -111,6 +130,7 @@ class BandgapPTAT(BaseTopology):
             return _TB_STARTUP_TEMPLATE.format(
                 VDD=vdd,
                 CL=_fmt(cload),
+                STARTUP_INTERNAL_SAVES=self.STARTUP_INTERNAL_SAVES,
             )
         if analysis_type in ("temperature", "temp", "nonlinearity"):
             return _TB_TEMPERATURE_TEMPLATE.format(
@@ -206,7 +226,10 @@ class BandgapPTAT(BaseTopology):
         )
 
     def critical_operating_point_instances(self) -> set[str]:
-        return {"Xdut.M10", "Xdut.M11", "Xdut.M12"}
+        return {
+            "Xdut.M10", "Xdut.M11", "Xdut.M12",
+            "Xdut.MX", "Xdut.MY", "Xdut.MSUP_P", "Xdut.MSUP_N",
+        }
 
     def derive_opamp_targets(
         self,
@@ -270,7 +293,10 @@ simulator lang=spectre insensitive=yes
 
 {spectre_include}
 
-parameters Wstart_small={Wstart_small} Wstart_large={Wstart_large} Lstart_n={Lstart_n}
+parameters Wstart_y={Wstart_small} Wstart_x={Wstart_large} Lstart={Lstart_n}
+parameters Rstart_ref={Rstart_ref} Rstart_bias={Rstart_bias} Wstart_bias_p={Wstart_bias_p}
+parameters Wstart_cmp_p={Wstart_cmp_p} Wstart_cmp_n={Wstart_cmp_n} Lstart_cmp={Lstart_cmp}
+parameters Wstart_inv_p={Wstart_inv_p} Wstart_inv_n={Wstart_inv_n}
 parameters Wmirror_p={Wmirror_p} Lmirror_p={Lmirror_p} MREF_RATIO={MREF_RATIO}
 parameters Wstack_p={Wstack_p} Lstack_p={Lstack_p}
 parameters BJT_AREA_RATIO={BJT_AREA_RATIO} Iopbias={Iopbias} Cload={Cload}
@@ -282,9 +308,32 @@ subckt bandgap_ptat (vref vdd vss)
 IOPBIASsrc (vdd opibias) isource type=dc dc=Iopbias
 Xopamp (vinp vinn vg opibias vdd vss) two_stage_ota
 
-// NMOS startup path.
-M1 (vg net1 vss vss) {nmos_model} l=Lstart_n w=Wstart_small nf=1 m=1
-M0 (net1 vinp vss vss) {nmos_model} l=Lstart_n w=Wstart_large nf=2 m=1
+// Boni startup circuit III: IX > IY forces the core away from its zero-current
+// state. SUP rises after VREF exceeds the rough VRS threshold, switching both
+// PMOS injection devices off. MB is unnecessary because Iopbias is supplied
+// independently from the raw supply.
+MX (vinn sup vdd vdd) {pmos_model} l=Lstart w=Wstart_x nf=1 m=1
+MY (vinp sup vdd vdd) {pmos_model} l=Lstart w=Wstart_y nf=1 m=1
+
+// Raw-supply-derived mirror bias. It produces no startup current while VDD=0.
+MSTART_BIAS (start_bias start_bias vdd vdd) {pmos_model} l=Lstart_cmp w=Wstart_bias_p nf=1 m=1
+RSTART_BIAS (start_bias vss) resistor r=Rstart_bias
+
+// Rough diode-derived reference: VRS = 0.9R/(R+0.9R) * VBE.
+MSTART_VRS (vrs_diode start_bias vdd vdd) {pmos_model} l=Lstart_cmp w=Wstart_bias_p nf=1 m=1
+QRS (vss vss vrs_diode) {pnp_model} m=1
+RRS_TOP (vrs_diode vrs) resistor r=Rstart_ref
+RRS_BOTTOM (vrs vss) resistor r=0.9*Rstart_ref
+
+// Low-voltage VREF detector. When VREF < VRS, cmp_out is high and the
+// following inverter pulls SUP low. Once VREF > VRS, SUP is driven to VDD.
+MSTART_CMP (cmp_tail start_bias vdd vdd) {pmos_model} l=Lstart_cmp w=Wstart_bias_p nf=1 m=1
+MCMP_RS (cmp_left vrs cmp_tail vdd) {pmos_model} l=Lstart_cmp w=Wstart_cmp_p nf=1 m=1
+MCMP_REF (cmp_out vref cmp_tail vdd) {pmos_model} l=Lstart_cmp w=Wstart_cmp_p nf=1 m=1
+MCMP_NL (cmp_left cmp_left vss vss) {nmos_model} l=Lstart_cmp w=Wstart_cmp_n nf=1 m=1
+MCMP_NR (cmp_out cmp_left vss vss) {nmos_model} l=Lstart_cmp w=Wstart_cmp_n nf=1 m=1
+MSUP_P (sup cmp_out vdd vdd) {pmos_model} l=Lstart_cmp w=Wstart_inv_p nf=1 m=1
+MSUP_N (sup cmp_out vss vss) {nmos_model} l=Lstart_cmp w=Wstart_inv_n nf=1 m=1
 
 // PMOS bandgap mirrors and startup stack.
 M12 (vref vg vdd vdd) {pmos_model} l=Lmirror_p w=Wmirror_p nf=3 m=MREF_RATIO
@@ -336,6 +385,7 @@ outOpts options rawfmt=psfascii soft_bin=allmodels
 startupTran tran stop=10u maxstep=10n
 
 save vdd vout
+{STARTUP_INTERNAL_SAVES}
 save VDDsrc:p
 """
 

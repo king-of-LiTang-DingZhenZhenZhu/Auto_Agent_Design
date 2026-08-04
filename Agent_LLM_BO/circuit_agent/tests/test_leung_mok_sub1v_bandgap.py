@@ -96,6 +96,7 @@ class LeungMokSub1VBandgapTest(unittest.TestCase):
             files.testbench_suffixes,
             ["startup", "psrr", "temperature", "line"],
         )
+        self.assertNotIn("Xdut.vrs", files.testbenches[0])
         for testbench in files.testbenches:
             self.assertIn(
                 "Xdut (vout vdd vss) leung_mok_sub1v_bandgap",

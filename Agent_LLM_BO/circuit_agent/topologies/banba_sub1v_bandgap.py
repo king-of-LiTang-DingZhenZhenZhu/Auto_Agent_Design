@@ -17,6 +17,8 @@ from topologies.two_stage_ota import TwoStageOTA
 class BanbaSub1VBandgap(BandgapPTAT):
     """Current-mode low-voltage BGR from Banba et al., JSSC May 1999."""
 
+    STARTUP_INTERNAL_SAVES = ""
+
     meta = TopologyMeta(
         name="banba_sub1v_bandgap",
         display_name="Banba Sub-1-V CMOS Bandgap",

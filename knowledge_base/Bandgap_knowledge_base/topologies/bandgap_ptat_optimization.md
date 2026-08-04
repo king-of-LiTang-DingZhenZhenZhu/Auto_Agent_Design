@@ -47,6 +47,30 @@ In gm/Id mode, the PMOS mirror is sized with `gm/Id=12-18 V^-1` and
 lengths remain pass-through BO parameters. Startup devices, ratios, resistor
 widths, opamp bias, output load, and all child OTA parameters stay fixed.
 
+## Startup Circuit III
+
+The parent uses the autonomous startup strategy from Boni, JSSC 2002,
+Fig. 3 circuit III:
+
+- PMOS devices `MX` and `MY` inject current into the `vinn` (X, opamp minus)
+  and `vinp` (Y, opamp plus) core branches, respectively.
+- `Wstart_x > Wstart_y` enforces `IX > IY`, pushing the loop away from the
+  zero-current equilibrium even in the presence of opamp offset.
+- A resistor-self-biased PMOS mirror derives the detector currents from the
+  raw supply, so no startup current exists at `VDD=0`; `QRS` and the
+  `R / 0.9R` divider then generate a rough threshold `VRS`.
+- The PMOS-input detector compares `VREF` with `VRS`; its inverter drives
+  `SUP` low while `VREF < VRS` and drives `SUP` high after startup, switching
+  both injection devices off.
+- The frozen opamp is biased from the raw supply, so the optional paper device
+  `MB` is intentionally omitted.
+
+The startup transient saves `Xdut.vrs`, `Xdut.sup`, and `Xdut.cmp_out` so a
+failed run can distinguish threshold-generation, comparator-polarity, and
+injection-shutoff failures. Do not increase MX/MY blindly: excessive startup
+current strengthens the secondary feedback loop and may cause oscillation or a
+wrong stable operating point.
+
 ## First-Order Relations
 
 - `Vref ~= VBE + K*DeltaVBE`，其中 `K` 由具体拓扑的电阻/电流比例决定。

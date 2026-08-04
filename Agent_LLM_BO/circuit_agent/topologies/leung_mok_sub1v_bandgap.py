@@ -24,6 +24,8 @@ from topologies.base import ExecutableChildSpec, TopologyMeta
 class LeungMokSub1VBandgap(BandgapPTAT):
     """603-mV bandgap with no low-threshold MOS requirement."""
 
+    STARTUP_INTERNAL_SAVES = ""
+
     meta = TopologyMeta(
         name="leung_mok_sub1v_bandgap",
         display_name="Leung-Mok Sub-1-V Bandgap",
@@ -111,7 +113,11 @@ class LeungMokSub1VBandgap(BandgapPTAT):
             cload = params.get("CL", cload)
 
         if analysis_type in ("startup", "tran", "sr"):
-            rendered = _TB_STARTUP_TEMPLATE.format(VDD=vdd, CL=_fmt(cload))
+            rendered = _TB_STARTUP_TEMPLATE.format(
+                VDD=vdd,
+                CL=_fmt(cload),
+                STARTUP_INTERNAL_SAVES=self.STARTUP_INTERNAL_SAVES,
+            )
         elif analysis_type in ("temperature", "temp", "nonlinearity"):
             rendered = _TB_TEMPERATURE_TEMPLATE.format(
                 VDD=vdd,
