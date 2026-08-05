@@ -333,8 +333,13 @@ class HybridOptimizer:
 
         if op_status is not None:
             utility += op_status.penalty
-            if op_status.critical_linear_count:
-                violations.append(float(op_status.critical_linear_count))
+            if op_status.critical_linear_count or op_status.critical_unknown_count:
+                violations.append(
+                    float(
+                        op_status.critical_linear_count
+                        + op_status.critical_unknown_count
+                    )
+                )
 
         if violations:
             return -1000.0 - 1000.0 * max(violations) - 100.0 * sum(violations)
@@ -348,7 +353,8 @@ class HybridOptimizer:
         """Evaluate DC OP diagnostics if this run produced them."""
         dc_path = run_dir / "diagnostics" / "dc_operating_points.csv"
         if not dc_path.exists():
-            return None
+            if not critical_instances:
+                return None
         return evaluate_dc_operating_points(
             dc_path,
             critical_instances=critical_instances,
@@ -479,7 +485,7 @@ class HybridOptimizer:
         all_met, _ = targets.is_satisfied(result)
         if not (all_met and result.converged):
             return False
-        if op_status is not None and op_status.critical_linear_count > 0:
+        if op_status is not None and not op_status.passed:
             return False
         if targets.has_soft_objectives():
             return False

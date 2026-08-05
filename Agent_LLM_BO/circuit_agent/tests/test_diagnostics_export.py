@@ -60,6 +60,46 @@ class DiagnosticsExportTest(unittest.TestCase):
             self.assertIn("gm", mtail)
             self.assertIn("gds", mtail)
 
+    def test_uppercase_nan_keeps_operating_point_field_alignment(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            raw = root / "raw"
+            raw.mkdir()
+            (root / "circuit.cir").write_text(
+                "M1 (out in 0 0) nch w=1u l=100n\n",
+                encoding="utf-8",
+            )
+            (raw / "op1.info").write_text(
+                '\n'.join([
+                    '"bsim4" STRUCT(',
+                    '"id" FLOAT DOUBLE PROP(',
+                    '"vds" FLOAT DOUBLE PROP(',
+                    '"vdsat" FLOAT DOUBLE PROP(',
+                    '"capacitor" STRUCT(',
+                    'VALUE',
+                    '"Xdut.M1" "bsim4" (',
+                    ' NaN',
+                    ' 0.30',
+                    ' 0.20',
+                    ') PROP( "model" "nch"',
+                ]),
+                encoding="utf-8",
+            )
+
+            exported = export_diagnostics(
+                raw_dir=raw,
+                netlist_path=root / "circuit.cir",
+                out_dir=root / "diagnostics",
+            )
+
+            self.assertIn("dc_operating_points", exported)
+            with open(exported["dc_operating_points"], newline="", encoding="utf-8") as f:
+                rows = list(csv.DictReader(f))
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["id"].lower(), "nan")
+            self.assertEqual(float(rows[0]["vds"]), 0.30)
+            self.assertEqual(float(rows[0]["vdsat"]), 0.20)
+
     def test_writes_readable_diagnostics_summary_from_csvs(self):
         with tempfile.TemporaryDirectory() as tmp:
             diagnostics = Path(tmp)

@@ -33,7 +33,7 @@ def run_design_audit(
     results = json.loads(result_file.read_text(encoding="utf-8"))
     findings: list[AuditFinding] = []
 
-    findings.extend(_audit_operating_point(results))
+    findings.extend(_audit_operating_point(results, topology_name))
     findings.extend(_audit_power_opportunity(project_path, results))
 
     resolved_netlist = Path(netlist_path) if netlist_path else None
@@ -77,10 +77,28 @@ def run_design_audit(
     return report
 
 
-def _audit_operating_point(results: dict[str, Any]) -> list[AuditFinding]:
+def _audit_operating_point(
+    results: dict[str, Any], topology_name: str = ""
+) -> list[AuditFinding]:
     status = results.get("operating_point_status") or {}
+    required: set[str] = set()
+    if topology_name:
+        try:
+            required = get_topology(topology_name).critical_operating_point_instances()
+        except Exception:
+            pass
+    if required and not status:
+        return [
+            AuditFinding(
+                code="missing_critical_op_evidence",
+                severity="blocker",
+                message="Critical MOS operating-point evidence is missing.",
+                evidence={"required_instances": sorted(required)},
+            )
+        ]
     critical_linear = status.get("critical_linear") or []
     critical_near_edge = status.get("critical_near_edge") or []
+    critical_unknown = status.get("critical_unknown") or []
     min_margin = status.get("min_margin_v")
     findings: list[AuditFinding] = []
     if critical_linear:
@@ -99,6 +117,15 @@ def _audit_operating_point(results: dict[str, Any]) -> list[AuditFinding]:
                 severity="warning",
                 message="Critical MOS devices have limited saturation margin.",
                 evidence={"instances": critical_near_edge, "min_margin_v": min_margin},
+            )
+        )
+    if critical_unknown:
+        findings.append(
+            AuditFinding(
+                code="invalid_critical_op_evidence",
+                severity="blocker",
+                message="Critical MOS operating-point evidence is missing or invalid.",
+                evidence={"instances": critical_unknown},
             )
         )
     return findings

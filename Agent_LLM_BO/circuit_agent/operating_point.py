@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import math
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -47,6 +48,7 @@ class OperatingPointStatus:
 
     critical_linear: list[str] = field(default_factory=list)
     critical_near_edge: list[str] = field(default_factory=list)
+    critical_unknown: list[str] = field(default_factory=list)
     noncritical_linear: list[str] = field(default_factory=list)
     noncritical_near_edge: list[str] = field(default_factory=list)
     min_margin_v: float | None = None
@@ -63,6 +65,10 @@ class OperatingPointStatus:
         return len(self.critical_near_edge)
 
     @property
+    def critical_unknown_count(self) -> int:
+        return len(self.critical_unknown)
+
+    @property
     def linear_count(self) -> int:
         return len(self.critical_linear) + len(self.noncritical_linear)
 
@@ -72,12 +78,13 @@ class OperatingPointStatus:
 
     @property
     def passed(self) -> bool:
-        return self.critical_linear_count == 0
+        return self.critical_linear_count == 0 and self.critical_unknown_count == 0
 
     def to_dict(self, include_devices: bool = False) -> dict[str, object]:
         data: dict[str, object] = {
             "critical_linear_count": self.critical_linear_count,
             "critical_near_edge_count": self.critical_near_edge_count,
+            "critical_unknown_count": self.critical_unknown_count,
             "linear_count": self.linear_count,
             "near_edge_count": self.near_edge_count,
             "min_margin_v": self.min_margin_v,
@@ -85,6 +92,7 @@ class OperatingPointStatus:
             "penalty": self.penalty,
             "critical_linear": self.critical_linear,
             "critical_near_edge": self.critical_near_edge,
+            "critical_unknown": self.critical_unknown,
             "noncritical_linear": self.noncritical_linear,
             "noncritical_near_edge": self.noncritical_near_edge,
             "warnings": self.warnings,
@@ -100,6 +108,7 @@ class OperatingPointStatus:
             "Critical OP status:",
             f"  critical linear: {_join_or_none(self.critical_linear)}",
             f"  critical near_edge: {_join_or_none(self.critical_near_edge)}",
+            f"  critical unknown: {_join_or_none(self.critical_unknown)}",
             f"  noncritical linear: {_join_or_none(self.noncritical_linear)}",
             f"  noncritical near_edge: {_join_or_none(self.noncritical_near_edge)}",
             f"  min_margin: {_fmt_margin_mv(self.min_margin_v)}",
@@ -119,9 +128,12 @@ def evaluate_dc_operating_points(
 
     critical = set(critical_instances or set())
     status = OperatingPointStatus()
+    valid_critical: set[str] = set()
     path = Path(csv_path)
     if not path.exists():
         status.warnings.append(f"OP diagnostics not found: {path}")
+        status.critical_unknown = sorted(critical)
+        status.penalty = compute_op_penalty(status)
         return status
 
     with path.open(newline="", encoding="utf-8") as f:
@@ -151,6 +163,8 @@ def evaluate_dc_operating_points(
                 critical=is_critical,
             )
             status.devices.append(device)
+            if device.critical and margin is not None:
+                valid_critical.add(_leaf_instance_name(instance))
             if margin is not None:
                 if status.min_margin_v is None or margin < status.min_margin_v:
                     status.min_margin_v = margin
@@ -163,6 +177,12 @@ def evaluate_dc_operating_points(
             elif not device.critical and region == "near_edge":
                 status.noncritical_near_edge.append(instance)
 
+    status.critical_unknown = sorted(critical - valid_critical)
+    if status.critical_unknown:
+        status.warnings.append(
+            "Missing or invalid OP evidence for critical devices: "
+            + ", ".join(status.critical_unknown)
+        )
     status.penalty = compute_op_penalty(status)
     return status
 
@@ -173,6 +193,7 @@ def compute_op_penalty(status: OperatingPointStatus) -> float:
     return -(
         120.0 * status.critical_linear_count
         + 35.0 * status.critical_near_edge_count
+        + 120.0 * status.critical_unknown_count
     )
 
 
@@ -199,7 +220,8 @@ def _safe_float(value: object) -> float | None:
     if value in (None, ""):
         return None
     try:
-        return float(value)
+        parsed = float(value)
+        return parsed if math.isfinite(parsed) else None
     except (TypeError, ValueError):
         return None
 

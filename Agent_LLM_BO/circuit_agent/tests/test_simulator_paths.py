@@ -61,6 +61,30 @@ class SimulatorPathTests(unittest.TestCase):
             finally:
                 os.chdir(original_cwd)
 
+    def test_extra_testbench_uses_separate_raw_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            primary_raw = run_dir / "raw"
+            primary_raw.mkdir()
+            marker = primary_raw / "op1.info"
+            marker.write_text("primary", encoding="utf-8")
+            testbench = run_dir / "tb_1.scs"
+            testbench.write_text("simulator lang=spectre\n", encoding="utf-8")
+
+            simulator = Simulator(Settings(dry_run=False))
+            with patch("simulator.subprocess.run") as run_mock:
+                run_mock.return_value = SimpleNamespace(
+                    returncode=0,
+                    stdout="",
+                    stderr="",
+                )
+                success, _, _ = simulator.run_spectre(testbench, run_dir)
+
+            self.assertTrue(success)
+            self.assertTrue(marker.exists())
+            command = run_mock.call_args.args[0]
+            self.assertIn(str(run_dir / "raw_tb_1"), command)
+
 
 if __name__ == "__main__":
     unittest.main()

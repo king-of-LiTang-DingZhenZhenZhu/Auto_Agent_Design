@@ -115,8 +115,8 @@ class Simulator:
 
         timeout = timeout or self.config.spectre_timeout
         run_dir.mkdir(parents=True, exist_ok=True)
-        self._clear_previous_spectre_outputs(run_dir)
-        raw_dir = run_dir / "raw"
+        raw_dir = self._raw_dir_for_testbench(run_dir, netlist_path)
+        self._clear_previous_spectre_outputs(run_dir, raw_dir)
         log_path = run_dir / "sim.log"
 
         cmd = self.config.spectre_cmd_template.format(
@@ -222,15 +222,20 @@ class Simulator:
             testbench_content = testbench_path.read_text(
                 encoding="utf-8", errors="replace"
             )
-            psf_result = parse_psf_results(run_dir / "raw", testbench_content)
-            try:
-                export_diagnostics(
-                    raw_dir=run_dir / "raw",
-                    netlist_path=run_dir / "circuit.cir",
-                    out_dir=run_dir / "diagnostics",
-                )
-            except Exception as exc:
-                logger.warning("Diagnostics export failed: %s", exc)
+            raw_dir = self._raw_dir_for_testbench(run_dir, testbench_path)
+            psf_result = parse_psf_results(raw_dir, testbench_content)
+            # Only the primary testbench owns the persistent diagnostic
+            # evidence. Extra SR/settling runs use separate raw directories
+            # and must not replace its AC/DC operating-point snapshot.
+            if raw_dir == run_dir / "raw":
+                try:
+                    export_diagnostics(
+                        raw_dir=raw_dir,
+                        netlist_path=run_dir / "circuit.cir",
+                        out_dir=run_dir / "diagnostics",
+                    )
+                except Exception as exc:
+                    logger.warning("Diagnostics export failed: %s", exc)
             if psf_result is not None:
                 return psf_result
         except Exception as exc:
@@ -477,9 +482,16 @@ class Simulator:
         run_dir.mkdir(parents=True, exist_ok=True)
 
     @staticmethod
-    def _clear_previous_spectre_outputs(run_dir: Path) -> None:
+    def _raw_dir_for_testbench(run_dir: Path, testbench_path: Path) -> Path:
+        """Keep extra testbench PSF data separate from the primary evidence."""
+        match = re.fullmatch(r"tb_(\d+)", Path(testbench_path).stem)
+        if match:
+            return Path(run_dir) / f"raw_tb_{match.group(1)}"
+        return Path(run_dir) / "raw"
+
+    @staticmethod
+    def _clear_previous_spectre_outputs(run_dir: Path, raw_dir: Path) -> None:
         """Remove stale simulator outputs before one Spectre invocation."""
-        raw_dir = run_dir / "raw"
         if raw_dir.exists():
             shutil.rmtree(raw_dir, ignore_errors=True)
 

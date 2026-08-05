@@ -108,3 +108,35 @@ class DesignAuditTests(unittest.TestCase):
 
             self.assertEqual(report["status"], "pass")
             self.assertEqual(report["findings"], [])
+
+    def test_missing_op_evidence_blocks_only_topologies_with_critical_devices(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / "outputs" / "proj"
+            project.mkdir(parents=True)
+            netlist = project / "circuit.cir"
+            netlist.write_text(
+                "parameters W=10u L=1u\n"
+                "M1 (out in vss vss) nch w=W l=L nf=1\n",
+                encoding="utf-8",
+            )
+            results = project / "results.json"
+            results.write_text(
+                json.dumps({"all_targets_met": True}),
+                encoding="utf-8",
+            )
+
+            ota = run_design_audit(
+                project, results, netlist, topology_name="two_stage_ota"
+            )
+            comparator = run_design_audit(
+                project, results, netlist, topology_name="strongarm_latch"
+            )
+
+            self.assertTrue(any(
+                item["code"] == "missing_critical_op_evidence"
+                for item in ota["findings"]
+            ))
+            self.assertFalse(any(
+                item["code"] == "missing_critical_op_evidence"
+                for item in comparator["findings"]
+            ))

@@ -14,6 +14,8 @@ _MOS_RE = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 
+_NUMERIC_TOKEN = r"[+-]?(?:nan|inf(?:inity)?|(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)"
+
 
 def inject_diagnostic_saves(testbench: str, circuit_netlist: str) -> str:
     """Add explicit MOS D/G/S node saves to an AC testbench."""
@@ -290,7 +292,14 @@ def _export_operating_points(
     )
     for match in pattern.finditer(text):
         instance, values_text, model = match.groups()
-        values = [_to_float(v) for v in re.findall(r"^[ \t]*([+-]?(?:nan|inf|\d\S*))", values_text, re.MULTILINE)]
+        values = [
+            _to_float(value)
+            for value in re.findall(
+                rf"^[ \t]*({_NUMERIC_TOKEN})(?=\s|$)",
+                values_text,
+                re.IGNORECASE | re.MULTILINE,
+            )
+        ]
         if len(values) < len(fields):
             continue
         data = dict(zip(fields, values))
@@ -353,7 +362,9 @@ def _dc_node_voltages(dc_path: Path) -> dict[str, float]:
     values: dict[str, float] = {"0": 0.0, "vss": 0.0, "Xdut.vss": 0.0}
     text = dc_path.read_text(encoding="utf-8", errors="replace")
     for name, kind, value in re.findall(
-        r'"([^"]+)"\s+"([^"]+)"\s+([+-]?(?:nan|inf|\d\S*))', text
+        rf'"([^"]+)"\s+"([^"]+)"\s+({_NUMERIC_TOKEN})(?=\s|$)',
+        text,
+        re.IGNORECASE,
     ):
         if kind == "V":
             values[name] = _to_float(value)
@@ -374,9 +385,9 @@ def _node_voltage(values: dict[str, float], node: str) -> float | str:
 def _to_float(value: str) -> float:
     if value.lower() == "nan":
         return float("nan")
-    if value.lower() in ("inf", "+inf"):
+    if value.lower() in ("inf", "+inf", "infinity", "+infinity"):
         return float("inf")
-    if value.lower() == "-inf":
+    if value.lower() in ("-inf", "-infinity"):
         return float("-inf")
     return float(value)
 

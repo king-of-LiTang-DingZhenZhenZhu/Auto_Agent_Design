@@ -77,7 +77,10 @@ class OperatingPointEvaluatorTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = self._write_csv(
                 Path(tmp),
-                "Mbias,pch,0,0,0,0,0,1e-3,1e-5,0.6,0.12,0.4,0.20,10",
+                "\n".join([
+                    "Mcs,pch,0,0,0,0,0,1e-3,1e-5,0.6,0.35,0.4,0.20,10",
+                    "Mbias,pch,0,0,0,0,0,1e-3,1e-5,0.6,0.12,0.4,0.20,10",
+                ]),
             )
             status = evaluate_dc_operating_points(path, {"Mcs"})
 
@@ -85,6 +88,18 @@ class OperatingPointEvaluatorTest(unittest.TestCase):
             self.assertEqual(status.noncritical_linear, ["Mbias"])
             self.assertEqual(status.penalty, 0.0)
             self.assertTrue(status.passed)
+
+    def test_missing_or_nan_critical_evidence_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write_csv(
+                Path(tmp),
+                "Mcs,pch,0,0,0,0,0,1e-3,1e-5,0.6,NaN,0.4,0.20,10",
+            )
+            status = evaluate_dc_operating_points(path, {"Mcs", "Mdiff1"})
+
+            self.assertEqual(status.critical_unknown, ["Mcs", "Mdiff1"])
+            self.assertFalse(status.passed)
+            self.assertLess(status.penalty, 0.0)
 
 if __name__ == "__main__":
     unittest.main()
