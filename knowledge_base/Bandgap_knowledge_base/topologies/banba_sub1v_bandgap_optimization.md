@@ -22,8 +22,10 @@ Parent BO must not expand child transistor dimensions.
 - `R3dev` converts `DeltaVf=VT*ln(N)` to PTAT current.
 - `R4dev` converts the sum of CTAT and PTAT currents to `Vref`.
 - `C1dev` and `C2dev` reproduce the two stabilization capacitors in Fig. 5.
-- The paper's external `PONRST` is represented by `CstartDev`, `RstartDev`, and
-  `Mstart`, which create an internal power-on pulse and then turn fully off.
+- Startup follows Boni's circuit III instead of the paper's external `PONRST`:
+  `MX` injects the larger current into Va (X/opamp minus), `MY` injects the
+  smaller current into Vb (Y/opamp plus), and a VREF/VRS detector raises `SUP`
+  to switch both devices off after the correct bias point is established.
 
 First-order equations:
 
@@ -67,7 +69,8 @@ diagnostics identify them as the limiting factor.
 
 ## Diagnosis Order
 
-1. Confirm startup reaches the nonzero branch and `Mstart` is off at steady state.
+1. Confirm startup reaches the nonzero branch, `IX > IY`, and `SUP` rises near
+   VDD after `VREF > VRS`; MX/MY must be off at steady state.
 2. Confirm `P1/P2/P3` remain saturated at the minimum supply and hot corner.
 3. Confirm the NMOS-input child opamp supports 0.65-0.75 V common mode across
    temperature; child nominal qualification uses 0.70 V and parent PVT checks

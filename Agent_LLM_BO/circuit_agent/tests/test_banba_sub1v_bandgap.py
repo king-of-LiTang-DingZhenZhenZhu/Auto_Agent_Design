@@ -59,6 +59,17 @@ class BanbaSub1VBandgapTest(unittest.TestCase):
             "IOPBIASsrc (vdd opibias) isource type=dc dc=Iopbias",
             circuit,
         )
+        self.assertIn("MX (va sup vdd vdd)", circuit)
+        self.assertIn("MY (vb sup vdd vdd)", circuit)
+        self.assertIn("parameters Wstart_y=300n Wstart_x=600n", circuit)
+        self.assertIn("QRS (vss vss vrs_diode)", circuit)
+        self.assertIn("MCMP_RS (cmp_left vrs cmp_tail vdd)", circuit)
+        self.assertIn("MCMP_REF (cmp_out vref cmp_tail vdd)", circuit)
+        self.assertIn("MSUP_P (sup cmp_out vdd vdd)", circuit)
+        self.assertIn("MSUP_N (sup cmp_out vss vss)", circuit)
+        self.assertNotIn("CstartDev", circuit)
+        self.assertNotIn("RstartDev", circuit)
+        self.assertNotIn("Mstart (", circuit)
 
     def test_dedicated_bandgap_testbenches_use_new_subckt(self):
         topology = get_topology("banba_sub1v_bandgap")
@@ -83,7 +94,7 @@ class BanbaSub1VBandgapTest(unittest.TestCase):
             files.testbenches[0],
         )
         self.assertIn("startupTran tran stop=100u", files.testbenches[0])
-        self.assertNotIn("Xdut.vrs", files.testbenches[0])
+        self.assertIn("save Xdut.vrs Xdut.sup Xdut.cmp_out", files.testbenches[0])
         self.assertIn("psrrAC ac", files.testbenches[1])
         self.assertIn("tempSweep dc", files.testbenches[2])
         self.assertIn(

@@ -17,7 +17,7 @@ from topologies.two_stage_ota import TwoStageOTA
 class BanbaSub1VBandgap(BandgapPTAT):
     """Current-mode low-voltage BGR from Banba et al., JSSC May 1999."""
 
-    STARTUP_INTERNAL_SAVES = ""
+    STARTUP_INTERNAL_SAVES = "save Xdut.vrs Xdut.sup Xdut.cmp_out"
 
     meta = TopologyMeta(
         name="banba_sub1v_bandgap",
@@ -50,11 +50,18 @@ class BanbaSub1VBandgap(BandgapPTAT):
         # Fig. 5 loop capacitor and compensation for the frozen OTA macro.
         "C1": 2e-12,
         "C2": 20e-12,
-        # Autonomous equivalent of PONRST.
-        "Wstart_n": 1e-6,
-        "Lstart_n": 300e-9,
-        "Rstart": 5e6,
-        "Cstart": 1e-12,
+        # Boni circuit III: IX > IY plus VREF-detected automatic shutoff.
+        "Wstart_y": 300e-9,
+        "Wstart_x": 600e-9,
+        "Lstart": 300e-9,
+        "Rstart_ref": 100e3,
+        "Rstart_bias": 100e3,
+        "Wstart_bias_p": 1e-6,
+        "Wstart_cmp_p": 1e-6,
+        "Wstart_cmp_n": 500e-9,
+        "Wstart_inv_p": 1e-6,
+        "Wstart_inv_n": 500e-9,
+        "Lstart_cmp": 300e-9,
         "Cload": 100e-15,
     }
 
@@ -77,10 +84,17 @@ class BanbaSub1VBandgap(BandgapPTAT):
             Iopbias=_fmt(p["Iopbias"]),
             C1=_fmt(p["C1"]),
             C2=_fmt(p["C2"]),
-            Wstart_n=_fmt(p["Wstart_n"]),
-            Lstart_n=_fmt(p["Lstart_n"]),
-            Rstart=_fmt(p["Rstart"]),
-            Cstart=_fmt(p["Cstart"]),
+            Wstart_y=_fmt(p["Wstart_y"]),
+            Wstart_x=_fmt(p["Wstart_x"]),
+            Lstart=_fmt(p["Lstart"]),
+            Rstart_ref=_fmt(p["Rstart_ref"]),
+            Rstart_bias=_fmt(p["Rstart_bias"]),
+            Wstart_bias_p=_fmt(p["Wstart_bias_p"]),
+            Wstart_cmp_p=_fmt(p["Wstart_cmp_p"]),
+            Wstart_cmp_n=_fmt(p["Wstart_cmp_n"]),
+            Wstart_inv_p=_fmt(p["Wstart_inv_p"]),
+            Wstart_inv_n=_fmt(p["Wstart_inv_n"]),
+            Lstart_cmp=_fmt(p["Lstart_cmp"]),
             Cload=_fmt(p["Cload"]),
             opamp_netlist=opamp_netlist,
         )
@@ -139,7 +153,10 @@ class BanbaSub1VBandgap(BandgapPTAT):
         return ("nmos", "pmos", "nmos_lvt", "pmos_lvt", "pnp")
 
     def critical_operating_point_instances(self) -> set[str]:
-        return {"Xdut.P1", "Xdut.P2", "Xdut.P3"}
+        return {
+            "Xdut.P1", "Xdut.P2", "Xdut.P3",
+            "Xdut.MX", "Xdut.MY", "Xdut.MSUP_P", "Xdut.MSUP_N",
+        }
 
     def get_hierarchical_blocks(
         self,
@@ -225,8 +242,11 @@ simulator lang=spectre insensitive=yes
 parameters R12={R12} PTAT_WEIGHT={PTAT_WEIGHT} VREF_SCALE={VREF_SCALE}
 parameters R3=R12/PTAT_WEIGHT R4=R12*VREF_SCALE DIODE_AREA_RATIO={DIODE_AREA_RATIO}
 parameters Wmirror_p={Wmirror_p} Lmirror_p={Lmirror_p} Iopbias={Iopbias}
-parameters C1={C1} C2={C2} Wstart_n={Wstart_n} Lstart_n={Lstart_n}
-parameters Rstart={Rstart} Cstart={Cstart} Cload={Cload}
+parameters C1={C1} C2={C2} Cload={Cload}
+parameters Wstart_y={Wstart_y} Wstart_x={Wstart_x} Lstart={Lstart}
+parameters Rstart_ref={Rstart_ref} Rstart_bias={Rstart_bias} Wstart_bias_p={Wstart_bias_p}
+parameters Wstart_cmp_p={Wstart_cmp_p} Wstart_cmp_n={Wstart_cmp_n} Lstart_cmp={Lstart_cmp}
+parameters Wstart_inv_p={Wstart_inv_p} Wstart_inv_n={Wstart_inv_n}
 
 subckt banba_sub1v_bandgap (vref vdd vss)
 // NMOS-input error amplifier forces Va=Vb. Port order: vip vin vout ibias vdd vss.
@@ -246,12 +266,32 @@ R3dev (vb vdn) resistor r=R3
 QN (vss vss vdn) {pnp_model} m=DIODE_AREA_RATIO
 R4dev (vref vss) resistor r=R4
 
-// Fig. 5 stabilization and an autonomous RC pulse equivalent to PONRST.
+// Fig. 5 loop stabilization.
 C1dev (va vss) capacitor c=C1
 C2dev (vg vdd) capacitor c=C2
-CstartDev (nstart vdd) capacitor c=Cstart
-RstartDev (nstart vss) resistor r=Rstart
-Mstart (vg nstart vss vss) {nmos_lvt_model} l=Lstart_n w=Wstart_n nf=1 m=1
+
+// Boni circuit III. X is the opamp minus input (va), Y is its plus input
+// (vb), and IX > IY drives the core away from the zero-current equilibrium.
+MX (va sup vdd vdd) {pmos_lvt_model} l=Lstart w=Wstart_x nf=1 m=1
+MY (vb sup vdd vdd) {pmos_lvt_model} l=Lstart w=Wstart_y nf=1 m=1
+
+// Raw-supply-derived bias and rough VRS = 0.9R/(R+0.9R) * VBE reference.
+MSTART_BIAS (start_bias start_bias vdd vdd) {pmos_lvt_model} l=Lstart_cmp w=Wstart_bias_p nf=1 m=1
+RSTART_BIAS (start_bias vss) resistor r=Rstart_bias
+MSTART_VRS (vrs_diode start_bias vdd vdd) {pmos_lvt_model} l=Lstart_cmp w=Wstart_bias_p nf=1 m=1
+QRS (vss vss vrs_diode) {pnp_model} m=1
+RRS_TOP (vrs_diode vrs) resistor r=Rstart_ref
+RRS_BOTTOM (vrs vss) resistor r=0.9*Rstart_ref
+
+// VREF detector: SUP is low during startup and rises to VDD after VREF > VRS,
+// switching MX and MY off so they do not perturb the settled reference.
+MSTART_CMP (cmp_tail start_bias vdd vdd) {pmos_lvt_model} l=Lstart_cmp w=Wstart_bias_p nf=1 m=1
+MCMP_RS (cmp_left vrs cmp_tail vdd) {pmos_lvt_model} l=Lstart_cmp w=Wstart_cmp_p nf=1 m=1
+MCMP_REF (cmp_out vref cmp_tail vdd) {pmos_lvt_model} l=Lstart_cmp w=Wstart_cmp_p nf=1 m=1
+MCMP_NL (cmp_left cmp_left vss vss) {nmos_lvt_model} l=Lstart_cmp w=Wstart_cmp_n nf=1 m=1
+MCMP_NR (cmp_out cmp_left vss vss) {nmos_lvt_model} l=Lstart_cmp w=Wstart_cmp_n nf=1 m=1
+MSUP_P (sup cmp_out vdd vdd) {pmos_lvt_model} l=Lstart_cmp w=Wstart_inv_p nf=1 m=1
+MSUP_N (sup cmp_out vss vss) {nmos_lvt_model} l=Lstart_cmp w=Wstart_inv_n nf=1 m=1
 CloadDev (vref vss) capacitor c=Cload
 ends banba_sub1v_bandgap
 
