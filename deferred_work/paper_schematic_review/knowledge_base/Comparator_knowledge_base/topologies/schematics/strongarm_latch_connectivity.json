@@ -1,0 +1,225 @@
+{
+  "schema_version": 1,
+  "topology": "strongarm_latch",
+  "subckt": "strongarm_latch",
+  "ports": ["vip", "vin", "clk", "outp", "outn", "vdd", "vss"],
+  "paper": {
+    "title": "The StrongARM Latch: A Circuit for All Seasons",
+    "authors": "Behzad Razavi",
+    "figure": "Figure 1(b), modified StrongARM latch",
+    "pdf_page": 1
+  },
+  "polarity": {
+    "condition": "vip (Vin1) > vin (Vin2)",
+    "result": "outn (X) resolves low; outp (Y) resolves high"
+  },
+  "instances": [
+    {
+      "name": "M1",
+      "kind": "nmos",
+      "model_role": "nmos",
+      "role": "positive input device",
+      "alignment": "paper_core",
+      "terminals": [
+        {"pin": "d", "net": "p"},
+        {"pin": "g", "net": "vip"},
+        {"pin": "s", "net": "ntail"},
+        {"pin": "b", "net": "vss"}
+      ],
+      "hidden_pins": ["b"],
+      "layout": {"x": 620, "y": 590, "gate_side": "left", "label_dx": -92, "label_dy": -18}
+    },
+    {
+      "name": "M2",
+      "kind": "nmos",
+      "model_role": "nmos",
+      "role": "negative input device",
+      "alignment": "paper_core",
+      "terminals": [
+        {"pin": "d", "net": "q"},
+        {"pin": "g", "net": "vin"},
+        {"pin": "s", "net": "ntail"},
+        {"pin": "b", "net": "vss"}
+      ],
+      "hidden_pins": ["b"],
+      "layout": {"x": 780, "y": 590, "gate_side": "right", "label_dx": 52, "label_dy": -18}
+    },
+    {
+      "name": "M7",
+      "kind": "nmos",
+      "model_role": "nmos",
+      "role": "clocked tail switch",
+      "alignment": "paper_core",
+      "terminals": [
+        {"pin": "d", "net": "ntail"},
+        {"pin": "g", "net": "clk"},
+        {"pin": "s", "net": "vss"},
+        {"pin": "b", "net": "vss"}
+      ],
+      "hidden_pins": ["b"],
+      "layout": {"x": 700, "y": 710, "gate_side": "left", "label_dx": 50, "label_dy": 0},
+      "annotation": "evaluate when CLK is high"
+    },
+    {
+      "name": "M3",
+      "kind": "nmos",
+      "model_role": "nmos",
+      "role": "left cross-coupled NMOS",
+      "alignment": "paper_core",
+      "terminals": [
+        {"pin": "d", "net": "outn"},
+        {"pin": "g", "net": "outp"},
+        {"pin": "s", "net": "p"},
+        {"pin": "b", "net": "vss"}
+      ],
+      "hidden_pins": ["b"],
+      "layout": {"x": 620, "y": 450, "gate_side": "right", "label_dx": -88, "label_dy": -18}
+    },
+    {
+      "name": "M4",
+      "kind": "nmos",
+      "model_role": "nmos",
+      "role": "right cross-coupled NMOS",
+      "alignment": "paper_core",
+      "terminals": [
+        {"pin": "d", "net": "outp"},
+        {"pin": "g", "net": "outn"},
+        {"pin": "s", "net": "q"},
+        {"pin": "b", "net": "vss"}
+      ],
+      "hidden_pins": ["b"],
+      "layout": {"x": 780, "y": 450, "gate_side": "left", "label_dx": 95, "label_dy": -52}
+    },
+    {
+      "name": "M5",
+      "kind": "pmos",
+      "model_role": "pmos",
+      "role": "left cross-coupled PMOS",
+      "alignment": "paper_core",
+      "terminals": [
+        {"pin": "d", "net": "outn"},
+        {"pin": "g", "net": "outp"},
+        {"pin": "s", "net": "vdd"},
+        {"pin": "b", "net": "vdd"}
+      ],
+      "hidden_pins": ["b"],
+      "layout": {"x": 620, "y": 300, "gate_side": "right", "label_dx": -88, "label_dy": -18}
+    },
+    {
+      "name": "M6",
+      "kind": "pmos",
+      "model_role": "pmos",
+      "role": "right cross-coupled PMOS",
+      "alignment": "paper_core",
+      "terminals": [
+        {"pin": "d", "net": "outp"},
+        {"pin": "g", "net": "outn"},
+        {"pin": "s", "net": "vdd"},
+        {"pin": "b", "net": "vdd"}
+      ],
+      "hidden_pins": ["b"],
+      "layout": {"x": 780, "y": 300, "gate_side": "left", "label_dx": 95, "label_dy": -52}
+    },
+    {
+      "name": "S1",
+      "kind": "pmos",
+      "model_role": "pmos",
+      "role": "P-node precharge switch",
+      "alignment": "paper_core",
+      "terminals": [
+        {"pin": "d", "net": "p"},
+        {"pin": "g", "net": "clk"},
+        {"pin": "s", "net": "vdd"},
+        {"pin": "b", "net": "vdd"}
+      ],
+      "hidden_pins": ["b"],
+      "layout": {"x": 310, "y": 220, "gate_side": "left", "label_dx": -64, "label_dy": -45},
+      "annotation": "precharge P"
+    },
+    {
+      "name": "S2",
+      "kind": "pmos",
+      "model_role": "pmos",
+      "role": "Q-node precharge switch",
+      "alignment": "paper_core",
+      "terminals": [
+        {"pin": "d", "net": "q"},
+        {"pin": "g", "net": "clk"},
+        {"pin": "s", "net": "vdd"},
+        {"pin": "b", "net": "vdd"}
+      ],
+      "hidden_pins": ["b"],
+      "layout": {"x": 1090, "y": 220, "gate_side": "right", "label_dx": 50, "label_dy": -45},
+      "annotation": "precharge Q"
+    },
+    {
+      "name": "S3",
+      "kind": "pmos",
+      "model_role": "pmos",
+      "role": "X/outn precharge switch",
+      "alignment": "paper_core",
+      "terminals": [
+        {"pin": "d", "net": "outn"},
+        {"pin": "g", "net": "clk"},
+        {"pin": "s", "net": "vdd"},
+        {"pin": "b", "net": "vdd"}
+      ],
+      "hidden_pins": ["b"],
+      "layout": {"x": 500, "y": 220, "gate_side": "left", "label_dx": -64, "label_dy": -45},
+      "annotation": "precharge X"
+    },
+    {
+      "name": "S4",
+      "kind": "pmos",
+      "model_role": "pmos",
+      "role": "Y/outp precharge switch",
+      "alignment": "paper_core",
+      "terminals": [
+        {"pin": "d", "net": "outp"},
+        {"pin": "g", "net": "clk"},
+        {"pin": "s", "net": "vdd"},
+        {"pin": "b", "net": "vdd"}
+      ],
+      "hidden_pins": ["b"],
+      "layout": {"x": 900, "y": 220, "gate_side": "right", "label_dx": 50, "label_dy": -45},
+      "annotation": "precharge Y"
+    }
+  ],
+  "diagram": {
+    "width": 1400,
+    "height": 920,
+    "title": "Modified StrongARM latch - reviewed connectivity",
+    "subtitle": "Razavi Figure 1(b); SVG and netlist are checked against the same ordered-pin specification",
+    "description": "Transistor-level connectivity of the modified StrongARM latch with four PMOS precharge switches.",
+    "routes": [
+      {"net": "vdd", "paths": [[[220, 130], [1180, 130]]]},
+      {"net": "vss", "paths": [[[520, 780], [880, 780]]]},
+      {"net": "clk", "paths": [[[150, 105], [1250, 105]], [[150, 105], [150, 710]], [[150, 710], [662, 710]]]},
+      {"net": "vip", "paths": [[[300, 590], [582, 590]]]},
+      {"net": "vin", "paths": [[[818, 590], [1100, 590]]]},
+      {"net": "p", "paths": [[[310, 265], [310, 510], [620, 510], [620, 545]], [[620, 495], [620, 510]]]},
+      {"net": "q", "paths": [[[1090, 265], [1090, 510], [780, 510], [780, 545]], [[780, 495], [780, 510]]]},
+      {"net": "outn", "paths": [[[500, 265], [500, 375], [620, 375], [620, 405]], [[620, 345], [620, 375]], [[620, 375], [560, 375], [560, 320], [742, 320]], [[620, 375], [560, 375], [560, 470], [742, 470]]]},
+      {"net": "outp", "paths": [[[900, 265], [900, 375], [780, 375], [780, 405]], [[780, 345], [780, 375]], [[780, 375], [840, 375], [840, 280], [658, 280]], [[780, 375], [840, 375], [840, 430], [658, 430]]]},
+      {"net": "ntail", "paths": [[[620, 635], [620, 665], [780, 665], [780, 635]]]}
+    ],
+    "labels": [
+      {"text": "VDD", "x": 1190, "y": 135},
+      {"text": "VSS", "x": 890, "y": 785},
+      {"text": "CLK", "x": 104, "y": 111},
+      {"text": "VIP / Vin1", "x": 290, "y": 595, "anchor": "end"},
+      {"text": "VIN / Vin2", "x": 1110, "y": 595},
+      {"text": "P", "x": 326, "y": 500},
+      {"text": "Q", "x": 1074, "y": 500, "anchor": "end"},
+      {"text": "X = outn", "x": 510, "y": 365},
+      {"text": "Y = outp", "x": 890, "y": 365, "anchor": "end"},
+      {"text": "NTAIL", "x": 700, "y": 653, "anchor": "middle"}
+    ],
+    "legend_y": 830,
+    "notes": [
+      "CLK low precharges P, Q, X and Y to VDD; CLK high enables M1/M2/M7 regeneration.",
+      "For vip > vin, P discharges first, X/outn resolves low and Y/outp resolves high.",
+      "MOS body terminals are listed beside devices and are validated even when not drawn as separate wires."
+    ]
+  }
+}

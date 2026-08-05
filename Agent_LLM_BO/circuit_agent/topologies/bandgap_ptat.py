@@ -50,12 +50,10 @@ class BandgapPTAT(BaseTopology):
         "Wstart_inv_p": 1e-6,
         "Wstart_inv_n": 500e-9,
         "Lstart_cmp": 300e-9,
-        # PMOS bandgap mirrors and startup stack.
+        # PMOS bandgap mirrors.
         "Wmirror_p": 6e-6,
         "Lmirror_p": 600e-9,
         "MREF_RATIO": 4,
-        "Wstack_p": 100e-9,
-        "Lstack_p": 300e-9,
         # PNP area ratio and poly-resistor geometry.
         "BJT_AREA_RATIO": 8,
         "R0_SEG_L": 10e-6,
@@ -93,8 +91,6 @@ class BandgapPTAT(BaseTopology):
             Wmirror_p=_fmt(p["Wmirror_p"]),
             Lmirror_p=_fmt(p["Lmirror_p"]),
             MREF_RATIO=int(round(p["MREF_RATIO"])),
-            Wstack_p=_fmt(p["Wstack_p"]),
-            Lstack_p=_fmt(p["Lstack_p"]),
             Iopbias=_fmt(p["Iopbias"]),
             BJT_AREA_RATIO=int(round(p["BJT_AREA_RATIO"])),
             R0_SEG_L=_fmt(p["R0_SEG_L"]),
@@ -298,7 +294,6 @@ parameters Rstart_ref={Rstart_ref} Rstart_bias={Rstart_bias} Wstart_bias_p={Wsta
 parameters Wstart_cmp_p={Wstart_cmp_p} Wstart_cmp_n={Wstart_cmp_n} Lstart_cmp={Lstart_cmp}
 parameters Wstart_inv_p={Wstart_inv_p} Wstart_inv_n={Wstart_inv_n}
 parameters Wmirror_p={Wmirror_p} Lmirror_p={Lmirror_p} MREF_RATIO={MREF_RATIO}
-parameters Wstack_p={Wstack_p} Lstack_p={Lstack_p}
 parameters BJT_AREA_RATIO={BJT_AREA_RATIO} Iopbias={Iopbias} Cload={Cload}
 parameters R0_SEG_L={R0_SEG_L} R0_SEG_W={R0_SEG_W}
 parameters R1_SEG_L={R1_SEG_L} R1_SEG_W={R1_SEG_W}
@@ -335,17 +330,14 @@ MCMP_NR (cmp_out cmp_left vss vss) {nmos_model} l=Lstart_cmp w=Wstart_cmp_n nf=1
 MSUP_P (sup cmp_out vdd vdd) {pmos_model} l=Lstart_cmp w=Wstart_inv_p nf=1 m=1
 MSUP_N (sup cmp_out vss vss) {nmos_model} l=Lstart_cmp w=Wstart_inv_n nf=1 m=1
 
-// PMOS bandgap mirrors and startup stack.
+// PMOS bandgap mirrors.
 M12 (vref vg vdd vdd) {pmos_model} l=Lmirror_p w=Wmirror_p nf=3 m=MREF_RATIO
 M11 (vinp vg vdd vdd) {pmos_model} l=Lmirror_p w=Wmirror_p nf=3 m=1
 M10 (vinn vg vdd vdd) {pmos_model} l=Lmirror_p w=Wmirror_p nf=3 m=1
-M9 (net1 net1 net14 vdd) {pmos_model} l=Lstack_p w=Wstack_p nf=1 m=1
-M8 (net14 net14 net4 vdd) {pmos_model} l=Lstack_p w=Wstack_p nf=1 m=1
-M7 (net4 net4 net10 vdd) {pmos_model} l=Lstack_p w=Wstack_p nf=1 m=1
-M6 (net10 net10 vdd vdd) {pmos_model} l=Lstack_p w=Wstack_p nf=1 m=1
 
-// PNP pair with emitter-area ratio BJT_AREA_RATIO.
-Q1 (vinn vss vss) {pnp_model} m=1
+// PNP terminal order is (collector base emitter). Q1's emitter is vinn;
+// Q0's emitter is net15 and uses the larger area BJT_AREA_RATIO.
+Q1 (vss vss vinn) {pnp_model} m=1
 Q0 (vss vss net15) {pnp_model} m=BJT_AREA_RATIO
 
 // Four-section output resistor R1.

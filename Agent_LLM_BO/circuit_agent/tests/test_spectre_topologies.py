@@ -448,8 +448,15 @@ class SpectreTopologyTest(unittest.TestCase):
         self.assertLess(circuit.index("Wstart_y=300n"), circuit.index("Wstart_x=600n"))
         self.assertNotIn("M0 (net1 vinp vss vss)", circuit)
         self.assertNotIn("M1 (vg net1 vss vss)", circuit)
+        for obsolete in ("M6 (", "M7 (", "M8 (", "M9 (", "Wstack_p", "Lstack_p"):
+            self.assertNotIn(obsolete, circuit)
         self.assertIn("M12 (vref vg vdd vdd)", circuit)
-        self.assertIn(f"Q1 (vinn vss vss) {pdk.resolve_model('pnp')} m=1", circuit)
+        self.assertIn(f"Q1 (vss vss vinn) {pdk.resolve_model('pnp')} m=1", circuit)
+        self.assertIn(
+            f"Q0 (vss vss net15) {pdk.resolve_model('pnp')} m=BJT_AREA_RATIO",
+            circuit,
+        )
+        self.assertNotIn("Q1 (vinn vss vss)", circuit)
         self.assertIn(
             f"R1_4 (r1_3 vss) {pdk.resolve_model('resistor_poly')}",
             circuit,

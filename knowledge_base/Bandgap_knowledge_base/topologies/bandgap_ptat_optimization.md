@@ -73,6 +73,8 @@ wrong stable operating point.
 
 ## First-Order Relations
 
+- The PNP instance order is `(collector base emitter)`: unit-area `Q1` uses
+  emitter `vinn`, while area-scaled `Q0` uses emitter `net15` below `R0`.
 - `Vref ~= VBE + K*DeltaVBE`，其中 `K` 由具体拓扑的电阻/电流比例决定。
 - `DeltaVBE=(k*T/q)*ln(N)`，`N` 是 BJT current-density 或面积比例。
 - 一阶温漂抵消条件为 `dVBE/dT + K*(k/q)*ln(N) ~= 0`。

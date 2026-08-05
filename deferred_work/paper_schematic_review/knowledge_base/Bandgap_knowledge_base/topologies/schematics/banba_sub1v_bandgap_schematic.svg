@@ -1,0 +1,246 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1040" viewBox="0 0 1600 1040" role="img" aria-labelledby="title description">
+<title id="title">Banba sub-1-V bandgap - implementation connectivity review</title>
+<desc id="description">Current-summing Banba bandgap core, frozen error amplifier macro, compensation and autonomous startup network.</desc>
+<style>
+text{font-family:Arial,Helvetica,sans-serif;fill:#17212b}
+.title{font-size:28px;font-weight:700}.subtitle{font-size:15px;fill:#52606d}
+.wire{fill:none;stroke:#263238;stroke-width:2.2;stroke-linejoin:round}
+.connector{fill:none;stroke:#455a64;stroke-width:1.6;stroke-linejoin:round}
+.device{fill:#fff;stroke:#17212b;stroke-width:2}
+.adaptation{fill:#fff8e8;stroke:#b45309;stroke-width:2;stroke-dasharray:7 5}
+.mos-channel{stroke-width:4;stroke-linecap:butt}.mos-gate{stroke-width:2.4}
+.mos-pin{font-size:10px;font-weight:700;fill:#52606d}
+.device-label{font-size:15px;font-weight:700}.annotation{font-size:12px;fill:#52606d}
+.net-label{font-size:14px;font-weight:700;fill:#0f4c5c}
+.pin-label{font-size:11px;fill:#52606d}.junction{fill:#263238}
+.note{font-size:13px;fill:#3f4d5a}.legend{font-size:12px;fill:#52606d}
+</style>
+<rect x="0" y="0" width="1600" height="1040" fill="#ffffff"/>
+<text class="title" x="48" y="46">Banba sub-1-V bandgap - implementation connectivity review</text>
+<text class="subtitle" x="48" y="72">Paper Figure 2 core + Figure 5 stabilization; dashed devices are explicit implementation adaptations</text>
+<polyline class="wire" points="80,125 1510,125"/>
+<circle class="junction" cx="80" cy="125" r="3"/>
+<circle class="junction" cx="1510" cy="125" r="3"/>
+<polyline class="wire" points="250,810 1510,810"/>
+<circle class="junction" cx="250" cy="810" r="3"/>
+<circle class="junction" cx="1510" cy="810" r="3"/>
+<polyline class="wire" points="322,400 340,400 340,330 1340,330"/>
+<circle class="junction" cx="322" cy="400" r="3"/>
+<circle class="junction" cx="340" cy="400" r="3"/>
+<circle class="junction" cx="340" cy="330" r="3"/>
+<circle class="junction" cx="1340" cy="330" r="3"/>
+<polyline class="wire" points="1080,330 1080,665"/>
+<circle class="junction" cx="1080" cy="330" r="3"/>
+<circle class="junction" cx="1080" cy="665" r="3"/>
+<polyline class="wire" points="480,265 480,455"/>
+<circle class="junction" cx="480" cy="265" r="3"/>
+<circle class="junction" cx="480" cy="455" r="3"/>
+<polyline class="wire" points="198,382 300,382 300,455 650,455"/>
+<circle class="junction" cx="198" cy="382" r="3"/>
+<circle class="junction" cx="300" cy="382" r="3"/>
+<circle class="junction" cx="300" cy="455" r="3"/>
+<circle class="junction" cx="650" cy="455" r="3"/>
+<polyline class="wire" points="850,265 850,455"/>
+<circle class="junction" cx="850" cy="265" r="3"/>
+<circle class="junction" cx="850" cy="455" r="3"/>
+<polyline class="wire" points="198,418 320,418 320,430 960,430 960,475"/>
+<circle class="junction" cx="198" cy="418" r="3"/>
+<circle class="junction" cx="320" cy="418" r="3"/>
+<circle class="junction" cx="320" cy="430" r="3"/>
+<circle class="junction" cx="960" cy="430" r="3"/>
+<circle class="junction" cx="960" cy="475" r="3"/>
+<polyline class="wire" points="1250,265 1250,455"/>
+<circle class="junction" cx="1250" cy="265" r="3"/>
+<circle class="junction" cx="1250" cy="455" r="3"/>
+<polyline class="wire" points="1250,455 1410,455"/>
+<circle class="junction" cx="1250" cy="455" r="3"/>
+<circle class="junction" cx="1410" cy="455" r="3"/>
+<polyline class="wire" points="760,545 760,575"/>
+<circle class="junction" cx="760" cy="545" r="3"/>
+<circle class="junction" cx="760" cy="575" r="3"/>
+<polyline class="wire" points="160,275 160,500 290,500 290,448"/>
+<circle class="junction" cx="160" cy="275" r="3"/>
+<circle class="junction" cx="160" cy="500" r="3"/>
+<circle class="junction" cx="290" cy="500" r="3"/>
+<circle class="junction" cx="290" cy="448" r="3"/>
+<polyline class="wire" points="1170,395 1170,710"/>
+<circle class="junction" cx="1170" cy="395" r="3"/>
+<circle class="junction" cx="1170" cy="710" r="3"/>
+<polyline class="wire" points="1118,710 1170,710"/>
+<circle class="junction" cx="1118" cy="710" r="3"/>
+<circle class="junction" cx="1170" cy="710" r="3"/>
+<polyline class="connector" points="160,185 160,125"/>
+<polyline class="connector" points="160,275 160,275"/>
+<polyline class="connector" points="198,418 198,418"/>
+<polyline class="connector" points="198,382 198,382"/>
+<polyline class="connector" points="322,400 322,400"/>
+<polyline class="connector" points="290,448 290,448"/>
+<polyline class="connector" points="260,352 260,125"/>
+<polyline class="connector" points="260,448 260,810"/>
+<polyline class="connector" points="480,265 480,265"/>
+<polyline class="connector" points="442,220 442,330"/>
+<polyline class="connector" points="480,175 480,125"/>
+<polyline class="connector" points="850,265 850,265"/>
+<polyline class="connector" points="812,220 812,330"/>
+<polyline class="connector" points="850,175 850,125"/>
+<polyline class="connector" points="1250,265 1250,265"/>
+<polyline class="connector" points="1212,220 1212,330"/>
+<polyline class="connector" points="1250,175 1250,125"/>
+<polyline class="connector" points="360,475 360,455"/>
+<polyline class="connector" points="360,565 360,810"/>
+<polyline class="connector" points="520,565 520,810"/>
+<polyline class="connector" points="520,475 520,455"/>
+<polyline class="connector" points="650,475 650,455"/>
+<polyline class="connector" points="650,565 650,810"/>
+<polyline class="connector" points="960,475 960,475"/>
+<polyline class="connector" points="960,565 960,810"/>
+<polyline class="connector" points="760,455 760,430"/>
+<polyline class="connector" points="760,545 760,545"/>
+<polyline class="connector" points="760,665 760,810"/>
+<polyline class="connector" points="760,575 760,575"/>
+<polyline class="connector" points="1250,475 1250,455"/>
+<polyline class="connector" points="1250,565 1250,810"/>
+<polyline class="connector" points="1040,275 1040,330"/>
+<polyline class="connector" points="1040,185 1040,125"/>
+<polyline class="connector" points="1170,395 1170,395"/>
+<polyline class="connector" points="1170,305 1170,125"/>
+<polyline class="connector" points="1170,565 1170,565"/>
+<polyline class="connector" points="1170,655 1170,810"/>
+<polyline class="connector" points="1080,665 1080,665"/>
+<polyline class="connector" points="1118,710 1118,710"/>
+<polyline class="connector" points="1080,755 1080,810"/>
+<polyline class="connector" points="1410,475 1410,455"/>
+<polyline class="connector" points="1410,565 1410,810"/>
+<line class="adaptation" x1="160" y1="185" x2="160" y2="206"/>
+<circle class="adaptation" cx="160" cy="230" r="24"/>
+<line class="adaptation" x1="160" y1="254" x2="160" y2="275"/>
+<path class="adaptation" d="M 160 243 L 160 217 M 154 225 L 160 217 L 166 225"/>
+<text class="device-label" x="78" y="196">IOPBIASsrc</text>
+<text class="annotation" x="78" y="213">Iopbias = 2.2 uA</text>
+<path class="adaptation" d="M 210 360 L 210 440 L 315 400 Z"/>
+<text class="pin-label" x="217" y="386">-</text>
+<text class="pin-label" x="217" y="423">+</text>
+<text class="device-label" x="205" y="342">Xopamp</text>
+<text class="annotation" x="205" y="359">NMOS-input two_stage_ota</text>
+<line class="device" x1="480" y1="175" x2="480" y2="198"/>
+<line class="device mos-channel" x1="480" y1="198" x2="480" y2="242"/>
+<line class="device" x1="480" y1="242" x2="480" y2="265"/>
+<line class="device mos-gate" x1="462" y1="195" x2="462" y2="245"/>
+<text class="mos-pin" x="492" y="193" text-anchor="start">S</text>
+<text class="mos-pin" x="492" y="256" text-anchor="start">D</text>
+<text class="mos-pin" x="436" y="215" text-anchor="end">G</text>
+<line class="device" x1="442" y1="220" x2="451" y2="220"/>
+<circle cx="456" cy="220" r="5" class="device"/>
+<line class="device" x1="461" y1="220" x2="462" y2="220"/>
+<text class="device-label" x="410" y="202">P1</text>
+<text class="annotation" x="410" y="219">I1</text>
+<text class="pin-label" x="410" y="236">B=vdd</text>
+<line class="device" x1="850" y1="175" x2="850" y2="198"/>
+<line class="device mos-channel" x1="850" y1="198" x2="850" y2="242"/>
+<line class="device" x1="850" y1="242" x2="850" y2="265"/>
+<line class="device mos-gate" x1="832" y1="195" x2="832" y2="245"/>
+<text class="mos-pin" x="862" y="193" text-anchor="start">S</text>
+<text class="mos-pin" x="862" y="256" text-anchor="start">D</text>
+<text class="mos-pin" x="806" y="215" text-anchor="end">G</text>
+<line class="device" x1="812" y1="220" x2="821" y2="220"/>
+<circle cx="826" cy="220" r="5" class="device"/>
+<line class="device" x1="831" y1="220" x2="832" y2="220"/>
+<text class="device-label" x="780" y="202">P2</text>
+<text class="annotation" x="780" y="219">I2</text>
+<text class="pin-label" x="780" y="236">B=vdd</text>
+<line class="device" x1="1250" y1="175" x2="1250" y2="198"/>
+<line class="device mos-channel" x1="1250" y1="198" x2="1250" y2="242"/>
+<line class="device" x1="1250" y1="242" x2="1250" y2="265"/>
+<line class="device mos-gate" x1="1232" y1="195" x2="1232" y2="245"/>
+<text class="mos-pin" x="1262" y="193" text-anchor="start">S</text>
+<text class="mos-pin" x="1262" y="256" text-anchor="start">D</text>
+<text class="mos-pin" x="1206" y="215" text-anchor="end">G</text>
+<line class="device" x1="1212" y1="220" x2="1221" y2="220"/>
+<circle cx="1226" cy="220" r="5" class="device"/>
+<line class="device" x1="1231" y1="220" x2="1232" y2="220"/>
+<text class="device-label" x="1180" y="202">P3</text>
+<text class="annotation" x="1180" y="219">I3</text>
+<text class="pin-label" x="1180" y="236">B=vdd</text>
+<polyline class="device" points="360,475 360,490 350,498 370,508 350,518 370,528 350,538 360,548 360,565"/>
+<text class="device-label" x="286" y="516">R1dev</text>
+<text class="annotation" x="286" y="533">R1 = R12</text>
+<line class="device" x1="520" y1="475" x2="520" y2="495"/>
+<circle class="device" cx="520" cy="520" r="25"/>
+<path class="device" d="M 509 511 L 531 520 L 509 529 Z"/>
+<line class="device" x1="508" y1="532" x2="532" y2="532"/>
+<line class="device" x1="520" y1="545" x2="520" y2="565"/>
+<text class="device-label" x="562" y="516">Q1</text>
+<text class="annotation" x="562" y="533">m = 1</text>
+<text class="pin-label" x="562" y="550">B=vss</text>
+<line class="device" x1="650" y1="475" x2="650" y2="513"/>
+<line class="device" x1="632" y1="513" x2="668" y2="513"/>
+<line class="device" x1="632" y1="527" x2="668" y2="527"/>
+<line class="device" x1="650" y1="527" x2="650" y2="565"/>
+<text class="device-label" x="684" y="516">C1dev</text>
+<text class="annotation" x="684" y="533">C1</text>
+<polyline class="device" points="960,475 960,490 950,498 970,508 950,518 970,528 950,538 960,548 960,565"/>
+<text class="device-label" x="996" y="516">R2dev</text>
+<text class="annotation" x="996" y="533">R2 = R12</text>
+<polyline class="device" points="760,455 760,470 750,478 770,488 750,498 770,508 750,518 760,528 760,545"/>
+<text class="device-label" x="730" y="404">R3dev</text>
+<text class="annotation" x="730" y="421">R3 = R12/PTAT_WEIGHT</text>
+<line class="device" x1="760" y1="575" x2="760" y2="595"/>
+<circle class="device" cx="760" cy="620" r="25"/>
+<path class="device" d="M 749 611 L 771 620 L 749 629 Z"/>
+<line class="device" x1="748" y1="632" x2="772" y2="632"/>
+<line class="device" x1="760" y1="645" x2="760" y2="665"/>
+<text class="device-label" x="682" y="620">QN</text>
+<text class="annotation" x="682" y="637">m = N = 8</text>
+<text class="pin-label" x="682" y="654">B=vss</text>
+<polyline class="device" points="1250,475 1250,490 1240,498 1260,508 1240,518 1260,528 1240,538 1250,548 1250,565"/>
+<text class="device-label" x="1300" y="410">R4dev</text>
+<text class="annotation" x="1300" y="427">R4 = R12*VREF_SCALE</text>
+<line class="device" x1="1040" y1="185" x2="1040" y2="223"/>
+<line class="device" x1="1022" y1="223" x2="1058" y2="223"/>
+<line class="device" x1="1022" y1="237" x2="1058" y2="237"/>
+<line class="device" x1="1040" y1="237" x2="1040" y2="275"/>
+<text class="device-label" x="1074" y="226">C2dev</text>
+<text class="annotation" x="1074" y="243">C2</text>
+<line class="adaptation" x1="1170" y1="305" x2="1170" y2="343"/>
+<line class="adaptation" x1="1152" y1="343" x2="1188" y2="343"/>
+<line class="adaptation" x1="1152" y1="357" x2="1188" y2="357"/>
+<line class="adaptation" x1="1170" y1="357" x2="1170" y2="395"/>
+<text class="device-label" x="1204" y="346">CstartDev</text>
+<text class="annotation" x="1204" y="363">autonomous startup</text>
+<polyline class="adaptation" points="1170,565 1170,580 1160,588 1180,598 1160,608 1180,618 1160,628 1170,638 1170,655"/>
+<text class="device-label" x="1208" y="606">RstartDev</text>
+<text class="annotation" x="1208" y="623">Rstart</text>
+<line class="adaptation" x1="1080" y1="665" x2="1080" y2="688"/>
+<line class="adaptation mos-channel" x1="1080" y1="688" x2="1080" y2="732"/>
+<line class="adaptation" x1="1080" y1="732" x2="1080" y2="755"/>
+<line class="adaptation mos-gate" x1="1098" y1="685" x2="1098" y2="735"/>
+<text class="mos-pin" x="1068" y="683" text-anchor="end">D</text>
+<text class="mos-pin" x="1068" y="746" text-anchor="end">S</text>
+<text class="mos-pin" x="1124" y="705" text-anchor="start">G</text>
+<line class="adaptation" x1="1118" y1="710" x2="1098" y2="710"/>
+<text class="device-label" x="976" y="714">Mstart</text>
+<text class="annotation" x="976" y="731">replaces PONRST</text>
+<text class="pin-label" x="976" y="748">B=vss</text>
+<line class="adaptation" x1="1410" y1="475" x2="1410" y2="513"/>
+<line class="adaptation" x1="1392" y1="513" x2="1428" y2="513"/>
+<line class="adaptation" x1="1392" y1="527" x2="1428" y2="527"/>
+<line class="adaptation" x1="1410" y1="527" x2="1410" y2="565"/>
+<text class="device-label" x="1444" y="516">CloadDev</text>
+<text class="annotation" x="1444" y="533">Cload</text>
+<text class="net-label" x="1520" y="130" text-anchor="start">VDD</text>
+<text class="net-label" x="1520" y="815" text-anchor="start">VSS</text>
+<text class="net-label" x="350" y="323" text-anchor="start">VG</text>
+<text class="net-label" x="490" y="286" text-anchor="start">Va</text>
+<text class="net-label" x="860" y="286" text-anchor="start">Vb</text>
+<text class="net-label" x="1260" y="286" text-anchor="start">VREF</text>
+<text class="net-label" x="770" y="566" text-anchor="start">VDN</text>
+<text class="net-label" x="170" y="490" text-anchor="start">OPIBIAS</text>
+<text class="net-label" x="1180" y="525" text-anchor="start">NSTART</text>
+<line x1="48" y1="865" x2="88" y2="865" class="wire"/>
+<text class="legend" x="98" y="869">paper-aligned device/path</text>
+<rect x="300" y="852" width="40" height="22" class="adaptation"/>
+<text class="legend" x="350" y="869">implementation adaptation</text>
+<text class="note" x="48" y="897">1. Solid paths reproduce the Figure 2 current-summing core: Va=Vb, P1=P2=P3 and R1=R2.</text>
+<text class="note" x="48" y="917">2. N=8 gives PTAT_WEIGHT=11.1612 and VREF_SCALE=0.412 in the current default, not the Figure 5 N=100 resistor set.</text>
+<text class="note" x="48" y="937">3. Xopamp and the autonomous startup network must be reviewed as implementation choices, not as transistor-exact paper replicas.</text>
+</svg>
