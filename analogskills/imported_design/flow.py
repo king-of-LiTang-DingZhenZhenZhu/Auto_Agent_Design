@@ -33,10 +33,12 @@ from analogskills.eda.oa import (
     write_oa_skill,
 )
 from analogskills.eda.reports import parse_drc_report, parse_lvs_report
+from analogskills.eda.skill_server import VirtuosoSkillClient, run_skill_file
 from analogskills.eda.virtuoso import (
     build_layout_streamout_plan,
     make_strmout_command,
     make_virtuoso_batch_command,
+    write_virtuoso_session_skill,
 )
 from analogskills.layout.placement import Placement
 from analogskills.layout.min_router import StrapRouterConfig, build_strap_interconnect_result
@@ -252,14 +254,14 @@ def prepare_imported_physical_run(
         top_level_nets=handoff_obj.ports,
         require_lvs_labels=True,
         replace_cellview=True,
-        exit_after_write=True,
+        exit_after_write=False,
     )
     schematic_plan = build_oa_schematic_plan(graph, lib=lib_name, cell=cell, sizing=sizing, pdk=pdk)
     schematic_skill = write_oa_skill(
         schematic_plan,
         oa_dir / "schematic.il",
         replace_cellview=True,
-        exit_after_write=True,
+        exit_after_write=False,
         tech_lib=pdk.pcell_template_for("nmos").lib_name,
     )
     lvs_source = export_lvs_netlist(
@@ -280,6 +282,11 @@ def prepare_imported_physical_run(
         skill_path=oa_dir / "streamout.il",
         binary=os.environ.get("ANALOGSKILLS_VIRTUOSO_BINARY", "virtuoso"),
         cwd=root,
+        exit_after_export=False,
+    )
+    oa_batch_skill = write_virtuoso_session_skill(
+        oa_dir / "write_all.il",
+        (schematic_skill, layout_skill),
     )
     mapping = _realization_mapping(handoff_obj, pcell_plan, lvs_source)
     (root / "instance_mapping.json").write_text(json.dumps(mapping, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -293,7 +300,8 @@ def prepare_imported_physical_run(
         "pvt_results_sha256": handoff_obj.pvt_results_sha256,
         "artifacts": {
             "handoff": str(handoff_path), "layout_plan": str(layout_plan_path), "layout_skill": str(layout_skill),
-            "schematic_skill": str(schematic_skill), "streamout_skill": stream_plan.skill_path,
+            "schematic_skill": str(schematic_skill), "oa_batch_skill": str(oa_batch_skill),
+            "streamout_skill": stream_plan.skill_path,
             "lvs_source": str(lvs_source), "gds": str(gds_path),
         },
         "runtime": _runtime_manifest(),
@@ -342,15 +350,14 @@ def run_imported_design_signoff(
             f"{len(physical_precheck['shorts'])} short(s), "
             f"{len(physical_precheck['opens'])} open net(s)",
         )
-    for name, command in (
-        ("schematic_oa", make_virtuoso_batch_command(base.schematic_skill_path, binary=config["virtuoso"])),
-        ("layout_oa", make_virtuoso_batch_command(base.layout_skill_path, binary=config["virtuoso"])),
-        ("streamout", _streamout_command(root, cell, base, config)),
-    ):
-        run = run_eda_command(EdaCommand(command.command, cwd=root, timeout_s=600.0))
-        runs.append(_run_record(name, run))
-        if not run.ok:
-            return _signoff_failure(base, runs, f"{name} failed")
+    oa_record = _run_oa_write_stage(root, manifest, config)
+    runs.append(oa_record)
+    if not oa_record["ok"]:
+        return _signoff_failure(base, runs, "oa_write failed")
+    stream_run = run_eda_command(_streamout_command(root, cell, base, config))
+    runs.append(_run_record("streamout", stream_run))
+    if not stream_run.ok:
+        return _signoff_failure(base, runs, "streamout failed")
     gds = Path(base.gds_path)
     if not gds.is_file() or gds.stat().st_size == 0:
         return _signoff_failure(base, runs, "Virtuoso stream-out did not produce a non-empty GDS")
@@ -381,7 +388,7 @@ def run_imported_design_signoff(
                 iteration_dir / "candidate.il",
                 grid=pdk,
                 replace_cellview=True,
-                exit_after_write=True,
+                exit_after_write=False,
             )
             save_oa_plan_json(candidate, iteration_dir / "candidate.oa_plan.json")
             candidate_runs, candidate_drc, candidate_lvs = _rerun_candidate(
@@ -414,9 +421,10 @@ def run_imported_design_signoff(
                     iteration_dir / "rollback.il",
                     grid=pdk,
                     replace_cellview=True,
-                    exit_after_write=True,
+                    exit_after_write=False,
                 )
-                run_eda_command(EdaCommand(make_virtuoso_batch_command(rollback, binary=config["virtuoso"]).command, cwd=root, timeout_s=600.0))
+                rollback_batch = write_virtuoso_session_skill(iteration_dir / "rollback_batch.il", (rollback,))
+                _run_virtuoso_skill_stage(root, "layout_rollback", rollback, rollback_batch, config)
                 run_eda_command(_streamout_command(root, cell, base, config))
                 _restore_signoff_artifacts(accepted_artifacts, gds, drc_results, drc_summary, lvs_report)
             return {"plan": candidate, "results": candidate_drc, "accepted": accepted, "acceptance_reason": reason, "artifacts": {}}
@@ -437,7 +445,7 @@ def run_imported_design_signoff(
         base.layout_skill_path,
         grid=pdk,
         replace_cellview=True,
-        exit_after_write=True,
+        exit_after_write=False,
     )
 
     drc_count = len(latest["drc"])
@@ -728,7 +736,9 @@ def _preflight(root: Path, lib_name: str) -> dict[str, str]:
         "pdk_lib": os.environ.get("ANALOGSKILLS_VIRTUOSO_PDK_LIB_PATH", ""),
     }
     errors: list[str] = []
-    for key in ("virtuoso", "strmout", "calibre"):
+    execution = os.environ.get("ANALOGSKILLS_VIRTUOSO_EXECUTION", "auto").strip().lower()
+    binary_keys = ("strmout", "calibre") if execution == "skill_server" else ("virtuoso", "strmout", "calibre")
+    for key in binary_keys:
         value = values[key]
         if not value or (os.path.sep in value and not Path(value).is_file()) or (os.path.sep not in value and shutil.which(value) is None):
             errors.append(f"{key} binary is unavailable: {value or '<unset>'}")
@@ -797,14 +807,15 @@ def _materialize_lvs_deck(root: Path, cell: str, gds: Path, source: Path, templa
 
 def _rerun_candidate(root: Path, iteration_dir: Path, skill: Path, cell: str, base: ImportedPhysicalResult, config: Mapping[str, str], pdk: object) -> tuple[list[dict[str, Any]], tuple[object, ...], tuple[object, ...]]:
     records: list[dict[str, Any]] = []
-    for name, command in (
-        ("layout_oa", make_virtuoso_batch_command(skill, binary=config["virtuoso"])),
-        ("streamout", _streamout_command(root, cell, base, config)),
-    ):
-        run = run_eda_command(EdaCommand(command.command, cwd=root, timeout_s=600.0))
-        records.append(_run_record(name, run))
-        if not run.ok:
-            return records, (), ("eda_stage_failed",)
+    candidate_batch = write_virtuoso_session_skill(iteration_dir / "candidate_batch.il", (skill,))
+    layout_record = _run_virtuoso_skill_stage(root, "layout_oa", skill, candidate_batch, config)
+    records.append(layout_record)
+    if not layout_record["ok"]:
+        return records, (), ("eda_stage_failed",)
+    stream_run = run_eda_command(_streamout_command(root, cell, base, config))
+    records.append(_run_record("streamout", stream_run))
+    if not stream_run.ok:
+        return records, (), ("eda_stage_failed",)
     drc_deck, drc_results, _ = _materialize_drc_deck(root, cell, Path(base.gds_path), Path(config["drc_deck"]), pdk)
     lvs_deck, lvs_report = _materialize_lvs_deck(root, cell, Path(base.gds_path), Path(base.lvs_source_path), Path(config["lvs_deck"]), pdk)
     for name, command, cwd in (
@@ -814,6 +825,133 @@ def _rerun_candidate(root: Path, iteration_dir: Path, skill: Path, cell: str, ba
         run = run_eda_command(EdaCommand(command.command, cwd=cwd, timeout_s=1800.0))
         records.append(_run_record(name, run))
     return records, tuple(parse_drc_report(drc_results)) if drc_results.is_file() else ("drc_report_missing",), tuple(parse_lvs_report(lvs_report)) if lvs_report.is_file() else ("lvs_report_missing",)
+
+
+def _run_oa_write_stage(root: Path, manifest: Mapping[str, Any], config: Mapping[str, str]) -> dict[str, Any]:
+    artifacts = dict(manifest.get("artifacts", {}))
+    components = (Path(str(artifacts["schematic_skill"])), Path(str(artifacts["layout_skill"])))
+    fingerprint = _files_fingerprint(
+        components,
+        extra=json.dumps(manifest.get("cellview", {}), sort_keys=True),
+    )
+    state_path = root / "oa" / "oa_stage_state.json"
+    previous = _read_json_mapping(state_path)
+    if previous.get("fingerprint") == fingerprint and previous.get("status") == "completed":
+        return {
+            "name": "oa_write",
+            "command": [],
+            "returncode": 0,
+            "ok": True,
+            "timed_out": False,
+            "skipped": True,
+            "reason": "unchanged_oa_fingerprint",
+            "fingerprint": fingerprint,
+        }
+    record = _run_virtuoso_skill_stage(
+        root,
+        "oa_write",
+        root / "oa" / "write_all_live.il",
+        Path(str(artifacts["oa_batch_skill"])),
+        config,
+        live_components=components,
+    )
+    record["fingerprint"] = fingerprint
+    if record["ok"]:
+        _write_json(state_path, {
+            "schema": "analogskills.oa_stage_state/v1",
+            "status": "completed",
+            "fingerprint": fingerprint,
+            "executor": record.get("executor", "batch"),
+        })
+    return record
+
+
+def _run_virtuoso_skill_stage(
+    root: Path,
+    name: str,
+    live_skill: str | Path,
+    batch_skill: str | Path,
+    config: Mapping[str, str],
+    *,
+    live_components: tuple[Path, ...] | None = None,
+) -> dict[str, Any]:
+    mode = os.environ.get("ANALOGSKILLS_VIRTUOSO_EXECUTION", "auto").strip().lower()
+    if mode not in {"auto", "skill_server", "batch"}:
+        raise ValueError("ANALOGSKILLS_VIRTUOSO_EXECUTION must be auto, skill_server, or batch")
+    port_file = _skill_server_port_file(root)
+    if mode != "batch" and port_file is not None:
+        client = VirtuosoSkillClient(port_file=port_file, timeout_ms=600000)
+        try:
+            ping = client.ping()
+            if not ping.ok:
+                raise RuntimeError(ping.error or "SKILL server ping failed")
+            if live_components:
+                live_path = write_virtuoso_session_skill(live_skill, live_components, exit_after_run=False)
+            else:
+                live_path = Path(live_skill)
+            data = run_skill_file(client, live_path)
+            return {
+                "name": name,
+                "command": ["skill-server", str(port_file), f'load("{live_path}")'],
+                "returncode": 0,
+                "ok": True,
+                "timed_out": False,
+                "executor": "skill_server",
+                "stdout_tail": str(data)[-4000:],
+                "stderr_tail": "",
+            }
+        except Exception as exc:
+            if mode == "skill_server":
+                return {
+                    "name": name,
+                    "command": ["skill-server", str(port_file)],
+                    "returncode": 1,
+                    "ok": False,
+                    "timed_out": False,
+                    "executor": "skill_server",
+                    "stdout_tail": "",
+                    "stderr_tail": str(exc)[-4000:],
+                }
+        finally:
+            client.disconnect()
+    elif mode == "skill_server":
+        return {
+            "name": name,
+            "command": ["skill-server"],
+            "returncode": 1,
+            "ok": False,
+            "timed_out": False,
+            "executor": "skill_server",
+            "stdout_tail": "",
+            "stderr_tail": "SKILL server port file is unavailable",
+        }
+    command = make_virtuoso_batch_command(batch_skill, binary=config["virtuoso"])
+    run = run_eda_command(EdaCommand(command.command, cwd=root, timeout_s=600.0))
+    return {**_run_record(name, run), "executor": "batch"}
+
+
+def _skill_server_port_file(root: Path) -> Path | None:
+    configured = os.environ.get("ANALOGSKILLS_SKILL_SERVER_PORT_FILE", "").strip()
+    candidates = [Path(configured)] if configured else []
+    candidates.extend((root / "skill_server_port.txt", Path.cwd() / "skill_server_port.txt"))
+    return next((path.resolve() for path in candidates if path.is_file()), None)
+
+
+def _files_fingerprint(paths: tuple[Path, ...], *, extra: str = "") -> str:
+    digest = hashlib.sha256(extra.encode("utf-8"))
+    for path in paths:
+        digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
+def _read_json_mapping(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {}
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return dict(value) if isinstance(value, Mapping) else {}
 
 
 def _streamout_command(root: Path, cell: str, base: ImportedPhysicalResult, config: Mapping[str, str]) -> EdaCommand:

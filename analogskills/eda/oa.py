@@ -992,9 +992,25 @@ def write_oa_skill(
     lines.append('dbSave(cv)')
     lines.append('dbClose(cv)')
     if exit_after_write:
-        lines.append('exit()')
+        lines.extend(noninteractive_virtuoso_exit_lines())
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
+
+
+def noninteractive_virtuoso_exit_lines() -> tuple[str, ...]:
+    """Exit batch Virtuoso without blocking on the display.drf save form."""
+    return (
+        "procedure(AScancelSaveDisplayDrf()",
+        "  when(hiIsFormDisplayed(techSaveDrmForm)",
+        "    hiFormCancel(techSaveDrmForm)",
+        "  )",
+        ")",
+        "procedure(AStidyUpAtExit()",
+        '  hiRegTimer("AScancelSaveDisplayDrf()" 0)',
+        ")",
+        "regExitBefore('AStidyUpAtExit)",
+        "exit()",
+    )
 
 
 def _write_oa_rect_chunk_skill_files(

@@ -22,6 +22,24 @@ set +a
 `--run-signoff` 启动前会检查 Virtuoso、Calibre、CRN28 PDK library、DRC
 deck 和 LVS deck。任何缺失都会 fail-closed，不会生成伪造的 clean 状态。
 
+推荐复用 analog-skills 原有的常驻 CIW/SKILL server。先从仓库根目录启动
+一次 Virtuoso，并在 CIW 中执行：
+
+```skill
+load("/absolute/path/to/Auto_Agent_Design/analogskills/eda/skill_server.il")
+```
+
+然后把生成的 `skill_server_port.txt` 绝对路径配置到
+`ANALOGSKILLS_SKILL_SERVER_PORT_FILE`。`ANALOGSKILLS_VIRTUOSO_EXECUTION=auto`
+会优先复用该会话；设为 `skill_server` 时，server 不可用会直接失败而不会
+反复启动 batch Virtuoso。Python 完成后只断开 ZMQ，不关闭 CIW。没有运行中
+server 时，`auto` 使用合并后的 batch replay，并自动取消退出时的
+`display.drf` 保存对话框。
+
+OA schematic/layout 脚本具有内容指纹。相同输入重复执行时会复用已完成的
+OA 写入，状态记录在 `physical/oa/oa_stage_state.json`；网表或版图变化后会
+自动重新写入。
+
 ## 运行
 
 从结构化用户需求执行完整流程：

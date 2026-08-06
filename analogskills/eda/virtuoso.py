@@ -10,7 +10,12 @@ from analogskills.contracts import TopologyGraph
 from analogskills.layout import Placement
 from analogskills.repair import LayoutShape
 
-from .oa import build_oa_layout_plan, build_oa_schematic_plan, write_oa_skill
+from .oa import (
+    build_oa_layout_plan,
+    build_oa_schematic_plan,
+    noninteractive_virtuoso_exit_lines,
+    write_oa_skill,
+)
 
 
 @dataclass(frozen=True)
@@ -47,6 +52,21 @@ def make_virtuoso_batch_command(skill_file: str | Path, *, binary: str = "virtuo
         command.append("-nograph")
     command.extend(("-replay", str(skill_file)))
     return EdaCommand(command)
+
+
+def write_virtuoso_session_skill(
+    path: str | Path,
+    skill_files: Sequence[str | Path],
+    *,
+    exit_after_run: bool = True,
+) -> Path:
+    """Load several generated SKILL files in one Virtuoso replay session."""
+    out = Path(path)
+    lines = [f'load("{_skill_path_literal(item)}")' for item in skill_files]
+    if exit_after_run:
+        lines.extend(noninteractive_virtuoso_exit_lines())
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return out
 
 
 def make_strmout_command(
@@ -133,7 +153,7 @@ def write_layout_streamout_skill(
         'dbClose(cv)',
     ]
     if exit_after_export:
-        lines.append('exit()')
+        lines.extend(noninteractive_virtuoso_exit_lines())
     out.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return out
 
@@ -153,6 +173,7 @@ def build_layout_streamout_plan(
     timeout_s: float = 120.0,
     env: dict[str, str] | None = None,
     metadata: dict[str, object] | None = None,
+    exit_after_export: bool = True,
 ) -> LayoutStreamOutPlan:
     """Create a stream-out script plus the batch command used to run it."""
 
@@ -167,7 +188,7 @@ def build_layout_streamout_plan(
         stream_format=stream_format,
         layer_map=layer_map,
         object_map=object_map,
-        exit_after_export=True,
+        exit_after_export=exit_after_export,
     )
     batch = make_virtuoso_batch_command(script, binary=binary)
     command = EdaCommand(batch.command, cwd=cwd, timeout_s=timeout_s, env=env)
@@ -184,3 +205,7 @@ def build_layout_streamout_plan(
         command=command,
         metadata=dict(metadata or {}),
     )
+
+
+def _skill_path_literal(path: str | Path) -> str:
+    return str(Path(path).resolve()).replace("\\", "\\\\").replace('"', '\\"')

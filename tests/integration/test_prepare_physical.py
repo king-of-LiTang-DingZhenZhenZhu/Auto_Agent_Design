@@ -41,9 +41,14 @@ class PreparePhysicalIntegrationTest(unittest.TestCase):
                 self.assertIn('ddCreateLib("BO_Designs")', text)
                 self.assertIn('techBindTechFile(libObj "tsmcN28")', text)
                 self.assertLess(text.index("techBindTechFile"), text.index("dbOpenCellViewByType"))
-                self.assertTrue(text.rstrip().endswith("exit()"))
+                self.assertNotIn("exit()", text)
+                oa_batch = Path(result.physical_root) / "oa" / "write_all.il"
+                oa_batch_text = oa_batch.read_text(encoding="utf-8")
+                self.assertEqual(oa_batch_text.count("load("), 2)
+                self.assertIn("hiFormCancel(techSaveDrmForm)", oa_batch_text)
+                self.assertTrue(oa_batch_text.rstrip().endswith("exit()"))
                 streamout = Path(result.physical_root) / "oa" / "streamout.il"
-                self.assertTrue(streamout.read_text(encoding="utf-8").rstrip().endswith("exit()"))
+                self.assertNotIn("exit()", streamout.read_text(encoding="utf-8"))
                 mapping = json.loads((Path(result.physical_root) / "instance_mapping.json").read_text(encoding="utf-8"))
                 self.assertEqual(set(mapping), {row.name for row in handoff.devices})
                 if topology == "two_stage_ota":
