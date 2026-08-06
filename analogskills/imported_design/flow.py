@@ -24,6 +24,7 @@ from analogskills.eda.calibre import make_calibre_drc_command, make_calibre_lvs_
 from analogskills.eda.command import EdaCommand, EdaRunResult, run_eda_command
 from analogskills.eda.netlist import export_lvs_netlist
 from analogskills.eda.oa import (
+    OaPath,
     OaWritePlan,
     build_lvs_pins,
     build_oa_schematic_plan,
@@ -38,8 +39,12 @@ from analogskills.eda.virtuoso import (
     make_virtuoso_batch_command,
 )
 from analogskills.layout.placement import Placement
+from analogskills.layout.min_router import StrapRouterConfig, build_strap_interconnect_result
 from analogskills.layout.physical import analyze_plan_physical_connectivity
 from analogskills.layout.power import (
+    SupplyTapSpec,
+    build_supply_tap_plan_from_specs,
+    physical_plan_bbox_um,
     plan_guard_ring,
     plan_power_rails,
     plan_power_source_drops,
@@ -172,35 +177,46 @@ def prepare_imported_physical_run(
         raise ValueError("sign-off package cannot contain drawn/fallback primitive devices")
     cell = handoff_obj.subckt_name
     device_plan = build_pcell_oa_layout_plan(pcell_plan, lib=lib_name, cell=cell, pdk=pdk, include_fallback_shapes=False)
-    interconnect = generate_interconnect(
-        pcell_plan,
-        graph.layout_constraints,
-        pdk,
-        lib=lib_name,
-        cell=cell,
-        # The embedded CRN28 profile carries calibrated coordinates in its
-        # PCell templates, but the upstream analyzer labels template-backed
-        # coordinates as fallback unless an external cache is also supplied.
-        # Keep routing enabled here and let OA/Calibre remain the sign-off gate.
-        strict_terminal_access=False,
-        strict_routing=False,
-        strict_top_level_nets=handoff_obj.ports,
-    )
-    supply = _supply_names(handoff_obj)
-    rails = plan_power_rails(device_plan, pdk, lib=lib_name, cell=cell, top_net=supply[0], bottom_net=supply[1])
-    drops = plan_power_source_drops(
-        pcell_plan,
-        rails,
-        pdk,
-        lib=lib_name,
-        cell=cell,
-        supply_nets=tuple(net for net in supply if net),
-        terminals=("S", "B"),
-    )
-    taps = plan_supply_taps(rails, pdk, lib=lib_name, cell=cell, top_net=supply[0], bottom_net=supply[1])
-    wells = plan_well_regions(pcell_plan, pdk, lib=lib_name, cell=cell)
-    guard = plan_guard_ring(device_plan, pdk, lib=lib_name, cell=cell, net=supply[1] or "vss")
-    layout_plan = merge_oa_write_plans(device_plan, interconnect, rails, drops, taps, wells, guard, cellview=device_plan.cellview, grid=pdk)
+    if handoff_obj.topology == "two_stage_ota":
+        layout_plan, physical_stages = _build_imported_two_stage_ota_layout(
+            handoff_obj,
+            pcell_plan,
+            device_plan,
+            pdk,
+            lib_name=lib_name,
+            cell=cell,
+        )
+    else:
+        interconnect = generate_interconnect(
+            pcell_plan,
+            graph.layout_constraints,
+            pdk,
+            lib=lib_name,
+            cell=cell,
+            # The embedded CRN28 profile carries calibrated coordinates in its
+            # PCell templates, but the upstream analyzer labels template-backed
+            # coordinates as fallback unless an external cache is also supplied.
+            # Keep routing enabled here and let OA/Calibre remain the sign-off gate.
+            strict_terminal_access=False,
+            strict_routing=False,
+            strict_top_level_nets=handoff_obj.ports,
+        )
+        supply = _supply_names(handoff_obj)
+        rails = plan_power_rails(device_plan, pdk, lib=lib_name, cell=cell, top_net=supply[0], bottom_net=supply[1])
+        drops = plan_power_source_drops(
+            pcell_plan,
+            rails,
+            pdk,
+            lib=lib_name,
+            cell=cell,
+            supply_nets=tuple(net for net in supply if net),
+            terminals=("S", "B"),
+        )
+        taps = plan_supply_taps(rails, pdk, lib=lib_name, cell=cell, top_net=supply[0], bottom_net=supply[1])
+        wells = plan_well_regions(pcell_plan, pdk, lib=lib_name, cell=cell)
+        guard = plan_guard_ring(device_plan, pdk, lib=lib_name, cell=cell, net=supply[1] or "vss")
+        layout_plan = merge_oa_write_plans(device_plan, interconnect, rails, drops, taps, wells, guard, cellview=device_plan.cellview, grid=pdk)
+        physical_stages = {}
     pins = build_lvs_pins(
         layout_plan,
         pdk,
@@ -213,6 +229,18 @@ def prepare_imported_physical_run(
         raise ValueError(f"layout routing did not produce all top-level pins: {len(pins)}/{len(handoff_obj.ports)}")
     labels = tuple((pin.layer, pin.name, ((pin.bbox[0] + pin.bbox[2]) / 2, (pin.bbox[1] + pin.bbox[3]) / 2)) for pin in pins if pin.bbox)
     layout_plan = replace(layout_plan, pins=pins, labels=labels)
+
+    if handoff_obj.topology == "two_stage_ota":
+        physical_stages["final_with_pins"] = _physical_connectivity_report(layout_plan, pdk)
+        _write_json(layout_dir / "physical_precheck_stages.json", physical_stages)
+        failed_stages = [name for name, report in physical_stages.items() if not report["passed"]]
+        if failed_stages:
+            final_report = physical_stages[failed_stages[-1]]
+            raise ValueError(
+                "physical connectivity preparation failed at "
+                f"{','.join(failed_stages)}: {len(final_report['shorts'])} short(s), "
+                f"{len(final_report['opens'])} open net(s)"
+            )
 
     layout_plan_path = save_oa_plan_json(layout_plan, layout_dir / "layout.oa_plan.json")
     layout_skill = write_oa_skill(
@@ -437,6 +465,180 @@ def _supply_names(handoff: ImportedDesignHandoff) -> tuple[str | None, str | Non
     top = next((name for name, role in handoff.net_roles.items() if role == "supply"), None)
     bottom = next((name for name, role in handoff.net_roles.items() if role == "ground"), None)
     return top, bottom
+
+
+def _build_imported_two_stage_ota_layout(
+    handoff: ImportedDesignHandoff,
+    pcell_plan: object,
+    device_plan: OaWritePlan,
+    pdk: object,
+    *,
+    lib_name: str,
+    cell: str,
+) -> tuple[OaWritePlan, dict[str, dict[str, Any]]]:
+    """Route the exact frontend OTA without replacing its electrical graph."""
+    core_bbox = physical_plan_bbox_um(device_plan)
+    if core_bbox is None:
+        raise ValueError("two_stage_ota device plan has no physical bbox")
+    x0, _y0, _x1, y1 = core_bbox
+    route_y = y1 + 27.0
+    pin_x = x0 - 29.0
+    metals = tuple(str(layer) for layer in pdk.layer_map.metals[2:])
+    if len(metals) < 2:
+        raise ValueError("two_stage_ota physical adapter requires at least four metal layers")
+    route_result = build_strap_interconnect_result(
+        pcell_plan,
+        handoff.ports,
+        pdk,
+        lib=lib_name,
+        cell=cell,
+        config=StrapRouterConfig(
+            route_layers=metals,
+            route_layer_strategy="cyclic",
+            global_net_order_strategy="name",
+            drop_route_layers=(pdk.layer_map.metals[1],),
+            strap_y_start_um=route_y,
+            strap_y_pitch_um=1.0,
+            pin_origin_um=(pin_x, route_y),
+            pin_pitch_um=3.0,
+            pin_drop_x_start_um=pin_x + 5.0,
+            pin_drop_x_pitch_um=-2.0,
+            fanout_y_search_steps=24,
+            strap_landing_search_steps=24,
+            maze_escape_enabled=True,
+        ),
+    )
+    routed_core = merge_oa_write_plans(
+        device_plan,
+        route_result.plan,
+        cellview=device_plan.cellview,
+        grid=pdk,
+    )
+    stages = {"routed_core": _physical_connectivity_report(routed_core, pdk)}
+
+    supply, ground = _supply_names(handoff)
+    if not supply or not ground:
+        raise ValueError("two_stage_ota physical adapter requires supply and ground nets")
+    supply_trunk = _supply_trunk(route_result.plan, supply)
+    ground_trunk = _supply_trunk(route_result.plan, ground)
+    tap_size = 0.24
+    taps = build_supply_tap_plan_from_specs(
+        (
+            SupplyTapSpec(
+                supply,
+                "nwell",
+                supply_trunk[0],
+                _centered_bbox(supply_trunk[0], tap_size),
+                supply_trunk[1],
+            ),
+            SupplyTapSpec(
+                ground,
+                "substrate",
+                ground_trunk[0],
+                _centered_bbox(ground_trunk[0], tap_size),
+                ground_trunk[1],
+            ),
+        ),
+        pdk,
+        lib=lib_name,
+        cell=cell,
+    )
+    with_taps = merge_oa_write_plans(routed_core, taps, cellview=device_plan.cellview, grid=pdk)
+    stages["supply_taps"] = _physical_connectivity_report(with_taps, pdk)
+
+    wells = plan_well_regions(pcell_plan, pdk, lib=lib_name, cell=cell)
+    with_wells = merge_oa_write_plans(with_taps, wells, cellview=device_plan.cellview, grid=pdk)
+    stages["wells"] = _physical_connectivity_report(with_wells, pdk)
+
+    guard = plan_guard_ring(
+        with_wells,
+        pdk,
+        lib=lib_name,
+        cell=cell,
+        net=ground,
+        bbox=physical_plan_bbox_um(with_wells),
+    )
+    ground_escape = _top_ground_escape(route_result.plan, ground, pdk.layer_map.metals[0])
+    top_guard = max(
+        (
+            rect
+            for rect in guard.rects
+            if str(rect.layer) == str(pdk.layer_map.metals[0]) and str(rect.net) == ground
+        ),
+        key=lambda rect: float(rect.bbox[3]),
+    )
+    guard_y = 0.5 * (float(top_guard.bbox[1]) + float(top_guard.bbox[3]))
+    bridge = OaWritePlan(
+        device_plan.cellview,
+        nets=(ground,),
+        paths=(
+            OaPath(
+                str(pdk.layer_map.metals[0]),
+                "drawing",
+                (ground_escape, (ground_escape[0], guard_y)),
+                pdk.rules.min_width_um(str(pdk.layer_map.metals[0])),
+                ground,
+            ),
+        ),
+    )
+    final_plan = merge_oa_write_plans(
+        with_wells,
+        guard,
+        bridge,
+        cellview=device_plan.cellview,
+        grid=pdk,
+    )
+    stages["guard_ring"] = _physical_connectivity_report(final_plan, pdk)
+    return final_plan, stages
+
+
+def _physical_connectivity_report(plan: object, pdk: object) -> dict[str, Any]:
+    return dict(
+        analyze_plan_physical_connectivity(
+            plan,
+            pdk=pdk,
+            include_via_landing_shorts=True,
+            include_instance_terminal_shorts=True,
+            include_opens=True,
+        )
+    )
+
+
+def _supply_trunk(plan: object, net: str) -> tuple[tuple[float, float], str]:
+    candidates = []
+    for path in tuple(getattr(plan, "paths", ()) or ()):
+        points = tuple(getattr(path, "points", ()) or ())
+        if str(getattr(path, "net", "")) != net or len(points) != 2:
+            continue
+        if abs(float(points[0][1]) - float(points[1][1])) > 1e-12:
+            continue
+        span = abs(float(points[1][0]) - float(points[0][0]))
+        candidates.append((span, path))
+    if not candidates:
+        raise ValueError(f"two_stage_ota routing did not produce a supply trunk for {net}")
+    path = max(candidates, key=lambda item: item[0])[1]
+    point = min(
+        (tuple(float(value) for value in xy) for xy in path.points),
+        key=lambda xy: xy[0],
+    )
+    return point, str(path.layer)
+
+
+def _top_ground_escape(plan: object, net: str, layer: str) -> tuple[float, float]:
+    points = [
+        tuple(float(value) for value in point)
+        for path in tuple(getattr(plan, "paths", ()) or ())
+        if str(getattr(path, "net", "")) == net and str(getattr(path, "layer", "")) == str(layer)
+        for point in tuple(getattr(path, "points", ()) or ())
+    ]
+    if not points:
+        raise ValueError(f"two_stage_ota routing did not produce a local ground escape for {net}")
+    return max(points, key=lambda point: (point[1], -point[0]))
+
+
+def _centered_bbox(point: tuple[float, float], size: float) -> tuple[float, float, float, float]:
+    half = 0.5 * size
+    return (point[0] - half, point[1] - half, point[0] + half, point[1] + half)
 
 
 def _imported_seed_placements(handoff: ImportedDesignHandoff) -> tuple[Placement, ...]:

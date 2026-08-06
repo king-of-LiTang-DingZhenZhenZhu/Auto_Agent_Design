@@ -49,6 +49,18 @@ class PreparePhysicalIntegrationTest(unittest.TestCase):
                 if topology == "two_stage_ota":
                     self.assertEqual(len(mapping["Mtail"]["lvs_instances"]), 2)
                     self.assertEqual(len(mapping["Mload"]["lvs_instances"]), 4)
+                    stages = json.loads(
+                        (Path(result.physical_root) / "layout" / "physical_precheck_stages.json").read_text(
+                            encoding="utf-8"
+                        )
+                    )
+                    self.assertEqual(
+                        set(stages),
+                        {"routed_core", "supply_taps", "wells", "guard_ring", "final_with_pins"},
+                    )
+                    self.assertTrue(all(report["passed"] for report in stages.values()))
+                    self.assertTrue(all(not report["shorts"] for report in stages.values()))
+                    self.assertTrue(all(not report["opens"] for report in stages.values()))
 
 
 if __name__ == "__main__":

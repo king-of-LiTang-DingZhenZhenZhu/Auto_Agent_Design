@@ -94,6 +94,11 @@ class PhysicalGateTest(unittest.TestCase):
                 "topology_name": "two_stage_ota",
                 "all_targets_met": True,
                 "netlist_file": str(netlist),
+                "operating_point_status": {
+                    "critical_linear": [],
+                    "critical_near_edge": [],
+                    "critical_unknown": [],
+                },
             }), encoding="utf-8")
 
             state = run_design_flow(project, prepare_physical=True)
