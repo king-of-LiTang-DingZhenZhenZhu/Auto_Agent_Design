@@ -16,7 +16,7 @@ import re
 import subprocess
 from typing import Any, Mapping, Sequence
 
-from analogskills.eda import (
+from analogskills.eda.oa import (
     OaCellView,
     OaInstance,
     OaPin,

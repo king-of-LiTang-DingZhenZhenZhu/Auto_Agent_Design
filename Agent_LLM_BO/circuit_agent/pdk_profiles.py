@@ -386,14 +386,22 @@ def get_pdk_profile(
     external_file = os.getenv("PDK_PROFILE_FILE")
     if external_file and not name:
         profile = _load_external_profile(external_file)
-        return _select_profile_domain(profile, voltage_domain)
+        return _select_profile_domain(
+            profile,
+            voltage_domain,
+            allow_gmid_env_override=False,
+        )
 
     selected = name or os.getenv("CIRCUIT_AGENT_PDK") or os.getenv("PDK_PROFILE")
     selected = (selected or "tsmc28").strip()
     selected_path = Path(selected).expanduser()
     if selected_path.suffix.lower() in {".json"} and selected_path.exists():
         profile = _load_external_profile(selected_path)
-        return _select_profile_domain(profile, voltage_domain)
+        return _select_profile_domain(
+            profile,
+            voltage_domain,
+            allow_gmid_env_override=False,
+        )
     try:
         return _select_profile_domain(PDK_PROFILES[selected], voltage_domain)
     except KeyError as exc:
@@ -418,13 +426,24 @@ def get_pdk_profile_for_params(
 def _select_profile_domain(
     profile: PDKProfile,
     requested_domain: str | None,
+    *,
+    allow_gmid_env_override: bool = True,
 ) -> PDKProfile:
-    """Apply legacy env overrides without splitting an explicit domain bundle."""
+    """Apply local overrides without replacing an external profile's gm/Id table."""
 
     explicit_domain = requested_domain or os.getenv("PDK_VOLTAGE_DOMAIN")
     if explicit_domain:
-        return _resolve_voltage_domain(_apply_env_overrides(profile), explicit_domain)
-    return _apply_env_overrides(_resolve_voltage_domain(profile, None))
+        return _resolve_voltage_domain(
+            _apply_env_overrides(
+                profile,
+                allow_gmid_override=allow_gmid_env_override,
+            ),
+            explicit_domain,
+        )
+    return _apply_env_overrides(
+        _resolve_voltage_domain(profile, None),
+        allow_gmid_override=allow_gmid_env_override,
+    )
 
 
 def _resolve_voltage_domain(
@@ -689,7 +708,11 @@ def _read_spectre_sections(path: Path) -> set[str]:
     return sections
 
 
-def _apply_env_overrides(profile: PDKProfile) -> PDKProfile:
+def _apply_env_overrides(
+    profile: PDKProfile,
+    *,
+    allow_gmid_override: bool = True,
+) -> PDKProfile:
     """Apply optional per-field environment overrides for local machines."""
 
     updates: dict[str, object] = {}
@@ -715,6 +738,8 @@ def _apply_env_overrides(profile: PDKProfile) -> PDKProfile:
         "min_width_per_finger": "PDK_MIN_WIDTH_PER_FINGER",
     }
     for field_name, env_name in string_overrides.items():
+        if field_name == "gmid_table_path" and not allow_gmid_override:
+            continue
         value = os.getenv(env_name)
         if value:
             updates[field_name] = value

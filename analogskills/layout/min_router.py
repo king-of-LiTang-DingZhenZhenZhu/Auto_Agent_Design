@@ -570,6 +570,22 @@ def _instance_terminal_owned_shapes(
 ) -> tuple[_OwnedShape, ...]:
     owned: list[_OwnedShape] = []
     for instance in getattr(pcell_plan, "instances", ()):
+        metadata = dict(getattr(instance, "metadata", {}) or {})
+        for shape in tuple(metadata.get("routing_owned_shapes", ()) or ()):
+            try:
+                bbox = tuple(float(value) for value in shape["bbox_um"])
+                if len(bbox) != 4:
+                    continue
+                owned.append(
+                    _OwnedShape(
+                        str(shape["layer"]),
+                        str(shape["net"]),
+                        bbox,
+                        str(shape.get("kind", "instance_routing_owned")),
+                    )
+                )
+            except (KeyError, TypeError, ValueError):
+                continue
         for terminal, net in sorted(getattr(instance, "connections", {}).items()):
             if not net:
                 continue

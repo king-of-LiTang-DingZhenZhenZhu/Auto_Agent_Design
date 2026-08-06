@@ -352,7 +352,7 @@ def build_oa_schematic_plan(
                 lib=inst_lib,
                 cell=inst_cell,
                 view=symbol_view,
-                xy=(20.0 * idx, 0.0),
+                xy=(5.0 * (idx % 4), -4.0 * (idx // 4)),
                 orient="R0",
                 connections=connections,
                 params=params,
@@ -874,6 +874,7 @@ def write_oa_skill(
             raise ValueError("OA write plan has LVS pin/label stamping issues: " + "; ".join(str(issue) for issue in report["issues"]))
     pdk_for_write = grid if isinstance(grid, PdkConfig) else None
     cv = plan.cellview
+    is_schematic = str(cv.view_type).lower() == "schematic"
     resolved_tech_lib = str(tech_lib or "")
     if not resolved_tech_lib and pdk_for_write is not None:
         resolved_tech_lib = pdk_for_write.pcell_template_for("nmos").lib_name
@@ -907,12 +908,15 @@ def write_oa_skill(
                 lines.append(f'dbReplaceProp({inst_id} "{key}" {_skill_prop_type(value)} {_skill_prop_value(value)})')
         for term, net in sorted(inst.connections.items()):
             if net:
-                lines.append(
-                    f'when({inst_id} '
-                    f'masterTerm = dbFindTermByName({inst_id}->master "{term}") '
-                    f'netObj = dbFindNetByName(cv "{net}") '
-                    f'when(masterTerm && netObj dbCreateInstTerm(netObj {inst_id} masterTerm)))'
-                )
+                if is_schematic:
+                    lines.extend(_schematic_net_stub_skill_lines(inst, term, net))
+                else:
+                    lines.append(
+                        f'when({inst_id} '
+                        f'masterTerm = dbFindTermByName({inst_id}->master "{term}") '
+                        f'netObj = dbFindNetByName(cv "{net}") '
+                        f'when(masterTerm && netObj dbCreateInstTerm(netObj {inst_id} masterTerm)))'
+                    )
     rect_chunk_paths: tuple[Path, ...] = ()
     if rect_chunk_size > 0 and len(plan.rects) > rect_chunk_size:
         chunk_dir = Path(rect_chunk_dir) if rect_chunk_dir is not None else path.parent / f"{path.stem}.rect_chunks"
@@ -969,6 +973,24 @@ def write_oa_skill(
                 lines.append(f'dbCreateLabel(cv list("{pin.layer}" "pin") list({cx:g} {cy:g}) "{pin.name}" "centerCenter" "R0" "stick" 0.1)')
             if pin.name not in explicit_label_nets:
                 lines.append(f'dbCreateLabel(cv list("{pin.layer}" "text") list({cx:g} {cy:g}) "{pin.name}" "centerCenter" "R0" "stick" 0.1)')
+        elif is_schematic:
+            port_index = tuple(plan.pins).index(pin)
+            port_x0, port_y, port_x1 = _schematic_port_stub(port_index)
+            pin_master_cell = _schematic_pin_master_cell(pin.direction)
+            port_id = _skill_id("port_" + pin.name)
+            port_wire_id = _skill_id("port_wire_" + pin.name)
+            lines.append(
+                f'{port_id} = schCreatePin(cv dbOpenCellViewByType("basic" "{pin_master_cell}" "symbol" nil "r") '
+                f'"{pin.name}" "{pin.direction}" nil list({port_x0:g} {port_y:g}) "R0")'
+            )
+            lines.append(
+                f'{port_wire_id} = schCreateWire(cv "draw" "full" '
+                f'list(list({port_x0:g} {port_y:g}) list({port_x1:g} {port_y:g})) 0.0625 0.0625 0.0)'
+            )
+            lines.append(
+                f'when({port_wire_id} schCreateWireLabel(cv car({port_wire_id}) list({port_x1:g} {port_y:g}) '
+                f'"{pin.name}" "centerLeft" "R0" "stick" 0.125 nil))'
+            )
         lines.append(f'; term {pin.name} direction={pin.direction} net={pin.net}')
     if allow_label_only_top_level_nets and top_level_nets:
         created_pin_nets = {str(pin.net) for pin in plan.pins if pin.net}
@@ -989,6 +1011,8 @@ def write_oa_skill(
         lines.append(
             f'dbCreateLabel(cv list("{label_layer}" "{label_purpose}") list({x:g} {y:g}) "{text}" "centerCenter" "R0" "stick" 0.1)'
         )
+    if is_schematic:
+        lines.append("errset(schCheck(cv) t)")
     lines.append('dbSave(cv)')
     lines.append('dbClose(cv)')
     if exit_after_write:
@@ -1073,6 +1097,47 @@ def write_oa_replacement_skill(
         emit_pin_purpose_labels=emit_pin_purpose_labels,
         allow_label_only_top_level_nets=allow_label_only_top_level_nets,
     )
+
+
+def _schematic_net_stub_skill_lines(inst: OaInstance, terminal: str, net: str) -> tuple[str, ...]:
+    dx, dy = _schematic_terminal_stub_delta(inst, terminal)
+    inst_id = _skill_id("inst_" + inst.name)
+    return (
+        f'when({inst_id} masterTerm = dbFindTermByName({inst_id}->master "{terminal}") '
+        f'masterPin = when(masterTerm car(masterTerm~>pins)) '
+        f'pinFig = when(masterPin car(masterPin~>figs)) '
+        f'when(pinFig pinXY = dbTransformPoint(centerBox(pinFig~>bBox) {inst_id}~>transform) '
+        f'stubXY = list(car(pinXY)+{dx:g} cadr(pinXY)+{dy:g}) '
+        f'wireObjs = schCreateWire(cv "draw" "full" list(pinXY stubXY) 0.0625 0.0625 0.0) '
+        f'when(wireObjs schCreateWireLabel(cv car(wireObjs) stubXY "{net}" '
+        f'"centerLeft" "R0" "stick" 0.125 nil))))',
+    )
+
+
+def _schematic_terminal_stub_delta(inst: OaInstance, terminal: str) -> tuple[float, float]:
+    term = str(terminal).upper()
+    logical_name = str(dict(inst.metadata or {}).get("logical_name", "")).lower()
+    is_pmos = logical_name == "pmos" or "pch" in str(inst.cell).lower() or "pmos" in str(inst.cell).lower()
+    if term == "D":
+        return (0.0, -0.5 if is_pmos else 0.5)
+    elif term == "S":
+        return (0.0, 0.5 if is_pmos else -0.5)
+    elif term == "G":
+        return (-0.5, 0.0)
+    elif term == "B":
+        return (0.5, 0.0)
+    elif term == "PLUS":
+        return (-0.5, 0.0)
+    return (0.5, 0.0)
+
+
+def _schematic_pin_master_cell(direction: str) -> str:
+    return {"input": "ipin", "output": "opin", "inputOutput": "iopin"}.get(str(direction), "iopin")
+
+
+def _schematic_port_stub(index: int) -> tuple[float, float, float]:
+    y = 5.0 - 1.25 * int(index)
+    return (-6.0, y, -4.0)
 
 
 def _clear_cellview_skill_lines() -> tuple[str, ...]:

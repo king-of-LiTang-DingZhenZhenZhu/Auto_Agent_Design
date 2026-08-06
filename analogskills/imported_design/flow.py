@@ -55,6 +55,7 @@ from analogskills.layout.power import (
 )
 from analogskills.layout.routing import generate_interconnect
 from analogskills.pcell.generation import build_pcell_oa_layout_plan, generate_pcell_layout_plan
+from analogskills.pcell.calibre_calibration import build_crn28_mos_multifinger_access_plan
 from analogskills.pdk import resolve_pdk_config
 from analogskills.repair.calibre_eco_closure import (
     calibre_eco_closure_loop_summary,
@@ -167,18 +168,27 @@ def prepare_imported_physical_run(
     graph, sizing = compile_imported_design(handoff_obj)
     pdk = resolve_pdk_config("crn28hpcp")
     placements = _imported_seed_placements(handoff_obj)
+    physical_sizing = _physical_pcell_sizing(handoff_obj, sizing)
     pcell_plan = generate_pcell_layout_plan(
         graph,
-        sizing,
+        physical_sizing,
         pdk=pdk,
         placements=placements,
         strict=True,
         include_fallback_shapes=False,
     )
+    mos_access = build_crn28_mos_multifinger_access_plan(
+        pdk,
+        pcell_plan,
+        lib=lib_name,
+        cell=handoff_obj.subckt_name,
+    )
+    pcell_plan = _attach_crn28_mos_access_metadata(pcell_plan, mos_access)
     if any(str(getattr(inst, "instantiation_method", "")) == "drawn_primitive" for inst in pcell_plan.instances):
         raise ValueError("sign-off package cannot contain drawn/fallback primitive devices")
     cell = handoff_obj.subckt_name
     device_plan = build_pcell_oa_layout_plan(pcell_plan, lib=lib_name, cell=cell, pdk=pdk, include_fallback_shapes=False)
+    device_plan = merge_oa_write_plans(device_plan, mos_access, cellview=device_plan.cellview, grid=pdk)
     if handoff_obj.topology == "two_stage_ota":
         layout_plan, physical_stages = _build_imported_two_stage_ota_layout(
             handoff_obj,
@@ -469,6 +479,75 @@ def run_imported_design_signoff(
     return result
 
 
+def _physical_pcell_sizing(
+    handoff: ImportedDesignHandoff,
+    sizing: Mapping[str, Mapping[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Fold Spectre multiplicity into native PCell fingers for extraction."""
+    mos_names = {device.name for device in handoff.devices if device.kind == "mos"}
+    result = {name: dict(params) for name, params in sizing.items()}
+    for name in mos_names:
+        params = result.get(name, {})
+        multiplier = max(1, int(float(params.get("m", params.get("M", 1)) or 1)))
+        if multiplier == 1:
+            continue
+        fingers = max(1, int(float(params.get("nf", 1) or 1)))
+        width = float(params.get("W", params.get("w", 0.0)) or 0.0)
+        if width <= 0.0:
+            raise ValueError(f"{name} has invalid MOS width for physical multiplicity folding")
+        params["W"] = width * multiplier
+        params["nf"] = fingers * multiplier
+        params["m"] = 1
+    return result
+
+
+def _attach_crn28_mos_access_metadata(pcell_plan: object, access_plan: OaWritePlan) -> object:
+    terminal_kind = {
+        "crn28_mos_gate_m1_bus": "G",
+        "crn28_mos_source_m2_bus": "S",
+        "crn28_mos_drain_m2_bus": "D",
+        "crn28_mos_body_tap_m1": "B",
+    }
+    access_by_instance: dict[str, dict[str, dict[str, Any]]] = {}
+    owned_shapes_by_instance: dict[str, list[dict[str, Any]]] = {}
+    for rect in access_plan.rects:
+        metadata = dict(getattr(rect, "metadata", {}) or {})
+        terminal = terminal_kind.get(str(metadata.get("kind", "")))
+        instance = str(metadata.get("instance", ""))
+        if instance and str(rect.net):
+            owned_shapes_by_instance.setdefault(instance, []).append(
+                {
+                    "layer": str(rect.layer),
+                    "net": str(rect.net),
+                    "bbox_um": tuple(float(value) for value in rect.bbox),
+                    "kind": str(metadata.get("kind", "crn28_calibre_access")),
+                }
+            )
+        if not terminal or not instance:
+            continue
+        access_by_instance.setdefault(instance, {})[terminal] = {
+            "absolute_bbox_um": tuple(float(value) for value in rect.bbox),
+            "layer": str(rect.layer),
+            "contact_layer": "",
+            "source": "crn28_calibre_access_plan",
+            "confidence": 1.0,
+            "lvs_safe": True,
+            "access_priority": 0,
+        }
+    instances = tuple(
+        replace(
+            instance,
+            metadata={
+                **dict(getattr(instance, "metadata", {}) or {}),
+                "terminal_access": access_by_instance.get(str(instance.name), {}),
+                "routing_owned_shapes": owned_shapes_by_instance.get(str(instance.name), []),
+            },
+        )
+        for instance in tuple(getattr(pcell_plan, "instances", ()) or ())
+    )
+    return replace(pcell_plan, instances=instances)
+
+
 def _supply_names(handoff: ImportedDesignHandoff) -> tuple[str | None, str | None]:
     top = next((name for name, role in handoff.net_roles.items() if role == "supply"), None)
     bottom = next((name for name, role in handoff.net_roles.items() if role == "ground"), None)
@@ -514,6 +593,10 @@ def _build_imported_two_stage_ota_layout(
             fanout_y_search_steps=24,
             strap_landing_search_steps=24,
             maze_escape_enabled=True,
+            connect_to_existing_net=True,
+            existing_net_target_limit=24,
+            existing_net_fanout_search_steps=24,
+            existing_net_fanout_y_search_steps=24,
         ),
     )
     routed_core = merge_oa_write_plans(
@@ -753,6 +836,8 @@ def _preflight(root: Path, lib_name: str) -> dict[str, str]:
     target_library = (root / "oa_library" / lib_name).resolve()
     target_library.mkdir(parents=True, exist_ok=True)
     (root / "cds.lib").write_text(
+        "DEFINE basic $CDSHOME/tools/dfII/etc/cdslib/basic\n"
+        "DEFINE analogLib $CDSHOME/tools/dfII/etc/cdslib/artist/analogLib\n"
         f"DEFINE tsmcN28 {Path(values['pdk_lib']).resolve()}\n"
         f"DEFINE {lib_name} {target_library}\n",
         encoding="utf-8",
@@ -799,7 +884,11 @@ def _materialize_lvs_deck(root: Path, cell: str, gds: Path, source: Path, templa
         if not _has_port_layer_text(text, layer)
     ]
     if missing_port_lines:
-        text += "\n// Generated top-level port text layers from the PDK profile.\n" + "\n".join(missing_port_lines) + "\n"
+        generated = "// Generated top-level port text layers from the PDK profile.\n" + "\n".join(missing_port_lines)
+        if text.lstrip().lower().startswith("#!tvf"):
+            text += f"\n\ntvf::VERBATIM {{\n{generated}\n}}\n"
+        else:
+            text += f"\n{generated}\n"
     deck = out / f"{cell}.lvs.calibre"
     deck.write_text(text, encoding="utf-8")
     return deck, report

@@ -528,19 +528,28 @@ def _metadata_terminal_pins(
         layer = str(entry.get("layer", pdk.layer_map.metals[0] if pdk.layer_map.metals else ""))
         if preferred and layer not in preferred:
             continue
-        bbox = _metadata_entry_bbox(entry, context)
-        if bbox is not None:
-            local_center = _metadata_entry_xy(entry, context)
-            if local_center is None:
-                local_center = ((bbox[0] + bbox[2]) / 2.0, (bbox[1] + bbox[3]) / 2.0)
-            xy = _absolute_xy(instance.xy_um, local_center, instance.orient)
-            bbox_um = _absolute_bbox(instance.xy_um, bbox, instance.orient)
+        absolute_bbox_value = entry.get("absolute_bbox_um")
+        absolute_xy_value = entry.get("absolute_xy_um")
+        if isinstance(absolute_bbox_value, (list, tuple)) and len(absolute_bbox_value) == 4:
+            bbox_um = tuple(float(value) for value in absolute_bbox_value)
+            if isinstance(absolute_xy_value, (list, tuple)) and len(absolute_xy_value) == 2:
+                xy = (float(absolute_xy_value[0]), float(absolute_xy_value[1]))
+            else:
+                xy = ((bbox_um[0] + bbox_um[2]) / 2.0, (bbox_um[1] + bbox_um[3]) / 2.0)
         else:
-            local_center = _metadata_entry_xy(entry, context)
-            if local_center is None:
-                continue
-            xy = _absolute_xy(instance.xy_um, local_center, instance.orient)
+            bbox = _metadata_entry_bbox(entry, context)
             bbox_um = None
+            if bbox is not None:
+                local_center = _metadata_entry_xy(entry, context)
+                if local_center is None:
+                    local_center = ((bbox[0] + bbox[2]) / 2.0, (bbox[1] + bbox[3]) / 2.0)
+                xy = _absolute_xy(instance.xy_um, local_center, instance.orient)
+                bbox_um = _absolute_bbox(instance.xy_um, bbox, instance.orient)
+            else:
+                local_center = _metadata_entry_xy(entry, context)
+                if local_center is None:
+                    continue
+                xy = _absolute_xy(instance.xy_um, local_center, instance.orient)
         source = str(entry.get("source", "instance_metadata_terminal_access"))
         try:
             confidence = float(entry.get("confidence", 1.0))

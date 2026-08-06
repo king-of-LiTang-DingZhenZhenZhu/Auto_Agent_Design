@@ -123,6 +123,18 @@ class OptimizerConfigTest(unittest.TestCase):
         with patch.dict("os.environ", {"GMID_TABLE_PATH": "/tmp/custom_gmid.json"}):
             self.assertEqual(Settings().gmid_table_path, "/tmp/custom_gmid.json")
 
+    def test_external_profile_keeps_its_explicit_gmid_table_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            profile_json = self._write_unit_profile(root)
+            expected = json.loads(profile_json.read_text(encoding="utf-8"))["gmid_table_path"]
+            with patch.dict(
+                "os.environ",
+                {"GMID_TABLE_PATH": "/tmp/global_gmid_override.json"},
+            ):
+                profile = get_pdk_profile(str(profile_json))
+            self.assertEqual(profile.gmid_table_path, expected)
+
     def test_voltage_domain_switches_models_and_supply_together(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

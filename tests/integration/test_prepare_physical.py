@@ -47,6 +47,14 @@ class PreparePhysicalIntegrationTest(unittest.TestCase):
                 self.assertEqual(oa_batch_text.count("load("), 2)
                 self.assertIn("hiFormCancel(techSaveDrmForm)", oa_batch_text)
                 self.assertTrue(oa_batch_text.rstrip().endswith("exit()"))
+                schematic_text = Path(result.schematic_skill_path).read_text(encoding="utf-8")
+                self.assertNotIn("exit()", schematic_text)
+                self.assertIn("schCreateWire", schematic_text)
+                self.assertIn("schCreateWireLabel", schematic_text)
+                self.assertIn("schCreatePin", schematic_text)
+                self.assertIn("dbTransformPoint", schematic_text)
+                self.assertIn("errset(schCheck(cv) t)", schematic_text)
+                self.assertNotIn("boundp('schCreateWire)", schematic_text)
                 streamout = Path(result.physical_root) / "oa" / "streamout.il"
                 self.assertNotIn("exit()", streamout.read_text(encoding="utf-8"))
                 mapping = json.loads((Path(result.physical_root) / "instance_mapping.json").read_text(encoding="utf-8"))
@@ -54,6 +62,22 @@ class PreparePhysicalIntegrationTest(unittest.TestCase):
                 if topology == "two_stage_ota":
                     self.assertEqual(len(mapping["Mtail"]["lvs_instances"]), 2)
                     self.assertEqual(len(mapping["Mload"]["lvs_instances"]), 4)
+                    layout_plan = json.loads(Path(result.layout_plan_path).read_text(encoding="utf-8"))
+                    mtail = next(instance for instance in layout_plan["instances"] if instance["name"] == "Mtail")
+                    mload = next(instance for instance in layout_plan["instances"] if instance["name"] == "Mload")
+                    self.assertEqual(mtail["params"]["fingers"], 2)
+                    self.assertEqual(mtail["params"]["simM"], 1)
+                    self.assertEqual(mload["params"]["fingers"], 4)
+                    self.assertEqual(mload["params"]["simM"], 1)
+                    self.assertEqual(
+                        mtail["metadata"]["terminal_access"]["S"]["source"],
+                        "crn28_calibre_access_plan",
+                    )
+                    self.assertTrue(mtail["metadata"]["routing_owned_shapes"])
+                    rz = next(instance for instance in layout_plan["instances"] if instance["name"] == "Rz")
+                    self.assertEqual(rz["metadata"]["logical_name"], "resistor")
+                    self.assertGreater(rz["metadata"]["width_um"], 0.0)
+                    self.assertGreater(rz["metadata"]["height_um"], 0.0)
                     stages = json.loads(
                         (Path(result.physical_root) / "layout" / "physical_precheck_stages.json").read_text(
                             encoding="utf-8"

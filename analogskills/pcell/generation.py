@@ -84,6 +84,7 @@ class PCellInstancePlan:
     instantiation_method: str = "dbCreateInstByMasterName"
     bbox_x0_um: float = 0.0
     bbox_y0_um: float = 0.0
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -1578,6 +1579,14 @@ def build_pcell_oa_layout_plan(
             connections=dict(inst.connections),
             params=dict(inst.params),
             instantiation_method=inst.instantiation_method,
+            metadata={
+                **dict(inst.metadata),
+                "logical_name": inst.logical_name,
+                "width_um": inst.width_um,
+                "height_um": inst.height_um,
+                "bbox_x0_um": inst.bbox_x0_um,
+                "bbox_y0_um": inst.bbox_y0_um,
+            },
         )
         for inst in plan.instances
         if not _is_drawn_primitive_instance(inst)
