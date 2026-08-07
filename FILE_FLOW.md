@@ -478,8 +478,8 @@ results.json gap
 - Agent 负责需求理解、架构/拓扑决策、代码和 Review 判断。
 - topology Python 代码负责网表结构硬约束。
 - BO 只在固定 topology 和参数空间内优化。
-- `system_decomposition.py` 当前只有 Bandgap 规则。
-- LDO/ADC 的系统规则、预算器和 parent topology 尚未实现。
+- `system_decomposition.py` 当前已有 Bandgap 和 LDO 规则。
+- ADC 的系统规则、预算器和 parent topology 尚未实现。
 - 默认不由 Codex 直接运行真实 Spectre、PVT 或 Virtuoso。
 
 ## 13. 相关文档

@@ -5,6 +5,9 @@
 当前完整的叶子电路、系统分解、层级优化、Review、PVT 和导出流程见
 [`FILE_FLOW.md`](FILE_FLOW.md)。
 
+将当前前端交接给物理后端、继续开发版图/DRC/LVS/PEX/post-layout 自动化时，见
+[`FULL_FLOW_AUTOMATION_HANDOFF.md`](FULL_FLOW_AUTOMATION_HANDOFF.md)。
+
 ## 项目结构
 
 ```
@@ -67,7 +70,7 @@ Auto_Agent_Design/
 child targets、PVT targets、预算和 topology；`hierarchical_flow.py`
 是执行层，只消费已经确定的 `ExecutableChildSpec`。
 
-当前系统级规则只实现了 Bandgap。LDO 和 ADC 尚未实现系统规则和 parent
+当前系统级规则已实现 Bandgap 和 LDO；ADC 尚未实现系统规则和 parent
 topology。
 
 ## 快速开始
@@ -279,7 +282,7 @@ child nominal/PVT targets 和 `hierarchy.json`，再把内部运放单独优化�
 3. **电流镜比例** — 镜像输出管使用整数倍率复制参考电流，宽器件先拆 `nf`，`nf>32` 后再用 `m`。
 4. **偏置推导** — 支持由 lookup 的 VGS/VSG 推导 VBIAS；folded cascode 当前固定 internal bias generator，主路径通过电流比例和 gm/Id 推导尺寸。
 
-普通物理参数 BO 与 gm/Id 模式的详细区别见：[SIZING_MODES.md](Agent_LLM_BO/circuit_agent/SIZING_MODES.md)。
+普通物理参数 BO 与 gm/Id 模式的详细区别见：[SIZING_MODES.md](SIZING_MODES.md)。
 
 无需手动处理单指 W 或 finger 数，系统使用 `2.6μm/finger` guard-band 满足 PDK bin 约束。
 
