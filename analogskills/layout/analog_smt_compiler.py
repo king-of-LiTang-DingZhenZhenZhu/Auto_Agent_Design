@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from itertools import product
 from math import ceil, gcd, sqrt
 from typing import Mapping, Sequence
@@ -44,6 +44,7 @@ class CompiledAnalogLayout:
     total_height_tracks: int
     track_pitch_um: float
     checks: Mapping[str, object]
+    route_resource_assignments: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
 
     @property
     def passed(self) -> bool:

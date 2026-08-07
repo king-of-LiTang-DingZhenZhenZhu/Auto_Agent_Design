@@ -64,6 +64,7 @@ from analogskills.repair.calibre_eco_closure import (
 
 from .schema import ImportedDesignHandoff
 from .eco import accept_eco_candidate
+from .physical_intent import PhysicalIntentError, solve_imported_physical_smt
 
 
 @dataclass(frozen=True)
@@ -249,6 +250,8 @@ def prepare_imported_physical_run(
     *,
     physical_root: str | Path | None = None,
     lib_name: str = "BO_Designs",
+    placement_mode: str = "smt",
+    smt_timeout_ms: int = 30_000,
 ) -> ImportedPhysicalResult:
     handoff_obj = ImportedDesignHandoff.read_json(handoff) if isinstance(handoff, (str, Path)) else handoff
     handoff_obj.validate()
@@ -266,8 +269,50 @@ def prepare_imported_physical_run(
     handoff_path = handoff_obj.write_json(root / "handoff.json")
     graph, sizing = compile_imported_design(handoff_obj)
     pdk = resolve_pdk_config("crn28hpcp")
-    placements = _imported_seed_placements(handoff_obj)
     physical_sizing = _physical_pcell_sizing(handoff_obj, sizing)
+    physical_smt = None
+    signoff_eligible = True
+    normalized_placement_mode = str(placement_mode or "smt").strip().lower()
+    if handoff_obj.topology == "two_stage_ota" and normalized_placement_mode == "smt":
+        try:
+            physical_smt = solve_imported_physical_smt(
+                graph,
+                physical_sizing,
+                topology=handoff_obj.topology,
+                pdk=pdk,
+                solver_timeout_ms=smt_timeout_ms,
+            )
+        except PhysicalIntentError:
+            raise
+        placements = physical_smt.placements
+        _write_json(layout_dir / "design_intent.json", physical_smt.intent.to_dict())
+        _write_json(layout_dir / "smt_solution.json", physical_smt.solution_dict())
+        _write_json(
+            layout_dir / "routing_resources.json",
+            {
+                "schema": "analogskills.routing_resource_assignments/v1",
+                "assignments": {
+                    name: dict(row) for name, row in physical_smt.route_resource_assignments.items()
+                },
+            },
+        )
+    elif normalized_placement_mode == "legacy_seed_debug":
+        placements = _imported_seed_placements(handoff_obj)
+        signoff_eligible = handoff_obj.topology != "two_stage_ota"
+        _write_json(
+            layout_dir / "smt_solution.json",
+            {
+                "schema": "analogskills.imported_physical_smt_solution/v1",
+                "passed": False,
+                "placement_mode": "legacy_seed_debug",
+                "signoff_eligible": signoff_eligible,
+                "reason": "legacy seed is retained for debug comparison only",
+            },
+        )
+    elif handoff_obj.topology == "two_stage_ota":
+        raise ValueError("two_stage_ota placement_mode must be 'smt' or 'legacy_seed_debug'")
+    else:
+        placements = _imported_seed_placements(handoff_obj)
     pcell_plan = generate_pcell_layout_plan(
         graph,
         physical_sizing,
@@ -296,6 +341,7 @@ def prepare_imported_physical_run(
             pdk,
             lib_name=lib_name,
             cell=cell,
+            route_resource_assignments=(physical_smt.route_resource_assignments if physical_smt is not None else {}),
         )
     else:
         interconnect = generate_interconnect(
@@ -343,6 +389,15 @@ def prepare_imported_physical_run(
 
     if handoff_obj.topology == "two_stage_ota":
         physical_stages["final_with_pins"] = _physical_connectivity_report(layout_plan, pdk)
+        if physical_smt is not None:
+            physical_stages["final_with_pins"]["constraint_realization"] = {
+                "complete": bool(physical_smt.compiled.checks.get("constraint_realization_complete", False)),
+                "matching": {
+                    name: dict(row) for name, row in physical_smt.matching_realization.items()
+                },
+                "route_resource_assignment_count": len(physical_smt.route_resource_assignments),
+                "route_resource_capacity_overflow": 0,
+            }
         _write_json(layout_dir / "physical_precheck_stages.json", physical_stages)
         failed_stages = [name for name, report in physical_stages.items() if not report["passed"]]
         if failed_stages:
@@ -412,8 +467,25 @@ def prepare_imported_physical_run(
             "schematic_skill": str(schematic_skill), "oa_batch_skill": str(oa_batch_skill),
             "streamout_skill": stream_plan.skill_path,
             "lvs_source": str(lvs_source), "gds": str(gds_path),
+            **(
+                {
+                    "design_intent": str(layout_dir / "design_intent.json"),
+                    "smt_solution": str(layout_dir / "smt_solution.json"),
+                    "routing_resources": str(layout_dir / "routing_resources.json"),
+                }
+                if physical_smt is not None
+                else {}
+            ),
         },
         "runtime": _runtime_manifest(),
+        "physical_planning": {
+            "placement_mode": normalized_placement_mode,
+            "signoff_eligible": signoff_eligible,
+            "solver": "z3" if physical_smt is not None else "none",
+            "constraint_realization_complete": bool(
+                physical_smt and physical_smt.compiled.checks.get("constraint_realization_complete", False)
+            ),
+        },
     }
     _write_json(root / "run_manifest.json", manifest)
     result = ImportedPhysicalResult(
@@ -439,6 +511,8 @@ def run_imported_design_signoff(
         base = prepare_imported_physical_run(prepared, physical_root=physical_root, lib_name=lib_name)
     root = Path(base.physical_root)
     manifest = json.loads((root / "run_manifest.json").read_text(encoding="utf-8"))
+    if not bool(dict(manifest.get("physical_planning", {})).get("signoff_eligible", True)):
+        return _signoff_failure(base, [], "legacy_seed_debug is not eligible for sign-off")
     config = _preflight(root, str(manifest["cellview"]["lib"]))
     cell = str(manifest["cellview"]["cell"])
     pdk = resolve_pdk_config("crn28hpcp")
@@ -661,6 +735,7 @@ def _build_imported_two_stage_ota_layout(
     *,
     lib_name: str,
     cell: str,
+    route_resource_assignments: Mapping[str, Mapping[str, object]] | None = None,
 ) -> tuple[OaWritePlan, dict[str, dict[str, Any]]]:
     """Route the exact frontend OTA without replacing its electrical graph."""
     core_bbox = physical_plan_bbox_um(device_plan)
@@ -672,6 +747,21 @@ def _build_imported_two_stage_ota_layout(
     metals = tuple(str(layer) for layer in pdk.layer_map.metals[2:])
     if len(metals) < 2:
         raise ValueError("two_stage_ota physical adapter requires at least four metal layers")
+    assignments = {
+        str(name): dict(row) for name, row in dict(route_resource_assignments or {}).items()
+    }
+    layer_by_net = {
+        name: str(row.get("layer", "")) for name, row in assignments.items() if str(row.get("layer", ""))
+    }
+    lane_by_net = {
+        name: int(row.get("lane", 0)) for name, row in assignments.items() if row.get("lane") is not None
+    }
+    ordered_nets = tuple(
+        name for name, _row in sorted(
+            assignments.items(),
+            key=lambda item: (str(item[1].get("layer", "")), int(item[1].get("lane", 0)), item[0]),
+        )
+    )
     route_result = build_strap_interconnect_result(
         pcell_plan,
         handoff.ports,
@@ -679,23 +769,30 @@ def _build_imported_two_stage_ota_layout(
         lib=lib_name,
         cell=cell,
         config=StrapRouterConfig(
+            local_net_prefixes=(),
             route_layers=metals,
             route_layer_strategy="cyclic",
-            global_net_order_strategy="name",
+            route_layer_by_net=layer_by_net,
+            strap_lane_by_net=lane_by_net,
+            global_net_order=ordered_nets,
+            global_net_order_strategy="explicit_then_name",
             drop_route_layers=(pdk.layer_map.metals[1],),
             strap_y_start_um=route_y,
-            strap_y_pitch_um=1.0,
+            strap_y_pitch_um=3.0,
             pin_origin_um=(pin_x, route_y),
             pin_pitch_um=3.0,
             pin_drop_x_start_um=pin_x + 5.0,
             pin_drop_x_pitch_um=-2.0,
-            fanout_y_search_steps=24,
-            strap_landing_search_steps=24,
+            fanout_search_steps=16 if assignments else 60,
+            fanout_y_search_steps=8 if assignments else 24,
+            strap_landing_search_steps=16 if assignments else 24,
             maze_escape_enabled=True,
+            maze_escape_search_steps=4 if assignments else 8,
+            maze_escape_max_expansions=1024 if assignments else 4096,
             connect_to_existing_net=True,
-            existing_net_target_limit=24,
-            existing_net_fanout_search_steps=24,
-            existing_net_fanout_y_search_steps=24,
+            existing_net_target_limit=64 if assignments else 24,
+            existing_net_fanout_search_steps=16 if assignments else 24,
+            existing_net_fanout_y_search_steps=8 if assignments else 24,
         ),
     )
     routed_core = merge_oa_write_plans(

@@ -28,6 +28,8 @@ class StrapRouterConfig:
     local_max_span_um: float = 25.0
     route_layers: tuple[str, ...] = ()
     route_layer_strategy: str = "unique"
+    route_layer_by_net: Mapping[str, str] = field(default_factory=dict)
+    strap_lane_by_net: Mapping[str, int] = field(default_factory=dict)
     global_net_order: tuple[str, ...] = ()
     global_net_order_strategy: str = "name"
     drop_route_layer: str = ""
@@ -272,8 +274,17 @@ def build_strap_interconnect_result(
     for idx, net in enumerate(routed_global_nets):
         layer = layer_for_net[net]
         strap_idx = int(global_net_index.get(str(net), idx))
-        strap_y = pdk.rules.snap_point_um((0.0, cfg.strap_y_start_um + strap_idx * cfg.strap_y_pitch_um))[1]
+        lane = int(cfg.strap_lane_by_net.get(str(net), strap_idx))
+        strap_y = pdk.rules.snap_point_um((0.0, cfg.strap_y_start_um + lane * cfg.strap_y_pitch_um))[1]
         xs = [term.x for term in terminals[net]]
+        if cfg.connect_to_existing_net:
+            # Calibrated multifinger access can expose additional same-net bus
+            # shapes beyond the terminal accessor's single representative pin.
+            # Include their extent so a later existing-net stitch cannot land
+            # outside the already-created strap.
+            for shape in occupied:
+                if str(shape.net) == str(net):
+                    xs.extend((float(shape.bbox[0]), float(shape.bbox[2])))
         if net in pin_drop_x:
             xs.append(pin_drop_x[net])
         min_x, max_x = min(xs), max(xs)
@@ -973,12 +984,17 @@ def _assign_route_layers(
         raise RuntimeError("No route layers are available for strap routing")
     strategy = str(getattr(cfg, "route_layer_strategy", "unique") or "unique").lower()
     nets = tuple(str(net) for net in global_nets)
+    explicit = {
+        net: str(cfg.route_layer_by_net[net])
+        for net in nets
+        if str(cfg.route_layer_by_net.get(net, ""))
+    }
     if strategy == "unique":
         if len(nets) > len(layers):
             raise RuntimeError(f"Need {len(nets)} route layers but only {len(layers)} are available")
-        return {net: (layers[idx],) for idx, net in enumerate(nets)}
+        return {net: (explicit.get(net, layers[idx]),) for idx, net in enumerate(nets)}
     if strategy == "cyclic":
-        return {net: (layers[idx % len(layers)],) for idx, net in enumerate(nets)}
+        return {net: (explicit.get(net, layers[idx % len(layers)]),) for idx, net in enumerate(nets)}
     raise RuntimeError(f"Unknown strap route_layer_strategy {strategy!r}")
 
 
@@ -3521,7 +3537,10 @@ def _route_spacing_clearance_shape_kinds(cfg: StrapRouterConfig) -> tuple[str, .
 
 
 def _route_spacing_clearance_for_layer(clearance_by_layer: Mapping[str, float] | None, layer: str) -> float:
-    if not isinstance(clearance_by_layer, Mapping):
+    # This is a hot path during fanout candidate search.  The caller already
+    # normalizes the mapping; a runtime ``typing.Mapping`` instance check here
+    # dominates routing time for dense analog blocks.
+    if not clearance_by_layer:
         return 0.0
     try:
         return max(float(clearance_by_layer.get(str(layer), 0.0) or 0.0), 0.0)

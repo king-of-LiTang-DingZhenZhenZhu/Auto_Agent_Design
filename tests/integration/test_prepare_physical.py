@@ -60,6 +60,26 @@ class PreparePhysicalIntegrationTest(unittest.TestCase):
                 mapping = json.loads((Path(result.physical_root) / "instance_mapping.json").read_text(encoding="utf-8"))
                 self.assertEqual(set(mapping), {row.name for row in handoff.devices})
                 if topology == "two_stage_ota":
+                    manifest = json.loads(
+                        (Path(result.physical_root) / "run_manifest.json").read_text(encoding="utf-8")
+                    )
+                    self.assertEqual(manifest["physical_planning"]["placement_mode"], "smt")
+                    self.assertTrue(manifest["physical_planning"]["signoff_eligible"])
+                    self.assertEqual(manifest["physical_planning"]["solver"], "z3")
+                    for artifact in ("design_intent", "smt_solution", "routing_resources"):
+                        self.assertTrue(Path(manifest["artifacts"][artifact]).is_file())
+                    smt_solution = json.loads(
+                        (Path(result.physical_root) / "layout" / "smt_solution.json").read_text(encoding="utf-8")
+                    )
+                    self.assertTrue(smt_solution["passed"])
+                    assignments = smt_solution["route_resource_assignments"]
+                    self.assertEqual(assignments["vip"]["layer"], assignments["vin"]["layer"])
+                    self.assertEqual(abs(assignments["vip"]["lane"] - assignments["vin"]["lane"]), 1)
+                    self.assertEqual(len({row["lane"] for row in assignments.values()}), len(assignments))
+                    self.assertEqual(
+                        smt_solution["matching_realization"]["input_pair"]["status"],
+                        "degraded_explicit",
+                    )
                     self.assertEqual(len(mapping["Mtail"]["lvs_instances"]), 2)
                     self.assertEqual(len(mapping["Mload"]["lvs_instances"]), 4)
                     layout_plan = json.loads(Path(result.layout_plan_path).read_text(encoding="utf-8"))
@@ -90,6 +110,10 @@ class PreparePhysicalIntegrationTest(unittest.TestCase):
                     self.assertTrue(all(report["passed"] for report in stages.values()))
                     self.assertTrue(all(not report["shorts"] for report in stages.values()))
                     self.assertTrue(all(not report["opens"] for report in stages.values()))
+                    self.assertEqual(
+                        stages["final_with_pins"]["constraint_realization"]["route_resource_capacity_overflow"],
+                        0,
+                    )
 
 
 if __name__ == "__main__":

@@ -44,6 +44,7 @@ Thumbs.db
 # Project-specific
 Agent_LLM_BO/circuit_agent/workspace/
 Agent_LLM_BO/circuit_agent/outputs/
+/outputs/
 Agent_LLM_BO/circuit_agent/cache/
 Agent_LLM_BO/circuit_agent/generated_projects/
 deferred_work
