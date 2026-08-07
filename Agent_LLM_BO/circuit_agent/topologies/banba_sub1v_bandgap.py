@@ -10,12 +10,25 @@ from models import DesignTarget, ParamDef, ParamSpace, format_spice_value
 from pdk_profiles import get_pdk_profile_for_params, spectre_include_line
 from system_decomposition import SystemDesignRequest, decompose_bandgap
 from topologies.bandgap_ptat import BandgapPTAT
-from topologies.base import ExecutableChildSpec, TopologyMeta
+from topologies.base import ExecutableChildSpec, PassiveImplementation, TopologyMeta
 from topologies.two_stage_ota import TwoStageOTA
 
 
 class BanbaSub1VBandgap(BandgapPTAT):
     """Current-mode low-voltage BGR from Banba et al., JSSC May 1999."""
+
+    PASSIVE_IMPLEMENTATIONS = (
+        PassiveImplementation("R1dev", "resistor", "bandgap_resistor"),
+        PassiveImplementation("R2dev", "resistor", "bandgap_resistor"),
+        PassiveImplementation("R3dev", "resistor", "bandgap_resistor"),
+        PassiveImplementation("R4dev", "resistor", "bandgap_resistor"),
+        PassiveImplementation("RSTART_BIAS", "resistor", "startup_resistor"),
+        PassiveImplementation("RRS_TOP", "resistor", "startup_resistor"),
+        PassiveImplementation("RRS_BOTTOM", "resistor", "startup_resistor"),
+        PassiveImplementation("C1dev", "capacitor", "compensation_capacitor"),
+        PassiveImplementation("C2dev", "capacitor", "compensation_capacitor"),
+        PassiveImplementation("CloadDev", "capacitor", "load_capacitor", "external"),
+    )
 
     STARTUP_INTERNAL_SAVES = "save Xdut.vrs Xdut.sup Xdut.cmp_out"
 

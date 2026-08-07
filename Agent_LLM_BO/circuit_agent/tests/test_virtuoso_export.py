@@ -8,7 +8,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 from topologies import get_topology
-from virtuoso_export.exporter import export_from_results, prepare_virtuoso_workspace
+from virtuoso_export.exporter import (
+    export_from_results,
+    prepare_virtuoso_workspace,
+    select_export_netlist,
+)
 from virtuoso_export.models import DEFAULT_DEVICE_MAP
 from virtuoso_export.parser import parse_netlist
 from virtuoso_export.skill_writer import write_skill
@@ -188,6 +192,84 @@ ends tiny
             self.assertEqual(Path(report["netlist_file"]), bo_netlist)
             self.assertEqual(report["export_source"], "bo_best")
             self.assertEqual(report["target_cell"], "proj_opt")
+
+    def test_unverified_passive_realization_blocks_export_selection(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / "outputs" / "proj"
+            project.mkdir(parents=True)
+            netlist = project / "circuit.cir"
+            netlist.write_text(
+                get_topology("two_stage_ota").generate_circuit(),
+                encoding="utf-8",
+            )
+            results = project / "results.json"
+            results.write_text(
+                json.dumps({"all_targets_met": True, "netlist_file": str(netlist)}),
+                encoding="utf-8",
+            )
+            passive_dir = project / "passive_realization"
+            passive_dir.mkdir()
+            (passive_dir / "passive_realization.json").write_text(
+                json.dumps({"required": True, "verified": False}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "not passed nominal"):
+                select_export_netlist(results)
+
+    def test_required_passive_realization_missing_report_blocks_export_selection(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / "outputs" / "proj"
+            project.mkdir(parents=True)
+            netlist = project / "circuit.cir"
+            netlist.write_text(
+                get_topology("two_stage_ota").generate_circuit(),
+                encoding="utf-8",
+            )
+            results = project / "results.json"
+            results.write_text(
+                json.dumps({
+                    "all_targets_met": True,
+                    "netlist_file": str(netlist),
+                    "passive_realization_required": True,
+                }),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "requires PDK passive"):
+                select_export_netlist(results)
+
+    def test_verified_passive_realization_is_export_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / "outputs" / "proj"
+            project.mkdir(parents=True)
+            bo_netlist = project / "bo.cir"
+            bo_netlist.write_text(
+                get_topology("two_stage_ota").generate_circuit(),
+                encoding="utf-8",
+            )
+            results = project / "results.json"
+            results.write_text(
+                json.dumps({"all_targets_met": True, "netlist_file": str(bo_netlist)}),
+                encoding="utf-8",
+            )
+            passive_dir = project / "passive_realization"
+            passive_dir.mkdir()
+            realized = passive_dir / "circuit.cir"
+            realized.write_text(bo_netlist.read_text(encoding="utf-8"), encoding="utf-8")
+            (passive_dir / "passive_realization.json").write_text(
+                json.dumps({
+                    "required": True,
+                    "verified": True,
+                    "netlist_file": str(realized),
+                }),
+                encoding="utf-8",
+            )
+
+            selected, source = select_export_netlist(results)
+
+            self.assertEqual(selected, realized)
+            self.assertEqual(source, "passive_realization")
 
     def test_prepare_virtuoso_workspace_writes_wrapper_files_without_running(self):
         with tempfile.TemporaryDirectory() as tmp:

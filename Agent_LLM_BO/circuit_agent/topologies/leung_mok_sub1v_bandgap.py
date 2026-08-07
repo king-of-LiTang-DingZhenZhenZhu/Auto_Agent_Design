@@ -18,11 +18,23 @@ from topologies.bandgap_ptat import (
     _TB_STARTUP_TEMPLATE,
     _TB_TEMPERATURE_TEMPLATE,
 )
-from topologies.base import ExecutableChildSpec, TopologyMeta
+from topologies.base import ExecutableChildSpec, PassiveImplementation, TopologyMeta
 
 
 class LeungMokSub1VBandgap(BandgapPTAT):
     """603-mV bandgap with no low-threshold MOS requirement."""
+
+    PASSIVE_IMPLEMENTATIONS = (
+        PassiveImplementation("R2A1", "resistor", "bandgap_resistor"),
+        PassiveImplementation("R2A2", "resistor", "bandgap_resistor"),
+        PassiveImplementation("R1Dev", "resistor", "bandgap_resistor"),
+        PassiveImplementation("R2B1", "resistor", "bandgap_resistor"),
+        PassiveImplementation("R2B2", "resistor", "bandgap_resistor"),
+        PassiveImplementation("R3Dev", "resistor", "bandgap_resistor"),
+        PassiveImplementation("RSBDev", "resistor", "startup_resistor"),
+        PassiveImplementation("CcompDev", "capacitor", "compensation_capacitor"),
+        PassiveImplementation("CloadDev", "capacitor", "load_capacitor", "external"),
+    )
 
     STARTUP_INTERNAL_SAVES = ""
 

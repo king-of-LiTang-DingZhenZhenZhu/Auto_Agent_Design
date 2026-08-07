@@ -27,12 +27,16 @@ from __future__ import annotations
 
 import math
 
-from topologies.base import BaseTopology, TopologyMeta
+from topologies.base import BaseTopology, PassiveImplementation, TopologyMeta
 from models import CircuitFiles, ParamDef, ParamSpace, format_spice_value
 from pdk_profiles import get_pdk_profile, get_pdk_profile_for_params, spectre_include_line
 
 
 class TwoStageOTA(BaseTopology):
+    PASSIVE_IMPLEMENTATIONS = (
+        PassiveImplementation("Rz", "resistor", "compensation_resistor"),
+        PassiveImplementation("Cc", "capacitor", "compensation_capacitor"),
+    )
     """Two-stage Miller-compensated OTA.
 
     NMOS diff pair → PMOS mirror → PMOS CS second stage → NMOS load.

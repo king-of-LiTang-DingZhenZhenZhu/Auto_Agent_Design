@@ -1046,6 +1046,15 @@ def _save_final_output(
         result_data["initial_gmid"] = initial_gmid_paths
     if original_requirement:
         result_data["original_requirement"] = original_requirement
+    requires_passive_realization = False
+    if topology_name:
+        from topologies import get_topology
+
+        passive_specs = get_topology(topology_name).passive_implementations()
+        requires_passive_realization = any(
+            item.realization in {"on_chip", "pdk"} for item in passive_specs
+        )
+        result_data["passive_realization_required"] = requires_passive_realization
     result_path = project_root / "results.json"
     result_path.write_text(
         json.dumps(result_data, indent=2, ensure_ascii=False, default=str),
@@ -1055,6 +1064,10 @@ def _save_final_output(
     # 5. Export Virtuoso SKILL schematic script (best-effort; no Cadence required)
     virtuoso_report = None
     try:
+        if requires_passive_realization:
+            raise ValueError(
+                "PDK passive realization and nominal verification are required before export"
+            )
         from virtuoso_export import export_netlist
 
         virtuoso_report = export_netlist(

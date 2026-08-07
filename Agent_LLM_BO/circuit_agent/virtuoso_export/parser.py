@@ -6,6 +6,8 @@ import re
 import shlex
 from pathlib import Path
 
+from pdk_profiles import PDKProfile
+
 from .models import Instance, SchematicIR
 
 
@@ -16,7 +18,10 @@ _SPECTRE_INSTANCE_RE = re.compile(
 )
 
 
-def parse_netlist(path_or_content: str | Path) -> SchematicIR:
+def parse_netlist(
+    path_or_content: str | Path,
+    profile: PDKProfile | None = None,
+) -> SchematicIR:
     """Parse a final rendered DUT netlist into a schematic IR.
 
     The parser intentionally targets the regular output from this repository's
@@ -57,7 +62,7 @@ def parse_netlist(path_or_content: str | Path) -> SchematicIR:
     instances: list[Instance] = []
     nets: set[str] = set(ports)
     for line in body:
-        inst = _parse_instance(line, param_values)
+        inst = _parse_instance(line, param_values, profile)
         if not inst:
             continue
         instances.append(inst)
@@ -104,10 +109,14 @@ def _strip_inline_comment(line: str) -> str:
     return line
 
 
-def _parse_instance(line: str, param_values: dict[str, float] | None = None) -> Instance | None:
+def _parse_instance(
+    line: str,
+    param_values: dict[str, float] | None = None,
+    profile: PDKProfile | None = None,
+) -> Instance | None:
     spectre_match = _SPECTRE_INSTANCE_RE.match(line)
     if spectre_match:
-        return _parse_spectre_instance(spectre_match, param_values or {})
+        return _parse_spectre_instance(spectre_match, param_values or {}, profile)
 
     prefix = line[0].upper()
     if prefix == "M":
@@ -122,6 +131,7 @@ def _parse_instance(line: str, param_values: dict[str, float] | None = None) -> 
 def _parse_spectre_instance(
     match: re.Match[str],
     param_values: dict[str, float],
+    profile: PDKProfile | None = None,
 ) -> Instance | None:
     name = match.group(1)
     nodes = match.group(2).split()
@@ -145,6 +155,15 @@ def _parse_spectre_instance(
             nodes=nodes,
             params=_normalize_params(params, param_values),
         )
+    pdk_kind = _pdk_passive_kind(primitive, profile)
+    if pdk_kind:
+        return Instance(
+            name=name,
+            kind="res" if pdk_kind == "resistor" else "cap",
+            model=primitive,
+            nodes=nodes,
+            params=_normalize_params(params, param_values),
+        )
     if len(nodes) == 4 and name.upper().startswith("M"):
         return Instance(
             name=name,
@@ -153,6 +172,24 @@ def _parse_spectre_instance(
             nodes=nodes,
             params=_normalize_params(params, param_values),
         )
+    return None
+
+
+def _pdk_passive_kind(
+    model: str,
+    profile: PDKProfile | None = None,
+) -> str | None:
+    """Resolve characterized and legacy special-model two-terminal devices."""
+    from pdk_profiles import get_pdk_profile
+
+    pdk = profile or get_pdk_profile()
+    for device in pdk.passive_devices.values():
+        if device.spectre_model == model:
+            return device.kind
+    if pdk.special_models.get("resistor_poly") == model:
+        return "resistor"
+    if pdk.special_models.get("capacitor_mim") == model:
+        return "capacitor"
     return None
 
 

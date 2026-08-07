@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
@@ -55,6 +56,46 @@ class VoltageDomainProfile:
 
 
 @dataclass(frozen=True)
+class PassiveDeviceProfile:
+    """One characterized PDK resistor or capacitor implementation.
+
+    ``mapping_mode`` is one of ``value``, ``formula``, or ``lookup``.  Formula
+    devices use ``sheet_resistance_ohm_per_square`` for resistors or
+    ``capacitance_per_area_f_per_m2`` (and optional edge capacitance) for
+    capacitors.  Lookup devices read a JSON array of characterized points.
+    """
+
+    kind: str
+    spectre_model: str
+    virtuoso_lib: str
+    virtuoso_cell: str
+    mapping_mode: str
+    virtuoso_view: str = "symbol"
+    term_order: tuple[str, ...] = ("PLUS", "MINUS")
+    parameter_map: dict[str, str] = field(default_factory=dict)
+    fixed_parameters: dict[str, object] = field(default_factory=dict)
+    value_parameter: str = ""
+    width_parameter: str = "w"
+    length_parameter: str = "l"
+    multiplier_parameter: str = "m"
+    min_width_m: float | None = None
+    max_width_m: float | None = None
+    min_length_m: float | None = None
+    max_length_m: float | None = None
+    geometry_grid_m: float | None = None
+    max_unit_area_m2: float | None = None
+    max_series_units: int = 1
+    max_parallel_units: int = 1
+    value_tolerance: float = 0.02
+    sheet_resistance_ohm_per_square: float | None = None
+    capacitance_per_area_f_per_m2: float | None = None
+    capacitance_perimeter_f_per_m: float = 0.0
+    lookup_table_path: str = ""
+    max_voltage_v: float | None = None
+    temperature_coefficient_ppm_per_c: float | None = None
+
+
+@dataclass(frozen=True)
 class PDKProfile:
     """Process-specific paths, model names, and basic design limits."""
 
@@ -83,6 +124,8 @@ class PDKProfile:
     voltage_domains: dict[str, VoltageDomainProfile] = field(default_factory=dict)
     active_voltage_domain: str = ""
     special_models: dict[str, str] = field(default_factory=dict)
+    passive_devices: dict[str, PassiveDeviceProfile] = field(default_factory=dict)
+    passive_role_map: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, object]:
         """Return a JSON-serializable representation."""
@@ -91,6 +134,8 @@ class PDKProfile:
         data["pvt_temperatures_c"] = list(self.pvt_temperatures_c)
         for domain in data["voltage_domains"].values():
             domain["pvt_temperatures_c"] = list(domain["pvt_temperatures_c"])
+        for device in data["passive_devices"].values():
+            device["term_order"] = list(device["term_order"])
         return data
 
     @property
@@ -628,6 +673,67 @@ def validate_pdk_profile(
         elif not model_roles[role]:
             errors.append(f"model role '{role}' is empty")
 
+    for device_name, device in pdk.passive_devices.items():
+        prefix = f"passive device '{device_name}'"
+        if device.kind not in {"resistor", "capacitor"}:
+            errors.append(f"{prefix} kind must be resistor or capacitor")
+        if device.mapping_mode not in {"value", "formula", "lookup"}:
+            errors.append(f"{prefix} has unsupported mapping_mode '{device.mapping_mode}'")
+        if not device.spectre_model:
+            errors.append(f"{prefix} spectre_model is empty")
+        if not device.virtuoso_lib or not device.virtuoso_cell:
+            errors.append(f"{prefix} Virtuoso lib/cell is incomplete")
+        if len(device.term_order) != 2:
+            errors.append(f"{prefix} term_order must contain two terminals")
+        if not 0 <= device.value_tolerance < 1:
+            errors.append(f"{prefix} value_tolerance must be in [0, 1)")
+        if device.max_series_units < 1 or device.max_parallel_units < 1:
+            errors.append(f"{prefix} series/parallel limits must be positive")
+        if device.mapping_mode == "value" and not device.value_parameter:
+            errors.append(f"{prefix} value mapping requires value_parameter")
+        if device.mapping_mode == "lookup":
+            if not device.lookup_table_path:
+                errors.append(f"{prefix} lookup mapping requires lookup_table_path")
+            else:
+                lookup_path = Path(device.lookup_table_path).expanduser()
+                if not lookup_path.exists():
+                    errors.append(f"{prefix} lookup table not found: {lookup_path}")
+                else:
+                    errors.extend(_validate_passive_lookup_table(prefix, lookup_path))
+        if device.mapping_mode == "formula":
+            geometry = (
+                device.min_width_m,
+                device.max_width_m,
+                device.min_length_m,
+                device.max_length_m,
+                device.geometry_grid_m,
+            )
+            if any(value is None or value <= 0 for value in geometry):
+                errors.append(f"{prefix} formula mapping requires positive geometry limits/grid")
+            elif (
+                device.min_width_m > device.max_width_m
+                or device.min_length_m > device.max_length_m
+            ):
+                errors.append(f"{prefix} minimum geometry exceeds maximum")
+            if device.kind == "resistor" and not (
+                device.sheet_resistance_ohm_per_square
+                and device.sheet_resistance_ohm_per_square > 0
+            ):
+                errors.append(f"{prefix} formula requires sheet resistance")
+            if device.kind == "capacitor" and not (
+                device.capacitance_per_area_f_per_m2
+                and device.capacitance_per_area_f_per_m2 > 0
+            ):
+                errors.append(f"{prefix} formula requires capacitance per area")
+
+    for role, device_name in pdk.passive_role_map.items():
+        if not role:
+            errors.append("passive_role_map contains an empty role")
+        if device_name not in pdk.passive_devices:
+            errors.append(
+                f"passive role '{role}' references unknown device '{device_name}'"
+            )
+
     if require_gmid or pdk.gmid_table_path:
         gmid_path = Path(pdk.gmid_table_path).expanduser()
         if not pdk.gmid_table_path:
@@ -754,6 +860,14 @@ def _load_external_profile(path: str | Path) -> PDKProfile:
                 f"External PDK profile file {path} contains multiple profiles; "
                 "set CIRCUIT_AGENT_PDK or PDK_PROFILE to choose one"
             )
+    raw_passives = dict(data.get("passive_devices") or {})
+    for raw in raw_passives.values():
+        if not isinstance(raw, dict):
+            continue
+        lookup_path = str(raw.get("lookup_table_path") or "")
+        if lookup_path and not Path(lookup_path).expanduser().is_absolute():
+            raw["lookup_table_path"] = str((path.parent / lookup_path).resolve())
+    data["passive_devices"] = raw_passives
     return _coerce_profile(data)
 
 
@@ -775,6 +889,15 @@ def _coerce_profile(data: dict[str, object]) -> PDKProfile:
         str(role): str(model)
         for role, model in dict(values.get("special_models") or {}).items()
     }
+    raw_passives = dict(values.get("passive_devices") or {})
+    values["passive_devices"] = {
+        str(name): _coerce_passive_device(str(name), raw)
+        for name, raw in raw_passives.items()
+    }
+    values["passive_role_map"] = {
+        str(role): str(device)
+        for role, device in dict(values.get("passive_role_map") or {}).items()
+    }
     temps = values.get("pvt_temperatures_c", (-40.0, 27.0, 125.0))
     values["pvt_temperatures_c"] = tuple(float(temp) for temp in temps)
     options = values.get("spectre_options", ())
@@ -793,6 +916,21 @@ def _coerce_profile(data: dict[str, object]) -> PDKProfile:
         for name, domain in raw_domains.items()
     }
     return PDKProfile(**values)
+
+
+def _coerce_passive_device(name: str, raw: object) -> PassiveDeviceProfile:
+    if not isinstance(raw, dict):
+        raise ValueError(f"passive_devices.{name} must be an object")
+    values = dict(raw)
+    values["term_order"] = tuple(
+        str(term) for term in values.get("term_order", ("PLUS", "MINUS"))
+    )
+    values["parameter_map"] = {
+        str(source): str(target)
+        for source, target in dict(values.get("parameter_map") or {}).items()
+    }
+    values["fixed_parameters"] = dict(values.get("fixed_parameters") or {})
+    return PassiveDeviceProfile(**values)
 
 
 def _coerce_voltage_domain(
@@ -871,6 +1009,35 @@ def _validate_topology_presets(profile: PDKProfile) -> list[str]:
                     f"unknown parameter '{param_name}'"
                 )
 
+    return errors
+
+
+def _validate_passive_lookup_table(prefix: str, path: Path) -> list[str]:
+    errors: list[str] = []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return [f"{prefix} cannot read lookup table {path}: {exc}"]
+    if not isinstance(data, dict):
+        return [f"{prefix} lookup table must be a versioned object"]
+    for field_name in ("version", "corner", "temperature_c", "method"):
+        if data.get(field_name) in {None, ""}:
+            errors.append(f"{prefix} lookup table missing '{field_name}'")
+    points = data.get("points")
+    if not isinstance(points, list) or not points:
+        errors.append(f"{prefix} lookup table has no characterized points")
+    else:
+        for index, point in enumerate(points):
+            if not isinstance(point, dict) or not isinstance(point.get("params"), dict):
+                errors.append(f"{prefix} lookup point {index} has no params object")
+                continue
+            try:
+                value = float(point.get("value"))
+            except (TypeError, ValueError):
+                errors.append(f"{prefix} lookup point {index} has invalid value")
+                continue
+            if not math.isfinite(value) or value <= 0:
+                errors.append(f"{prefix} lookup point {index} value must be positive")
     return errors
 
 

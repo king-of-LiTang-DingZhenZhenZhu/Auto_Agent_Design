@@ -12,12 +12,21 @@ from system_decomposition import (
     decompose_bandgap,
     derive_bandgap_opamp_targets,
 )
-from topologies.base import BaseTopology, ExecutableChildSpec, TopologyMeta
+from topologies.base import BaseTopology, ExecutableChildSpec, PassiveImplementation, TopologyMeta
 from topologies.two_stage_ota import TwoStageOTA
 
 
 class BandgapPTAT(BaseTopology):
     """PNP bandgap core with a frozen two-stage OTA error amplifier."""
+
+    PASSIVE_IMPLEMENTATIONS = (
+        PassiveImplementation("RSTART_BIAS", "resistor", "startup_resistor"),
+        PassiveImplementation("RRS_TOP", "resistor", "startup_resistor"),
+        PassiveImplementation("RRS_BOTTOM", "resistor", "startup_resistor"),
+        *(PassiveImplementation(f"R1_{i}", "resistor", "bandgap_resistor", "pdk") for i in range(1, 5)),
+        *(PassiveImplementation(f"R0_{i}", "resistor", "bandgap_resistor", "pdk") for i in range(1, 3)),
+        PassiveImplementation("CloadDev", "capacitor", "load_capacitor", "external"),
+    )
 
     STARTUP_INTERNAL_SAVES = "save Xdut.vrs Xdut.sup Xdut.cmp_out"
 

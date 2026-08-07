@@ -44,6 +44,24 @@ class TopologyMeta:
 
 
 @dataclass(frozen=True)
+class PassiveImplementation:
+    """Physical implementation intent for one DUT resistor or capacitor."""
+
+    instance: str
+    kind: str
+    role: str
+    realization: str = "on_chip"
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "instance": self.instance,
+            "kind": self.kind,
+            "role": self.role,
+            "realization": self.realization,
+        }
+
+
+@dataclass(frozen=True)
 class ExecutableChildSpec:
     """Execution contract for one child optimized before its parent topology.
 
@@ -291,6 +309,9 @@ class BaseTopology(ABC):
                 req["voltage_domain"] = str(voltage_domain)
             req["generated_at"] = datetime.datetime.now().isoformat()
             req["default_params"] = self.get_default_params()
+            req["passive_implementations"] = [
+                item.to_dict() for item in self.passive_implementations()
+            ]
 
             req_path = out / "requirements.json"
             req_path.write_text(
@@ -356,6 +377,14 @@ class BaseTopology(ABC):
         cascode currently requires LVT devices.
         """
         return ("nmos", "pmos")
+
+    def passive_implementations(self) -> tuple[PassiveImplementation, ...]:
+        """Declare whether each DUT passive is on-chip or an external load.
+
+        Topologies with physical resistors or capacitors override this method.
+        Testbench passives are external by definition and are not listed.
+        """
+        return tuple(getattr(self, "PASSIVE_IMPLEMENTATIONS", ()))
 
     def availability_error(
         self,

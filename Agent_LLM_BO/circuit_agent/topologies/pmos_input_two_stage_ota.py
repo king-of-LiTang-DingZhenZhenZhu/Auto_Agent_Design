@@ -25,10 +25,14 @@ import math
 
 from models import CircuitFiles, ParamDef, ParamSpace, format_spice_value
 from pdk_profiles import get_pdk_profile, get_pdk_profile_for_params, spectre_include_line
-from topologies.base import BaseTopology, TopologyMeta
+from topologies.base import BaseTopology, PassiveImplementation, TopologyMeta
 
 
 class PMOSInputTwoStageOTA(BaseTopology):
+    PASSIVE_IMPLEMENTATIONS = (
+        PassiveImplementation("Rz", "resistor", "compensation_resistor"),
+        PassiveImplementation("Cc", "capacitor", "compensation_capacitor"),
+    )
     """PMOS-input 5T OTA followed by an NMOS common-source second stage."""
 
     meta = TopologyMeta(

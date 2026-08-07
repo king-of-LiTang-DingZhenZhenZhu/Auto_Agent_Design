@@ -14,11 +14,19 @@ from models import (
     split_width,
 )
 from pdk_profiles import get_pdk_profile_for_params, spectre_include_line
-from topologies.base import BaseTopology, TopologyMeta
+from topologies.base import BaseTopology, PassiveImplementation, TopologyMeta
 
 
 class DFCCaplessLDO(BaseTopology):
     """Monolithic PMOS-pass LDO based on the paper's Fig. 4."""
+
+    PASSIVE_IMPLEMENTATIONS = (
+        PassiveImplementation("RfbTop", "resistor", "feedback_resistor"),
+        PassiveImplementation("RfbBottom", "resistor", "feedback_resistor"),
+        PassiveImplementation("Cf1Dev", "capacitor", "feedforward_capacitor"),
+        PassiveImplementation("Cm1Dev", "capacitor", "compensation_capacitor"),
+        PassiveImplementation("Cm2Dev", "capacitor", "compensation_capacitor"),
+    )
 
     meta = TopologyMeta(
         name="dfc_capless_ldo",

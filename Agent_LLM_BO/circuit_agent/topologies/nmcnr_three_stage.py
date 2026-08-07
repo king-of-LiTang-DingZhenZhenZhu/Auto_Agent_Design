@@ -13,7 +13,7 @@ Fig. 1(e) and (19)-(22).
 from __future__ import annotations
 
 from models import ParamDef, ParamSpace, format_spice_value
-from topologies.base import TopologyMeta
+from topologies.base import PassiveImplementation, TopologyMeta
 from topologies.mnmc_three_stage import MNMCThreeStageOTA
 
 
@@ -41,6 +41,9 @@ def _nmcnr_defaults() -> dict[str, float]:
 
 
 class NMCNRThreeStageOTA(MNMCThreeStageOTA):
+    PASSIVE_IMPLEMENTATIONS = MNMCThreeStageOTA.PASSIVE_IMPLEMENTATIONS + (
+        PassiveImplementation("RmDev", "resistor", "compensation_resistor"),
+    )
     """Three-stage nested-Miller OTA with a series nulling resistor."""
 
     meta = TopologyMeta(

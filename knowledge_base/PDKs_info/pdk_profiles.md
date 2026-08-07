@@ -224,6 +224,92 @@ python pdk_profiles.py --validate --require-gmid --require-virtuoso
 
 优化完成后，`outputs/<project>/pdk_profile_used.json` 会保存当次使用的 profile 快照，方便之后复现实验或排查 PDK 切换问题。
 
+## 片上电阻与电容
+
+`passive_devices` 是无源器件实现的机器可读数据源；本文档中的器件名称只作说明。
+不要根据 Virtuoso GUI 显示值猜测 PCell 参数，也不要把受 NDA 约束的数据提交到仓库。
+这类数据可以放在外部 JSON，并通过 `PDK_PROFILE_FILE` 加载。
+
+```json
+{
+  "passive_devices": {
+    "example_rpoly": {
+      "kind": "resistor",
+      "spectre_model": "<model-from-pdk>",
+      "virtuoso_lib": "<pdk-library>",
+      "virtuoso_cell": "<pcell-name>",
+      "mapping_mode": "lookup",
+      "term_order": ["PLUS", "MINUS"],
+      "parameter_map": {"W": "w", "L": "l"},
+      "lookup_table_path": "characterization/example_rpoly.json",
+      "max_series_units": 8,
+      "max_parallel_units": 4,
+      "value_tolerance": 0.02
+    },
+    "example_mim": {
+      "kind": "capacitor",
+      "spectre_model": "<model-from-pdk>",
+      "virtuoso_lib": "<pdk-library>",
+      "virtuoso_cell": "<pcell-name>",
+      "mapping_mode": "value",
+      "value_parameter": "c",
+      "term_order": ["PLUS", "MINUS"]
+    }
+  },
+  "passive_role_map": {
+    "compensation_resistor": "example_rpoly",
+    "feedback_resistor": "example_rpoly",
+    "compensation_capacitor": "example_mim",
+    "feedforward_capacitor": "example_mim"
+  }
+}
+```
+
+映射模式：
+
+- `value`：Spectre/PCell 有经过验证的可写容阻值参数。必须填写 `value_parameter`。
+- `formula`：使用已验证的方阻或单位面积/周长电容公式，并填写 W/L 范围、制造栅格和单位面积限制。
+- `lookup`：推荐用于真实 PDK。JSON 包含 `version`、提取条件和 `points`；每个 point 至少有 `value` 与实际 Spectre `params`，可附 `area_m2`。
+
+```json
+{
+  "version": "pdk-release-and-extraction-revision",
+  "corner": "tt",
+  "temperature_c": 27,
+  "method": "DC V/I or AC imag(Y)/(2*pi*f)",
+  "points": [
+    {"value": 10000.0, "params": {"w": "1u", "l": "100u"}, "area_m2": 1e-10}
+  ]
+}
+```
+
+先通过 PDK 文档、CDF 和生成的 Spectre netlist 确认可写参数与单位；电阻用 DC
+`V/I`，电容用 AC `imag(Y)/(2*pi*f)` 建表。CDF 派生显示值只用于交叉检查。
+已知 PCell 的 library/cell 后，可以生成只读 CDF/端口探针，再在 Cadence 工作目录中运行：
+
+```bash
+python pdk_passive_probe.py --device <passive_devices-key> --out passive_cdf_probe.il
+virtuoso -nograph -replay passive_cdf_probe.il
+```
+
+探针不创建或修改 cell，只把 base CDF 参数和 symbol terminals 写到
+`passive_cdf_report.txt`。随后仍需检查一次 PCell 生成的 Spectre netlist，确认 CDF
+属性到 simulator 参数的真实映射。
+
+BO 达标后运行设计流时，无源器件阶段会：
+
+1. 只转换 topology 标记为 `on_chip` 的 DUT 器件；`external/testbench` 保持理想。
+2. 输出 `passive_realization/passive_realization.json` 和物理网表。
+3. 使用 PDK 模型重跑 nominal；失败时尝试少量邻近合法几何。
+4. 只有 nominal 验证通过，才允许 Design Audit、PVT 和 Virtuoso 导出。
+
+```bash
+python design_flow_graph.py --project outputs/<project> --run-pvt --simulate
+```
+
+默认 `tsmc28` profile 目前没有填写 MIM PCell、CDF 参数或无源特性表。代码会明确
+报 `configure_pdk_passives`，不会猜测器件名、换算公式或回退到 `analogLib`。
+
 # TSMC28 IO 1.8 V 域
 
 内置 `tsmc28` profile 提供 `io_1p8` voltage domain：

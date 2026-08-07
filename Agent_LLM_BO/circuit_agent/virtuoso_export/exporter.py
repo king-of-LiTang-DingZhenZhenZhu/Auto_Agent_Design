@@ -11,9 +11,9 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from pdk_profiles import get_pdk_profile
+from pdk_profiles import PDKProfile, get_pdk_profile
 
-from .models import DEFAULT_DEVICE_MAP, DeviceMap, DeviceMapEntry
+from .models import DeviceMap, DeviceMapEntry, default_device_map
 from .parser import parse_netlist
 from .skill_writer import write_skill
 
@@ -38,6 +38,8 @@ def export_from_results(
     """Export a Virtuoso SKILL script from an optimizer results.json file."""
     results_path = Path(results_path)
     result_data = json.loads(results_path.read_text(encoding="utf-8"))
+    profile_path = results_path.parent / "pdk_profile_used.json"
+    profile = get_pdk_profile(str(profile_path)) if profile_path.exists() else get_pdk_profile()
 
     netlist_path, export_source = select_export_netlist(results_path, result_data)
 
@@ -62,6 +64,7 @@ def export_from_results(
         include_cds_libs=include_cds_libs,
         pdk_lib_path=pdk_lib_path,
         cds_log_path=cds_log_path,
+        profile=profile,
     )
 
 
@@ -80,12 +83,14 @@ def export_netlist(
     include_cds_libs: list[str | Path] | None = None,
     pdk_lib_path: str | Path | None = None,
     cds_log_path: str | Path | None = None,
+    profile: PDKProfile | None = None,
 ) -> dict[str, Any]:
     """Export a final rendered DUT netlist to a Virtuoso SKILL script."""
     netlist_path = Path(netlist_path)
     out_path = Path(out_path)
-    device_map = load_device_map(device_map_path)
-    ir = parse_netlist(netlist_path)
+    pdk = profile or get_pdk_profile()
+    device_map = load_device_map(device_map_path, profile=pdk)
+    ir = parse_netlist(netlist_path, profile=pdk)
     skill = write_skill(ir, device_map, lib_name=lib_name, cell_name=cell_name)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -96,7 +101,7 @@ def export_netlist(
         "results_file": str(results_path) if results_path else None,
         "netlist_file": str(netlist_path),
         "export_source": export_source,
-        "pdk_profile": _PDK.to_dict(),
+        "pdk_profile": pdk.to_dict(),
         "target_lib": lib_name,
         "target_cell": cell_name,
         "target_view": "schematic",
@@ -242,11 +247,12 @@ def select_export_netlist(
     results_path: str | Path,
     result_data: dict[str, Any] | None = None,
 ) -> tuple[Path, str]:
-    """Select the final netlist for Virtuoso export.
+    """Select the verified final netlist for PVT/Virtuoso export.
 
     Priority:
-    1. Review candidate that satisfies the original BO targets.
-    2. BO best netlist from ``results.json["netlist_file"]``.
+    1. Nominal-verified PDK passive realization.
+    2. Review candidate that satisfies the original BO targets.
+    3. BO best netlist from ``results.json["netlist_file"]``.
 
     This keeps BO as the default export source, but lets a successful
     post-BO Agent review candidate replace it automatically.
@@ -255,6 +261,39 @@ def select_export_netlist(
     if result_data is None:
         result_data = json.loads(results_path.read_text(encoding="utf-8"))
 
+    passive_report = results_path.parent / "passive_realization" / "passive_realization.json"
+    if passive_report.exists():
+        passive_data = json.loads(passive_report.read_text(encoding="utf-8"))
+        if passive_data.get("required"):
+            if not passive_data.get("verified"):
+                raise ValueError(
+                    "PDK passive realization exists but has not passed nominal verification: "
+                    f"{passive_report}"
+                )
+            realized = Path(str(passive_data.get("netlist_file") or ""))
+            if not realized.is_absolute():
+                realized = (passive_report.parent / realized).resolve()
+            if not realized.exists():
+                raise ValueError(f"Verified passive netlist not found: {realized}")
+            return realized, "passive_realization"
+
+    if result_data.get("passive_realization_required"):
+        raise ValueError(
+            "This result requires PDK passive realization before PVT or export; "
+            f"missing {passive_report}"
+        )
+
+    return select_pre_realization_netlist(results_path, result_data)
+
+
+def select_pre_realization_netlist(
+    results_path: str | Path,
+    result_data: dict[str, Any] | None = None,
+) -> tuple[Path, str]:
+    """Select BO/review source before PDK passive realization."""
+    results_path = Path(results_path)
+    if result_data is None:
+        result_data = json.loads(results_path.read_text(encoding="utf-8"))
     bo_netlist = _resolve_bo_netlist(results_path, result_data)
     targets = _load_targets(results_path)
     review_netlist = _select_passing_review_candidate(results_path.parent, targets)
@@ -266,9 +305,12 @@ def select_export_netlist(
     return bo_netlist, "bo_best_unmet"
 
 
-def load_device_map(path: str | Path | None = None) -> DeviceMap:
+def load_device_map(
+    path: str | Path | None = None,
+    profile: PDKProfile | None = None,
+) -> DeviceMap:
     """Load a device map JSON file and merge it over the defaults."""
-    device_map = dict(DEFAULT_DEVICE_MAP)
+    device_map = default_device_map(profile)
     if not path:
         return device_map
 
@@ -289,7 +331,7 @@ def load_device_map(path: str | Path | None = None) -> DeviceMap:
 def default_device_map_json() -> str:
     """Return the default device map as pretty JSON for users to customize."""
     return json.dumps(
-        {name: asdict(entry) for name, entry in DEFAULT_DEVICE_MAP.items()},
+        {name: asdict(entry) for name, entry in default_device_map().items()},
         indent=2,
         ensure_ascii=False,
     )

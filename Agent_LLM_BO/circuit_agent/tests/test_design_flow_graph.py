@@ -144,6 +144,39 @@ class DesignFlowGraphTests(unittest.TestCase):
             self.assertEqual(state["review_mode"], "audit_repair")
             self.assertFalse((project / "pvt").exists())
 
+    def test_on_chip_passives_without_pdk_mapping_stop_before_audit_and_pvt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / "outputs" / "proj"
+            netlist = project / "netlist" / "circuit.cir"
+            netlist.parent.mkdir(parents=True)
+            netlist.write_text(
+                get_topology("two_stage_ota").generate_circuit(),
+                encoding="utf-8",
+            )
+            (project / "results.json").write_text(
+                json.dumps({
+                    "project_name": "proj",
+                    "topology_name": "two_stage_ota",
+                    "all_targets_met": True,
+                    "netlist_file": str(netlist),
+                }),
+                encoding="utf-8",
+            )
+
+            with patch("design_flow_graph.run_pvt_verification") as run_pvt:
+                state = run_design_flow(project, run_pvt=True, simulate=False)
+
+            run_pvt.assert_not_called()
+            self.assertEqual(state["passive_status"], "blocked")
+            self.assertEqual(state["next_action"], "configure_pdk_passives")
+            self.assertFalse((project / "design_audit").exists())
+            report = json.loads(
+                (project / "passive_realization" / "passive_realization.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertIn("compensation_resistor", report["error"])
+
 
 if __name__ == "__main__":
     unittest.main()

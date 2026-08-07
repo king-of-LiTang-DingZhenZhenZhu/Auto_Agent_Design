@@ -31,12 +31,16 @@ Port order: vip vin vout ibias vdd vss
 
 from __future__ import annotations
 
-from topologies.base import BaseTopology, TopologyMeta
+from topologies.base import BaseTopology, PassiveImplementation, TopologyMeta
 from models import CircuitFiles, ParamDef, ParamSpace, format_spice_value
 from pdk_profiles import get_pdk_profile, get_pdk_profile_for_params, spectre_include_line
 
 
 class NMCFThreeStageOTA(BaseTopology):
+    PASSIVE_IMPLEMENTATIONS = (
+        PassiveImplementation("Cc1", "capacitor", "compensation_capacitor"),
+        PassiveImplementation("Cc2", "capacitor", "compensation_capacitor"),
+    )
     """Three-stage NMCF OTA with a stage-1-to-output feedforward path.
 
     The PMOS input stage drives a PMOS/NMOS-mirror intermediate stage.  An

@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import math
 
-from topologies.base import BaseTopology, TopologyMeta
+from topologies.base import BaseTopology, PassiveImplementation, TopologyMeta
 from models import CircuitFiles, ParamDef, ParamSpace, format_spice_value
 from pdk_profiles import get_pdk_profile, get_pdk_profile_for_params, spectre_include_line
 
@@ -66,6 +66,10 @@ def _bias_l(name: str) -> ParamDef:
 
 
 class FoldedCascodeTwoStageOTA(BaseTopology):
+    PASSIVE_IMPLEMENTATIONS = (
+        PassiveImplementation("Rz", "resistor", "compensation_resistor"),
+        PassiveImplementation("Cc", "capacitor", "compensation_capacitor"),
+    )
     """Folded-cascode plus common-source two-stage OTA.
 
     PMOS input pair -> folded NMOS cascodes -> PMOS cascode mirror ->

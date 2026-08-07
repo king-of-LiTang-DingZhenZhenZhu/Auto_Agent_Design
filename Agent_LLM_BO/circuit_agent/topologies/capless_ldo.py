@@ -15,12 +15,26 @@ from models import (
 )
 from pdk_profiles import get_pdk_profile_for_params, spectre_include_line
 from system_decomposition import SystemDesignRequest, decompose_ldo
-from topologies.base import BaseTopology, ExecutableChildSpec, TopologyMeta
+from topologies.base import (
+    BaseTopology,
+    ExecutableChildSpec,
+    PassiveImplementation,
+    TopologyMeta,
+)
 from topologies.two_stage_ota import TwoStageOTA
 
 
 class CaplessLDO(BaseTopology):
     """1.8 V to 0.9 V PMOS-pass LDO for 0-10 mA loads."""
+
+    PASSIVE_IMPLEMENTATIONS = (
+        PassiveImplementation("RgateDev", "resistor", "gate_resistor"),
+        PassiveImplementation("RfbTop", "resistor", "feedback_resistor"),
+        PassiveImplementation("RfbBottom", "resistor", "feedback_resistor"),
+        PassiveImplementation("RbleedDev", "resistor", "bias_resistor"),
+        PassiveImplementation("CffDev", "capacitor", "feedforward_capacitor"),
+        PassiveImplementation("CcompDev", "capacitor", "compensation_capacitor"),
+    )
 
     meta = TopologyMeta(
         name="capless_ldo",

@@ -10,6 +10,7 @@ from typing import Any, Literal, TypedDict
 
 from design_audit import run_design_audit
 from models import DesignTarget
+from passive_realization import realize_project_passives
 from pdk_profiles import PDKProfile
 from pvt_simulation import run_pvt_verification
 from virtuoso_export.exporter import export_from_results, select_export_netlist
@@ -37,6 +38,10 @@ class DesignFlowState(TypedDict, total=False):
     audit_warnings: int
     audit_report: str | None
     review_mode: str | None
+    passive_status: str | None
+    passive_required: bool
+    passive_verified: bool
+    passive_report: str | None
     pvt_requested: bool
     pvt_targets: DesignTarget | None
     pvt_profile: PDKProfile | None
@@ -86,6 +91,7 @@ def _build_graph():
     graph.add_node("load_results", load_results)
     graph.add_node("check_nominal", check_nominal)
     graph.add_node("run_design_audit", run_design_audit_node)
+    graph.add_node("realize_passives", realize_passives_node)
     graph.add_node("prepare_review", prepare_review)
     graph.add_node("run_pvt", run_pvt_node)
     graph.add_node("check_pvt", check_pvt)
@@ -98,7 +104,15 @@ def _build_graph():
         route_after_nominal,
         {
             "review": "prepare_review",
+            "realize": "realize_passives",
+        },
+    )
+    graph.add_conditional_edges(
+        "realize_passives",
+        route_after_passive_realization,
+        {
             "audit": "run_design_audit",
+            "done": END,
         },
     )
     graph.add_conditional_edges(
@@ -128,6 +142,9 @@ def _run_fallback(state: DesignFlowState) -> DesignFlowState:
     state = check_nominal(state)
     if route_after_nominal(state) == "review":
         return prepare_review(state)
+    state = realize_passives_node(state)
+    if route_after_passive_realization(state) == "done":
+        return state
     state = run_design_audit_node(state)
     if route_after_audit(state) == "review":
         return prepare_review(state)
@@ -172,10 +189,46 @@ def check_nominal(state: DesignFlowState) -> DesignFlowState:
     return {**state, "next_action": "prepare_agent_review"}
 
 
-def route_after_nominal(state: DesignFlowState) -> Literal["review", "audit"]:
+def route_after_nominal(state: DesignFlowState) -> Literal["review", "realize"]:
     if state.get("nominal_pass") or state.get("review_pass"):
-        return "audit"
+        return "realize"
     return "review"
+
+
+def realize_passives_node(state: DesignFlowState) -> DesignFlowState:
+    project = Path(state["project_dir"])
+    report_path = project / "passive_realization" / "passive_realization.json"
+    report = realize_project_passives(
+        state["results_json"],
+        simulate=bool(state.get("simulate")),
+        profile=state.get("pvt_profile"),
+    )
+    status = str(report.get("status"))
+    next_action = "run_design_audit"
+    if status == "unverified":
+        next_action = "run_passive_nominal_with_simulate"
+    elif status == "blocked":
+        next_action = "configure_pdk_passives"
+    elif status == "fail":
+        next_action = "inspect_passive_realization"
+    return {
+        **state,
+        "passive_status": status,
+        "passive_required": bool(report.get("required")),
+        "passive_verified": bool(report.get("verified")),
+        "passive_report": str(report_path),
+        "final_source": (
+            "passive_realization" if report.get("required") else state.get("final_source")
+        ),
+        "final_netlist": report.get("netlist_file") or state.get("final_netlist"),
+        "next_action": next_action,
+    }
+
+
+def route_after_passive_realization(
+    state: DesignFlowState,
+) -> Literal["audit", "done"]:
+    return "audit" if state.get("passive_verified") else "done"
 
 
 def run_design_audit_node(state: DesignFlowState) -> DesignFlowState:
@@ -227,6 +280,7 @@ def run_pvt_node(state: DesignFlowState) -> DesignFlowState:
     if state.get("run_pvt"):
         report = run_pvt_verification(
             results_path=state["results_json"],
+            netlist_path=state.get("final_netlist"),
             simulate=bool(state.get("simulate")),
             dry_run=not bool(state.get("simulate")),
             targets=state.get("pvt_targets"),
@@ -331,6 +385,10 @@ def _render_flow_report(state: DesignFlowState) -> str:
         f"- Review available: `{state.get('review_available')}`",
         f"- Review pass: `{state.get('review_pass')}`",
         f"- Review mode: `{state.get('review_mode')}`",
+        f"- Passive realization: `{state.get('passive_status')}`",
+        f"- Passive required: `{state.get('passive_required')}`",
+        f"- Passive verified: `{state.get('passive_verified')}`",
+        f"- Passive report: `{state.get('passive_report')}`",
         f"- Design audit: `{state.get('audit_status')}`",
         f"- Audit blockers: `{state.get('audit_blockers')}`",
         f"- Audit warnings: `{state.get('audit_warnings')}`",
