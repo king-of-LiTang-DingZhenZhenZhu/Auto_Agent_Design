@@ -16,9 +16,67 @@ if str(_REPO_ROOT) not in sys.path:
 from analogskills.imported_design import (  # noqa: E402
     PhysicalAdapterRequired,
     build_imported_design_handoff,
+    import_prepared_schematic,
+    prepare_imported_schematic,
     prepare_imported_physical_run,
     run_imported_design_signoff,
 )
+
+
+def execute_schematic_from_state(
+    state: dict[str, Any],
+    *,
+    prepare_schematic: bool,
+    import_schematic: bool,
+) -> dict[str, Any]:
+    if not (prepare_schematic or import_schematic):
+        return state
+    if not (state.get("nominal_pass") or state.get("review_pass")) or state.get("audit_status") == "block":
+        return {**state, "schematic_requested": True}
+    if state.get("pvt_pass") is not True:
+        return {**state, "next_action": "run_pvt" if state.get("pvt_pass") is None else "inspect_pvt_report"}
+    final_netlist = state.get("final_netlist")
+    if not final_netlist:
+        return _schematic_error(state, "final netlist is unavailable")
+
+    project = Path(str(state["project_dir"])).resolve()
+    output_root = project / "schematic"
+    try:
+        ir = parse_netlist(Path(str(final_netlist)).resolve())
+        topology = str(state.get("topology") or ir.subckt_name)
+        handoff = build_imported_design_handoff(
+            project_dir=project,
+            topology=topology,
+            final_netlist=final_netlist,
+            final_source=str(state.get("final_source") or "bo_best"),
+            pvt_results=project / "pvt" / "pvt_results.json",
+            schematic_ir=ir,
+            output_dir=output_root,
+        )
+        prepared = prepare_imported_schematic(
+            handoff,
+            output_root=output_root,
+            lib_name=str(state.get("lib_name", "BO_Designs")),
+        )
+        result = import_prepared_schematic(prepared) if import_schematic else prepared
+    except PhysicalAdapterRequired as exc:
+        return _schematic_error(state, str(exc), "physical_adapter_required")
+    except Exception as exc:
+        return _schematic_error(state, str(exc))
+
+    blocker = "; ".join(str(item) for item in result.errors if str(item)) or None
+    return {
+        **state,
+        "schematic_requested": True,
+        "schematic_status": result.status,
+        "schematic_root": result.schematic_root,
+        "schematic_handoff": result.handoff_path,
+        "schematic_plan": result.oa_plan_path,
+        "schematic_skill": result.skill_path,
+        "schematic_import_skill": result.import_skill_path,
+        "schematic_blocker": blocker,
+        "next_action": "done" if result.imported else ("import_schematic" if result.status == "prepared" else "fix_schematic_blocker"),
+    }
 
 
 def execute_physical_from_state(
@@ -97,6 +155,19 @@ def _physical_error(state: dict[str, Any], message: str, action: str) -> dict[st
         "physical_requested": True,
         "physical_status": "physical_blocked",
         "physical_blocker": message,
+        "errors": errors,
+        "next_action": action,
+    }
+
+
+def _schematic_error(state: dict[str, Any], message: str, action: str = "fix_schematic_blocker") -> dict[str, Any]:
+    errors = list(state.get("errors", []))
+    errors.append(message)
+    return {
+        **state,
+        "schematic_requested": True,
+        "schematic_status": "schematic_blocked",
+        "schematic_blocker": message,
         "errors": errors,
         "next_action": action,
     }

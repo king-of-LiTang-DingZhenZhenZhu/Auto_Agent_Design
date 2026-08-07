@@ -258,7 +258,6 @@ class HierarchicalFlow:
             project=output,
             run_pvt=True,
             simulate=self.simulate,
-            export_virtuoso=False,
             pvt_targets=targets,
             pvt_profile=profile,
         )

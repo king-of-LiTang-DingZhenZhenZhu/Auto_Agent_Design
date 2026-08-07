@@ -304,13 +304,14 @@ python pvt_simulation.py \
 PVT 通过后：
 
 ```bash
-python export_to_virtuoso.py \
-  --results outputs/<project>/results.json \
-  --lib BO_Designs \
-  --tech-lib <tech_lib>
+python run_full_flow.py \
+  --project Agent_LLM_BO/circuit_agent/outputs/<project> \
+  --prepare-schematic \
+  --lib BO_Designs
 ```
 
-默认只生成 SKILL 和报告；只有用户显式要求时才使用 `--run-virtuoso`。
+使用 `--import-schematic` 时，通过常驻 CIW/SKILL server 执行同一份完整
+`schematic.il`。`--export-virtuoso` 已删除；旧 `export_to_virtuoso.py` 不属于统一流程。
 
 `design_flow_graph.py` 可以读取 BO/Review/Audit/PVT 状态并给出下一步，
 但不替代 `main.py`，也不会自动填写 Agent patch plan。

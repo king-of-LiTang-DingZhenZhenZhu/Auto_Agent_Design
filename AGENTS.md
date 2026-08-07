@@ -41,7 +41,7 @@ conda activate Auto_Agent_Design
 5. 叶子模块运行 `main.py`；层级项目运行 `hierarchical_flow.py`。
 6. 读取 `results.json`：达标则执行 Design Audit，未达标则进入 `failure_repair`；Audit blocker 进入 `audit_repair`。
 7. nominal 与 Design Audit 合格后运行 PVT；parent gap 必要时回传并重分配 child targets。
-8. 只需要原理图时，nominal/PVT 合格后用 `export_to_virtuoso.py` 导出。
+8. 只需要原理图时，nominal/PVT 合格后用统一入口的 `--prepare-schematic` 或 `--import-schematic`；两者必须调用 analogskills OA/SKILL writer。
 9. 需要全流程时，从仓库根目录用 `run_full_flow.py --requirements <json> --run-pvt --simulate --run-signoff`；统一入口必须先复用 Auto 前端完成需求解析、网表生成、BO、Audit/Review，再生成 handoff、OA schematic/layout、GDS 并执行 Calibre DRC/LVS 与有界 ECO。
 
 ## 单仓库物理流程
@@ -168,23 +168,23 @@ python review_optimization.py \
 - `design_flow_graph.py` 只在 BO 未达标或 Audit blocker 时提示 Review；Audit 无 blocker 的成功结果直接进入 PVT。
 - Review candidate 进入 PVT 前必须检查 diagnostics。
 
-## PVT 与导出
+## PVT 与原理图
 
 ```bash
 python pvt_simulation.py --results outputs/<project>/results.json --simulate
 ```
 
 ```bash
-python export_to_virtuoso.py \
-  --results outputs/<project>/results.json \
-  --lib BO_Designs \
-  --tech-lib <tech_lib>
+python run_full_flow.py \
+  --project outputs/<project> \
+  --import-schematic \
+  --lib BO_Designs
 ```
 
 - 默认 PVT：`tt/ss/ff × VDD(min/typ/max) × temp(-40/27/125)`。
 - PVT 失败先读 `pvt_report.md` 和失败 corner diagnostics。
-- 导出器优先选择达标 Review candidate，否则选择 BO best。
-- 仅在用户明确要求时使用 `--run-virtuoso`。
+- 原理图 handoff 优先选择达标 Review candidate，否则选择 BO best。
+- `--export-virtuoso` 已删除；统一流程不得调用 Auto 原 `virtuoso_export` exporter。
 
 ## 修改与验证
 

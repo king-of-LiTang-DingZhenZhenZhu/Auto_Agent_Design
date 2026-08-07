@@ -241,52 +241,51 @@ python design_flow_graph.py \
   --project outputs/<project> \
   --run-pvt
 
-# 显式允许真实 Spectre PVT，并在 PVT 通过后导出 Virtuoso SKILL
+# 显式允许真实 Spectre PVT，并在 PVT 通过后准备完整原理图
 python design_flow_graph.py \
   --project outputs/<project> \
   --run-pvt \
   --simulate \
-  --export-virtuoso
+  --prepare-schematic
 ```
 
 安装 `langgraph` 后会使用真实 `StateGraph`；若当前环境暂时没有该依赖，脚本会用同样节点顺序的 fallback 执行，便于先验证流程。
 
-## Virtuoso 导出
+## Virtuoso 原理图
 
-`export_to_virtuoso.py --results outputs/<project>/results.json` 会导出最终应采用的 netlist：若 `agent_review/candidate_metrics.csv` 中存在满足原始目标的 review candidate，则优先导出该 candidate；否则导出 BO 最优的 `outputs/<project>/netlist/circuit.cir`。建议在 PVT 也通过后再导出。也可以用 `--netlist` 显式指定要导出的 `.cir`。
+统一入口从 `select_export_netlist()` 选择的 Review candidate 或 BO best 构造 handoff，并只使用 analogskills OA/SKILL writer 生成完整原理图。
 
-默认行为只生成 SKILL，不启动 Cadence：
+只生成可审查的 handoff、OA plan 和完整 SKILL，不启动 Cadence：
 
 ```bash
-python export_to_virtuoso.py \
-  --results outputs/<project>/results.json \
+python run_full_flow.py \
+  --project Agent_LLM_BO/circuit_agent/outputs/<project> \
+  --prepare-schematic \
   --lib BO_Designs
 ```
 
-如需自动创建 Virtuoso 工作目录、生成 `cds.lib` 和 wrapper SKILL，并用批处理加载原理图：
+通过常驻 CIW/SKILL server 导入同一份完整原理图：
 
 ```bash
-python export_to_virtuoso.py \
-  --results outputs/<project>/results.json \
-  --lib BO_Designs \
-  --tech-lib tsmcN28 \
-  --include-cds-lib /home/userone/cds.lib \
-  --pdk-lib-path /PDKS/TSMC28nm/tsmcN28 \
-  --run-virtuoso
+python run_full_flow.py \
+  --project Agent_LLM_BO/circuit_agent/outputs/<project> \
+  --import-schematic \
+  --lib BO_Designs
 ```
 
-自动导入工作目录默认在：
+原理图产物位于：
 
 ```text
-Agent_LLM_BO/virtuoso_runs/<project>/
-├── cds.lib
+outputs/<project>/schematic/
+├── handoff.json
+├── schematic.oa_plan.json
+├── schematic.il
 ├── import_schematic.il
-├── run_import.il
-├── virtuoso_import.log
-└── README_import.md
+├── schematic_manifest.json
+└── oa_stage_state.json
 ```
 
-`--tech-lib` 是 Virtuoso technology library 名称，不是 Spectre model include 文件路径。batch Virtuoso 不一定会自动读取用户主目录的 `cds.lib`，因此建议用 `--include-cds-lib` 显式引入站点/用户 `cds.lib`，或用 `--pdk-lib-path` 显式写入 `DEFINE tsmcN28 /PDKS/TSMC28nm/tsmcN28`。自动运行时脚本会把 `CDS_LOG` 指到工作目录下的 `CDS.log`，避免和已打开的 Virtuoso GUI 争用 `~/CDS.log` 锁。
+`--export-virtuoso` 已从统一入口和状态机删除。`export_to_virtuoso.py` 仅暂留给仓库外旧脚本兼容，不属于当前流程。
 
 ## 可用拓扑
 

@@ -42,6 +42,23 @@ OA 写入，状态记录在 `physical/oa/oa_stage_state.json`；网表或版图�
 
 ## 运行
 
+只准备完整原理图或导入到常驻 CIW：
+
+```bash
+python run_full_flow.py \
+  --project Agent_LLM_BO/circuit_agent/outputs/<project> \
+  --prepare-schematic \
+  --lib BO_Designs
+
+python run_full_flow.py \
+  --project Agent_LLM_BO/circuit_agent/outputs/<project> \
+  --import-schematic \
+  --lib BO_Designs
+```
+
+`--export-virtuoso` 已删除。上述两个入口和 `--run-signoff` 使用同一套
+analogskills handoff、OA plan 和完整 SKILL writer。
+
 从结构化用户需求执行完整流程：
 
 ```bash

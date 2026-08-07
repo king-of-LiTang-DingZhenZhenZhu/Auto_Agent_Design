@@ -91,6 +91,26 @@ class ImportedPhysicalResult:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class ImportedSchematicResult:
+    status: str
+    schematic_root: str
+    handoff_path: str
+    oa_plan_path: str
+    skill_path: str
+    import_skill_path: str
+    lib_name: str
+    cell_name: str
+    errors: tuple[str, ...] = ()
+
+    @property
+    def imported(self) -> bool:
+        return self.status == "imported"
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
 def compile_imported_design(handoff: ImportedDesignHandoff) -> tuple[TopologyGraph, dict[str, dict[str, Any]]]:
     handoff.validate()
     graph = TopologyGraph(handoff.subckt_name)
@@ -143,6 +163,85 @@ def compile_imported_design(handoff: ImportedDesignHandoff) -> tuple[TopologyGra
         raise ValueError("invalid imported topology: " + "; ".join(issues))
     sizing = {item.name: dict(item.parameters) for item in handoff.devices}
     return graph, sizing
+
+
+def prepare_imported_schematic(
+    handoff: ImportedDesignHandoff | str | Path,
+    *,
+    output_root: str | Path,
+    lib_name: str = "BO_Designs",
+) -> ImportedSchematicResult:
+    """Prepare the qualified frontend schematic without generating layout."""
+    handoff_obj = ImportedDesignHandoff.read_json(handoff) if isinstance(handoff, (str, Path)) else handoff
+    handoff_obj.validate()
+    root = Path(output_root).resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    handoff_path = handoff_obj.write_json(root / "handoff.json")
+    graph, sizing = compile_imported_design(handoff_obj)
+    pdk = resolve_pdk_config("crn28hpcp")
+    plan = build_oa_schematic_plan(
+        graph,
+        lib=lib_name,
+        cell=handoff_obj.subckt_name,
+        sizing=sizing,
+        pdk=pdk,
+    )
+    plan_path = save_oa_plan_json(plan, root / "schematic.oa_plan.json")
+    skill_path = write_oa_skill(
+        plan,
+        root / "schematic.il",
+        replace_cellview=True,
+        exit_after_write=False,
+        tech_lib=pdk.pcell_template_for("nmos").lib_name,
+    )
+    import_skill = write_virtuoso_session_skill(root / "import_schematic.il", (skill_path,))
+    result = ImportedSchematicResult(
+        status="prepared",
+        schematic_root=str(root),
+        handoff_path=str(handoff_path),
+        oa_plan_path=str(plan_path),
+        skill_path=str(skill_path),
+        import_skill_path=str(import_skill),
+        lib_name=str(lib_name),
+        cell_name=handoff_obj.subckt_name,
+    )
+    _write_json(
+        root / "schematic_manifest.json",
+        {
+            "schema": "analogskills.imported_schematic/v1",
+            **result.to_dict(),
+            "input_netlist_sha256": handoff_obj.final_netlist_sha256,
+            "pvt_results_sha256": handoff_obj.pvt_results_sha256,
+        },
+    )
+    return result
+
+
+def import_prepared_schematic(prepared: ImportedSchematicResult) -> ImportedSchematicResult:
+    """Load a prepared complete schematic through the persistent CIW or batch fallback."""
+    root = Path(prepared.schematic_root)
+    config = _schematic_preflight(root, prepared.lib_name)
+    manifest_path = root / "schematic_manifest.json"
+    manifest = _read_json_mapping(manifest_path)
+    record = _run_cached_oa_stage(
+        root=root,
+        name="schematic_oa",
+        components=(Path(prepared.skill_path),),
+        live_skill=root / "import_schematic_live.il",
+        batch_skill=Path(prepared.import_skill_path),
+        state_path=root / "oa_stage_state.json",
+        fingerprint_extra=json.dumps(
+            {"lib": prepared.lib_name, "cell": prepared.cell_name, "view": "schematic"},
+            sort_keys=True,
+        ),
+        config=config,
+    )
+    status = "imported" if record["ok"] else "schematic_blocked"
+    errors = () if record["ok"] else (str(record.get("stderr_tail") or "schematic import failed"),)
+    result = replace(prepared, status=status, errors=errors)
+    manifest.update({"status": status, "runs": [record], "errors": list(errors)})
+    _write_json(manifest_path, manifest)
+    return result
 
 
 def prepare_imported_physical_run(
@@ -845,6 +944,34 @@ def _preflight(root: Path, lib_name: str) -> dict[str, str]:
     return values
 
 
+def _schematic_preflight(root: Path, lib_name: str) -> dict[str, str]:
+    values = {
+        "virtuoso": os.environ.get("ANALOGSKILLS_VIRTUOSO_BINARY", ""),
+        "pdk_lib": os.environ.get("ANALOGSKILLS_VIRTUOSO_PDK_LIB_PATH", ""),
+    }
+    execution = os.environ.get("ANALOGSKILLS_VIRTUOSO_EXECUTION", "auto").strip().lower()
+    errors: list[str] = []
+    if execution != "skill_server":
+        binary = values["virtuoso"]
+        if not binary or (os.path.sep in binary and not Path(binary).is_file()) or (os.path.sep not in binary and shutil.which(binary) is None):
+            errors.append(f"virtuoso binary is unavailable: {binary or '<unset>'}")
+    if not values["pdk_lib"] or not Path(values["pdk_lib"]).exists():
+        errors.append(f"Virtuoso PDK library path is unavailable: {values['pdk_lib'] or '<unset>'}")
+    _write_json(root / "preflight.json", {"ready": not errors, "values": values, "errors": errors})
+    if errors:
+        raise RuntimeError("schematic import preflight failed: " + "; ".join(errors))
+    target_library = (root / "oa_library" / lib_name).resolve()
+    target_library.mkdir(parents=True, exist_ok=True)
+    (root / "cds.lib").write_text(
+        "DEFINE basic $CDSHOME/tools/dfII/etc/cdslib/basic\n"
+        "DEFINE analogLib $CDSHOME/tools/dfII/etc/cdslib/artist/analogLib\n"
+        f"DEFINE tsmcN28 {Path(values['pdk_lib']).resolve()}\n"
+        f"DEFINE {lib_name} {target_library}\n",
+        encoding="utf-8",
+    )
+    return values
+
+
 def _materialize_drc_deck(root: Path, cell: str, gds: Path, template: Path, pdk: object) -> tuple[Path, Path, Path]:
     out = root / "signoff" / "drc"
     results = out / f"{cell}.drc.results"
@@ -919,15 +1046,34 @@ def _rerun_candidate(root: Path, iteration_dir: Path, skill: Path, cell: str, ba
 def _run_oa_write_stage(root: Path, manifest: Mapping[str, Any], config: Mapping[str, str]) -> dict[str, Any]:
     artifacts = dict(manifest.get("artifacts", {}))
     components = (Path(str(artifacts["schematic_skill"])), Path(str(artifacts["layout_skill"])))
-    fingerprint = _files_fingerprint(
-        components,
-        extra=json.dumps(manifest.get("cellview", {}), sort_keys=True),
+    return _run_cached_oa_stage(
+        root=root,
+        name="oa_write",
+        components=components,
+        live_skill=root / "oa" / "write_all_live.il",
+        batch_skill=Path(str(artifacts["oa_batch_skill"])),
+        state_path=root / "oa" / "oa_stage_state.json",
+        fingerprint_extra=json.dumps(manifest.get("cellview", {}), sort_keys=True),
+        config=config,
     )
-    state_path = root / "oa" / "oa_stage_state.json"
+
+
+def _run_cached_oa_stage(
+    *,
+    root: Path,
+    name: str,
+    components: tuple[Path, ...],
+    live_skill: Path,
+    batch_skill: Path,
+    state_path: Path,
+    fingerprint_extra: str,
+    config: Mapping[str, str],
+) -> dict[str, Any]:
+    fingerprint = _files_fingerprint(components, extra=fingerprint_extra)
     previous = _read_json_mapping(state_path)
     if previous.get("fingerprint") == fingerprint and previous.get("status") == "completed":
         return {
-            "name": "oa_write",
+            "name": name,
             "command": [],
             "returncode": 0,
             "ok": True,
@@ -938,9 +1084,9 @@ def _run_oa_write_stage(root: Path, manifest: Mapping[str, Any], config: Mapping
         }
     record = _run_virtuoso_skill_stage(
         root,
-        "oa_write",
-        root / "oa" / "write_all_live.il",
-        Path(str(artifacts["oa_batch_skill"])),
+        name,
+        live_skill,
+        batch_skill,
         config,
         live_components=components,
     )

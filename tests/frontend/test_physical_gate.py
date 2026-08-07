@@ -14,11 +14,51 @@ CIRCUIT_AGENT = ROOT / "Agent_LLM_BO" / "circuit_agent"
 sys.path[:0] = [str(ROOT), str(CIRCUIT_AGENT)]
 
 from design_flow_graph import run_design_flow
-from physical_bridge import execute_physical_from_state
+from physical_bridge import execute_physical_from_state, execute_schematic_from_state
 from topologies import get_topology
 
 
 class PhysicalGateTest(unittest.TestCase):
+    def test_prepare_schematic_uses_complete_analogskills_writer_without_layout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / "outputs" / "two_stage"
+            project.mkdir(parents=True)
+            netlist = project / "circuit.cir"
+            netlist.write_text(get_topology("two_stage_ota").generate_circuit(), encoding="utf-8")
+            pvt = project / "pvt" / "pvt_results.json"
+            pvt.parent.mkdir()
+            pvt.write_text(json.dumps({"pvt_pass": True}), encoding="utf-8")
+            state = {
+                "project_dir": str(project),
+                "topology": "two_stage_ota",
+                "final_netlist": str(netlist),
+                "final_source": "bo_best",
+                "nominal_pass": True,
+                "audit_status": "pass",
+                "pvt_pass": True,
+                "lib_name": "BO_Designs",
+                "errors": [],
+            }
+
+            updated = execute_schematic_from_state(
+                state,
+                prepare_schematic=True,
+                import_schematic=False,
+            )
+
+            self.assertEqual(updated["schematic_status"], "prepared")
+            self.assertEqual(updated["next_action"], "import_schematic")
+            skill = Path(updated["schematic_skill"])
+            text = skill.read_text(encoding="utf-8")
+            self.assertIn("dbCreateParamInst", text)
+            self.assertIn("schCreateWire", text)
+            self.assertIn("schCreateWireLabel", text)
+            self.assertIn("schCreatePin", text)
+            self.assertIn("errset(schCheck(cv) t)", text)
+            self.assertNotIn("exit()", text)
+            self.assertFalse((project / "physical").exists())
+            self.assertTrue(Path(updated["schematic_import_skill"]).read_text(encoding="utf-8").rstrip().endswith("exit()"))
+
     def test_signoff_error_is_promoted_to_top_level_blocker(self):
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp) / "outputs" / "two_stage"

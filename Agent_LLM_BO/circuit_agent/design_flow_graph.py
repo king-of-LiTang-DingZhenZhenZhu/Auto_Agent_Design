@@ -1,4 +1,4 @@
-"""LangGraph-style orchestration for BO -> Review -> PVT -> Virtuoso export."""
+"""LangGraph-style orchestration for BO -> Review -> PVT and implementation."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from design_audit import run_design_audit
 from models import DesignTarget
 from pdk_profiles import PDKProfile
 from pvt_simulation import run_pvt_verification
-from virtuoso_export.exporter import export_from_results, select_export_netlist
+from virtuoso_export.exporter import select_export_netlist
 
 try:  # Optional at runtime; requirements.txt includes it for real graph use.
     from langgraph.graph import END, StateGraph
@@ -27,7 +27,8 @@ class DesignFlowState(TypedDict, total=False):
     topology: str
     run_pvt: bool
     simulate: bool
-    export_virtuoso: bool
+    prepare_schematic: bool
+    import_schematic: bool
     prepare_physical: bool
     run_signoff: bool
     max_eco_iterations: int
@@ -46,7 +47,14 @@ class DesignFlowState(TypedDict, total=False):
     pvt_pass: bool | None
     final_source: str | None
     final_netlist: str | None
-    virtuoso_skill: str | None
+    schematic_requested: bool
+    schematic_status: str | None
+    schematic_root: str | None
+    schematic_handoff: str | None
+    schematic_plan: str | None
+    schematic_skill: str | None
+    schematic_import_skill: str | None
+    schematic_blocker: str | None
     physical_requested: bool
     physical_status: str | None
     physical_root: str | None
@@ -68,7 +76,8 @@ def run_design_flow(
     project: str | Path,
     run_pvt: bool = False,
     simulate: bool = False,
-    export_virtuoso: bool = False,
+    prepare_schematic: bool = False,
+    import_schematic: bool = False,
     prepare_physical: bool = False,
     run_signoff: bool = False,
     max_eco_iterations: int = 5,
@@ -84,7 +93,8 @@ def run_design_flow(
         "results_json": str(project_dir / "results.json"),
         "run_pvt": run_pvt,
         "simulate": simulate,
-        "export_virtuoso": export_virtuoso,
+        "prepare_schematic": prepare_schematic or import_schematic,
+        "import_schematic": import_schematic,
         "prepare_physical": prepare_physical or run_signoff,
         "run_signoff": run_signoff,
         "max_eco_iterations": max_eco_iterations,
@@ -95,12 +105,21 @@ def run_design_flow(
         "pvt_profile": pvt_profile,
         "langgraph_available": StateGraph is not None,
         "physical_requested": prepare_physical or run_signoff,
+        "schematic_requested": prepare_schematic or import_schematic,
     }
     if StateGraph is None:
         state = _run_fallback(initial)
     else:
         graph = _build_graph()
         state = graph.invoke(initial)
+    if (prepare_schematic or import_schematic) and not (prepare_physical or run_signoff):
+        from physical_bridge import execute_schematic_from_state
+
+        state = execute_schematic_from_state(
+            state,
+            prepare_schematic=prepare_schematic or import_schematic,
+            import_schematic=import_schematic,
+        )
     if prepare_physical or run_signoff:
         from physical_bridge import execute_physical_from_state
 
@@ -122,7 +141,6 @@ def _build_graph():
     graph.add_node("prepare_review", prepare_review)
     graph.add_node("run_pvt", run_pvt_node)
     graph.add_node("check_pvt", check_pvt)
-    graph.add_node("export_virtuoso", export_virtuoso_node)
 
     graph.set_entry_point("load_results")
     graph.add_edge("load_results", "check_nominal")
@@ -144,15 +162,7 @@ def _build_graph():
     )
     graph.add_edge("prepare_review", END)
     graph.add_edge("run_pvt", "check_pvt")
-    graph.add_conditional_edges(
-        "check_pvt",
-        route_after_pvt,
-        {
-            "export": "export_virtuoso",
-            "done": END,
-        },
-    )
-    graph.add_edge("export_virtuoso", END)
+    graph.add_edge("check_pvt", END)
     return graph.compile()
 
 
@@ -166,8 +176,6 @@ def _run_fallback(state: DesignFlowState) -> DesignFlowState:
         return prepare_review(state)
     state = run_pvt_node(state)
     state = check_pvt(state)
-    if route_after_pvt(state) == "export":
-        state = export_virtuoso_node(state)
     return state
 
 
@@ -286,30 +294,10 @@ def run_pvt_node(state: DesignFlowState) -> DesignFlowState:
 
 def check_pvt(state: DesignFlowState) -> DesignFlowState:
     if state.get("pvt_pass") is True:
-        if state.get("export_virtuoso"):
-            return {**state, "next_action": "export_virtuoso"}
-        return {**state, "next_action": "ready_to_export_virtuoso"}
+        return {**state, "next_action": "done"}
     if state.get("pvt_pass") is False:
         return {**state, "next_action": "inspect_pvt_report"}
     return {**state, "next_action": "run_pvt"}
-
-
-def route_after_pvt(state: DesignFlowState) -> Literal["export", "done"]:
-    if state.get("pvt_pass") is True and state.get("export_virtuoso"):
-        return "export"
-    return "done"
-
-
-def export_virtuoso_node(state: DesignFlowState) -> DesignFlowState:
-    report = export_from_results(
-        results_path=state["results_json"],
-        lib_name=state.get("lib_name", "BO_Designs"),
-    )
-    return {
-        **state,
-        "virtuoso_skill": report["skill_file"],
-        "next_action": "done",
-    }
 
 
 def _select_final_netlist(
@@ -372,7 +360,11 @@ def _render_flow_report(state: DesignFlowState) -> str:
         f"- Final netlist: `{state.get('final_netlist')}`",
         f"- PVT requested: `{state.get('pvt_requested')}`",
         f"- PVT pass: `{state.get('pvt_pass')}`",
-        f"- Virtuoso SKILL: `{state.get('virtuoso_skill')}`",
+        f"- Schematic status: `{state.get('schematic_status')}`",
+        f"- Schematic handoff: `{state.get('schematic_handoff')}`",
+        f"- Schematic plan: `{state.get('schematic_plan')}`",
+        f"- Schematic SKILL: `{state.get('schematic_skill')}`",
+        f"- Schematic blocker: `{state.get('schematic_blocker')}`",
         f"- Physical status: `{state.get('physical_status')}`",
         f"- Physical handoff: `{state.get('physical_handoff')}`",
         f"- Physical layout: `{state.get('physical_layout_plan')}`",
@@ -395,7 +387,8 @@ def main() -> None:
         project=args.project,
         run_pvt=args.run_pvt,
         simulate=args.simulate,
-        export_virtuoso=args.export_virtuoso,
+        prepare_schematic=args.prepare_schematic or args.import_schematic,
+        import_schematic=args.import_schematic,
         prepare_physical=args.prepare_physical or args.run_signoff,
         run_signoff=args.run_signoff,
         max_eco_iterations=args.max_eco_iterations,
@@ -406,15 +399,15 @@ def main() -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Orchestrate BO -> Review -> PVT -> Virtuoso export."
-    )
+    parser = argparse.ArgumentParser(description="Orchestrate BO -> Review -> PVT and implementation.")
     parser.add_argument("--project", required=True, help="outputs/<project> directory")
     parser.add_argument("--run-pvt", action="store_true")
     parser.add_argument("--simulate", action="store_true")
-    parser.add_argument("--export-virtuoso", action="store_true")
-    parser.add_argument("--prepare-physical", action="store_true")
-    parser.add_argument("--run-signoff", action="store_true")
+    action = parser.add_mutually_exclusive_group()
+    action.add_argument("--prepare-schematic", action="store_true")
+    action.add_argument("--import-schematic", action="store_true")
+    action.add_argument("--prepare-physical", action="store_true")
+    action.add_argument("--run-signoff", action="store_true")
     parser.add_argument("--max-eco-iterations", type=int, default=5)
     parser.add_argument("--lib", default="BO_Designs")
     return parser.parse_args()
