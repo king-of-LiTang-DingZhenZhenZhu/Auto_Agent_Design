@@ -184,7 +184,19 @@ tempOption options temp=27
                 candidate_dir,
             )
             (project / "optimization_log.json").write_text(
-                json.dumps({"targets": {"gain_db": 40, "bandwidth_hz": 1e6}}),
+                json.dumps({
+                    "targets": {
+                        "gain_db": 40,
+                        "bandwidth_hz": 1e6,
+                        "metric_goals": {
+                            "gain_db": {"constraint": "min", "target": 40},
+                            "bandwidth_hz": {
+                                "constraint": "min",
+                                "target": 1e6,
+                            },
+                        },
+                    }
+                }),
                 encoding="utf-8",
             )
             (project / "results.json").write_text(

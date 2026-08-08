@@ -26,7 +26,7 @@
 | `nmcnr_three_stage` | 带消零电阻的嵌套 Miller 三级 OTA | **特定情况可行** | TSMC28、0.9 V、TT 条件下，默认参数 AC 验证得到增益 88.06 dB、GBW 27.18 MHz、相位裕度 71.65°，关键工作点通过。尚无 PVT 资格验证。 |
 | `mnmc_three_stage` | 多通路嵌套 Miller 三级 OTA | **未验证** | 默认工作点能够收敛，增益为 69.76 dB、GBW 为 170.42 MHz，但相位裕度为 -94.52°。补偿/稳定性是当前阻塞问题。 |
 | `nmcf_three_stage` | 嵌套 Miller/前馈三级 OTA | **未验证** | 默认工作点能够收敛，增益为 85.34 dB、GBW 为 184.18 MHz，但相位裕度为 -54.58°。补偿/稳定性是当前阻塞问题。 |
-| `strongarm_latch` | 动态 StrongARM 锁存比较器 | **未验证** | 已有判决极性测试平台和物理实现适配器，但没有保留真实的标称/PVT 电气资格验证证据。 |
+| `strongarm_latch` | 动态 StrongARM 锁存比较器 | **已验证** | TSMC28、10 mV 差分输入、0.45 V 共模、5 fF/端负载条件下，正负判决均通过标称目标，并通过全部 27 个 `tt/ss/ff ×（vmin=0.9/vtyp=0.9/vmax=1.1 V）× -40/27/125°C` PVT 角。证据见下文。 |
 | `bandgap_ptat` | 层次化 PNP PTAT 基准 | **特定情况可行** | 在 `VDD=1.1 V`、TT 温度仿真中，PTAT 输出从 `-40°C 时 0.3849 V` 单调上升至 `125°C 时 0.6113 V`。在 `VDD=0.9 V` 时，低温 PNP 电压使 PMOS 镜像管的电压裕量不足，输出趋近电源电压。仍缺少完整的 1.1 V 启动、PSRR、线性调整率和 PVT 签核。 |
 | `banba_sub1v_bandgap` | Banba 电流求和型亚 1 V 带隙基准 | **未验证** | 已知阻塞问题：在 `VDD=1.1 V` 时，自主启动电路仍处于导通状态，但核心收敛在接近零电流的状态（`Vref=0.342 mV`、`startup_success=false`）。在标称指标具备意义之前，必须先修复启动注入。 |
 | `leung_mok_sub1v_bandgap` | Leung-Mok 2002 亚 1 V 带隙基准 | **未验证** | 已实现按论文映射的拓扑及专用测试平台；没有保留真实的标称/PVT 资格验证证据。 |
@@ -81,6 +81,16 @@
 - PVT 结果：`outputs/two_stage_ota_pvt_smoke/pvt/pvt_results.json`。
 - PVT 覆盖：27/27 个角全部通过。保留的最差值为增益 `39.12 dB`、GBW `27.4 MHz`、相位裕度 `62.88°`、功耗 `0.14 mW`、转换速率 `34.27 V/μs`、稳定时间 `25.13 ns`。
 - 适用范围：该证据验证的是所引用的设计指标和负载，并不表示拓扑元数据范围内的每组指标都可实现。
+
+### `strongarm_latch`
+
+- PDK profile：`tsmc28`。
+- 标称结果：`Agent_LLM_BO/circuit_agent/outputs/strongarm_latch_validation_20260808_codex/results.json`；`all_targets_met=true`。
+- 标称条件：`VDD=0.9 V`、`TT`、`27°C`、输入共模 `0.45 V`、差分输入 `10 mV`、每端负载 `5 fF`、时钟周期 `4 ns`。
+- 标称指标：正/负判决裕量分别为 `0.899998 V` 和 `0.899998 V`，正/负传播延迟均为 `349.54 ps`，每次判决能量为 `39.19 fJ`，平均功耗为 `9.80 μW`。对应目标为裕量不低于 `0.45 V`、延迟不高于 `1 ns`、能量不高于 `200 fJ`、功耗不高于 `100 μW`。
+- PVT 结果：`Agent_LLM_BO/circuit_agent/outputs/strongarm_latch_validation_20260808_codex/pvt/pvt_results.json`；标准 `pvt_simulation.py --results ... --simulate` 入口运行得到 `pvt_pass=true`。
+- PVT 覆盖：27/27 个声明角全部收敛并通过；该 profile 的 `vmin` 和 `vtyp` 均为 `0.9 V`，`vmax` 为 `1.1 V`。最差正/负判决裕量均为 `0.887505 V`，最差正/负传播延迟均为 `970.54 ps`，最大判决能量为 `62.61 fJ`，最大功耗为 `15.65 μW`。
+- 适用范围：该证据验证确定性模型下指定输入差分、共模、负载和时钟条件的功能及 PVT 鲁棒性；尚未覆盖 Monte Carlo mismatch、输入失调分布、极小差分输入或 metastability 统计验证。
 
 ## 特定情况可行的证据
 

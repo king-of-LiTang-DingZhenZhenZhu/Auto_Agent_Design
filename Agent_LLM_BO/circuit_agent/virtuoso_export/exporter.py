@@ -11,6 +11,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from models import parse_metric_goals
 from pdk_profiles import PDKProfile, get_pdk_profile
 
 from .models import DeviceMap, DeviceMapEntry, default_device_map
@@ -467,7 +468,7 @@ def _resolve_bo_netlist(results_path: Path, result_data: dict[str, Any]) -> Path
     return netlist_path
 
 
-def _load_targets(results_path: Path) -> dict[str, float]:
+def _load_targets(results_path: Path) -> dict[str, Any]:
     log_path = results_path.parent / "optimization_log.json"
     if not log_path.exists():
         return {}
@@ -478,16 +479,23 @@ def _load_targets(results_path: Path) -> dict[str, float]:
     targets = data.get("targets")
     if not isinstance(targets, dict):
         return {}
-    return {
-        key: float(value)
-        for key, value in targets.items()
-        if value is not None
-    }
+    loaded: dict[str, Any] = {}
+    for key, value in targets.items():
+        if key == "metric_goals" and isinstance(value, dict):
+            loaded[key] = value
+            continue
+        if value is None:
+            continue
+        try:
+            loaded[key] = float(value)
+        except (TypeError, ValueError):
+            continue
+    return loaded
 
 
 def _select_passing_review_candidate(
     project_dir: Path,
-    targets: dict[str, float],
+    targets: dict[str, Any],
 ) -> Path | None:
     if not targets:
         return None
@@ -516,7 +524,15 @@ def _select_passing_review_candidate(
     return None
 
 
-def _candidate_meets_targets(row: dict[str, str], targets: dict[str, float]) -> bool:
+def _candidate_meets_targets(row: dict[str, str], targets: dict[str, Any]) -> bool:
+    metric_goals = parse_metric_goals(targets.get("metric_goals"))
+    if metric_goals:
+        checks = [
+            goal.gap(_read_candidate_metric(row, name)) >= 0
+            for name, goal in metric_goals.items()
+        ]
+        return bool(checks) and all(checks)
+
     checks: list[bool] = []
     if "gain_db" in targets:
         checks.append(_read_metric(row, "gain_db(dB)") >= targets["gain_db"])
@@ -546,6 +562,19 @@ def _candidate_meets_targets(row: dict[str, str], targets: dict[str, float]) -> 
             <= targets["settling_time_s"]
         )
     return bool(checks) and all(checks)
+
+
+def _read_candidate_metric(row: dict[str, str], name: str) -> float:
+    columns = {
+        "gain_db": ("gain_db(dB)", 1.0),
+        "bandwidth_hz": ("gbw_hz(MHz)", 1e6),
+        "phase_margin_deg": ("phase_margin_deg(deg)", 1.0),
+        "power_w": ("power_w(mW)", 1e-3),
+        "slew_rate_v_per_s": ("slew_rate_v_per_s(V/us)", 1e6),
+        "settling_time_s": ("settling_time_s(ns)", 1e-9),
+    }
+    key, scale = columns.get(name, (name, 1.0))
+    return _read_metric(row, key, scale=scale)
 
 
 def _read_metric(row: dict[str, str], key: str, scale: float = 1.0) -> float:

@@ -193,6 +193,62 @@ ends tiny
             self.assertEqual(report["export_source"], "bo_best")
             self.assertEqual(report["target_cell"], "proj_opt")
 
+    def test_structured_custom_goals_fail_closed_for_review_selection(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / "outputs" / "strongarm"
+            project.mkdir(parents=True)
+            bo_netlist = project / "circuit.cir"
+            bo_netlist.write_text(
+                get_topology("strongarm_latch").generate_circuit(),
+                encoding="utf-8",
+            )
+            candidate_dir = project / "agent_review" / "candidate"
+            candidate_dir.mkdir(parents=True)
+            candidate_netlist = candidate_dir / "circuit.cir"
+            candidate_netlist.write_text(
+                bo_netlist.read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            self._write_candidate_metrics(
+                project / "agent_review" / "candidate_metrics.csv",
+                candidate_dir,
+                gain=0,
+                gbw_mhz=0,
+                pm=0,
+                power_mw=0.01,
+            )
+            (project / "optimization_log.json").write_text(
+                json.dumps({
+                    "targets": {
+                        "power_w": 100e-6,
+                        "metric_goals": {
+                            "power_w": {
+                                "constraint": "max",
+                                "target": 100e-6,
+                            },
+                            "decision_positive_margin_v": {
+                                "constraint": "min",
+                                "target": 0.45,
+                            },
+                        },
+                    }
+                }),
+                encoding="utf-8",
+            )
+            results = project / "results.json"
+            results.write_text(
+                json.dumps({
+                    "all_targets_met": True,
+                    "netlist_file": str(bo_netlist),
+                }),
+                encoding="utf-8",
+            )
+
+            selected, source = select_export_netlist(results)
+
+            self.assertEqual(selected, bo_netlist)
+            self.assertEqual(source, "bo_best")
+
     def test_unverified_passive_realization_blocks_export_selection(self):
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp) / "outputs" / "proj"
