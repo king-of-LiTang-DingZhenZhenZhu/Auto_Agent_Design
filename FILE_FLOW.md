@@ -13,7 +13,8 @@ PVT、层级工件和 Virtuoso 导出。操作约束分别见 `AGENTS.md` 和
 
 执行编排层
   hierarchical_flow.py / design_flow_graph.py
-  前者组织 child-parent 依赖，后者统一执行 Audit-Review gate-PVT-Export
+  前者组织 child-parent 依赖，后者统一执行
+  Passive Mapping-Audit-Review gate-PVT-Export
 
 电路优化层
   main.py + optimizer.py + simulator.py
@@ -22,6 +23,11 @@ PVT、层级工件和 Virtuoso 导出。操作约束分别见 `AGENTS.md` 和
 硬约束生成层
   topologies/
   程序化生成 DUT 和 testbench，不让 Agent 直接手写最终网表
+
+无源器件实现层
+  passive_mapping.py / passive_realization.py
+  前者通过 PDK 黑盒 evaluator 搜索合法 R/C PCell geometry，后者替换 DUT、
+  保存 target/actual 映射记录并执行映射后 nominal 验证
 ```
 
 `system_decomposition.py` 与 `hierarchical_flow.py` 不重复：
@@ -268,6 +274,8 @@ Agent 只填写结构化 `patch_plan.json`；Python 校验参数、clamp、渲�
 
 ```text
 BO best 或 Review candidate nominal 达标
+  -> 理想片上 R/C 映射为 PDK PCell
+  -> 映射后 nominal 复验证
   -> Design Audit 无 blocker
   -> PVT
   -> Virtuoso 导出

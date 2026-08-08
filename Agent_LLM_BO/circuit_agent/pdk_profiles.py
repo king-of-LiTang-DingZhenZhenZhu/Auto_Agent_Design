@@ -59,10 +59,11 @@ class VoltageDomainProfile:
 class PassiveDeviceProfile:
     """One characterized PDK resistor or capacitor implementation.
 
-    ``mapping_mode`` is one of ``value``, ``formula``, or ``lookup``.  Formula
-    devices use ``sheet_resistance_ohm_per_square`` for resistors or
-    ``capacitance_per_area_f_per_m2`` (and optional edge capacitance) for
-    capacitors.  Lookup devices read a JSON array of characterized points.
+    ``mapping_mode=callback`` delegates the authoritative electrical value to
+    a runtime CDF/PCell/Spectre evaluator registered under ``evaluator_key``.
+    ``lookup`` uses pre-characterized data.  ``formula`` is retained as an
+    explicitly non-signoff offline fallback; its analytic data seed the search
+    but the mapper still obtains every accepted value through an evaluator.
     """
 
     kind: str
@@ -78,12 +79,25 @@ class PassiveDeviceProfile:
     width_parameter: str = "w"
     length_parameter: str = "l"
     multiplier_parameter: str = "m"
+    segment_parameter: str = ""
+    finger_parameter: str = ""
+    array_rows_parameter: str = ""
+    array_columns_parameter: str = ""
+    evaluator_key: str = ""
     min_width_m: float | None = None
     max_width_m: float | None = None
     min_length_m: float | None = None
     max_length_m: float | None = None
     geometry_grid_m: float | None = None
+    default_width_m: float | None = None
+    default_aspect_ratio: float | None = None
+    max_aspect_ratio: float | None = None
     max_unit_area_m2: float | None = None
+    max_multiplier: int = 1
+    max_segments: int = 1
+    max_fingers: int = 1
+    max_array_rows: int = 1
+    max_array_columns: int = 1
     max_series_units: int = 1
     max_parallel_units: int = 1
     value_tolerance: float = 0.02
@@ -677,7 +691,7 @@ def validate_pdk_profile(
         prefix = f"passive device '{device_name}'"
         if device.kind not in {"resistor", "capacitor"}:
             errors.append(f"{prefix} kind must be resistor or capacitor")
-        if device.mapping_mode not in {"value", "formula", "lookup"}:
+        if device.mapping_mode not in {"value", "formula", "lookup", "callback"}:
             errors.append(f"{prefix} has unsupported mapping_mode '{device.mapping_mode}'")
         if not device.spectre_model:
             errors.append(f"{prefix} spectre_model is empty")
@@ -687,8 +701,34 @@ def validate_pdk_profile(
             errors.append(f"{prefix} term_order must contain two terminals")
         if not 0 <= device.value_tolerance < 1:
             errors.append(f"{prefix} value_tolerance must be in [0, 1)")
-        if device.max_series_units < 1 or device.max_parallel_units < 1:
-            errors.append(f"{prefix} series/parallel limits must be positive")
+        integer_limits = {
+            "max_multiplier": device.max_multiplier,
+            "max_segments": device.max_segments,
+            "max_fingers": device.max_fingers,
+            "max_array_rows": device.max_array_rows,
+            "max_array_columns": device.max_array_columns,
+            "max_series_units": device.max_series_units,
+            "max_parallel_units": device.max_parallel_units,
+        }
+        for field_name, value in integer_limits.items():
+            if value < 1:
+                errors.append(f"{prefix} {field_name} must be positive")
+        parameter_limits = (
+            ("multiplier_parameter", device.multiplier_parameter, device.max_multiplier),
+            ("segment_parameter", device.segment_parameter, device.max_segments),
+            ("finger_parameter", device.finger_parameter, device.max_fingers),
+            ("array_rows_parameter", device.array_rows_parameter, device.max_array_rows),
+            (
+                "array_columns_parameter",
+                device.array_columns_parameter,
+                device.max_array_columns,
+            ),
+        )
+        for field_name, parameter, maximum in parameter_limits:
+            if maximum > 1 and not parameter:
+                errors.append(
+                    f"{prefix} {field_name} is required when its maximum exceeds 1"
+                )
         if device.mapping_mode == "value" and not device.value_parameter:
             errors.append(f"{prefix} value mapping requires value_parameter")
         if device.mapping_mode == "lookup":
@@ -700,7 +740,7 @@ def validate_pdk_profile(
                     errors.append(f"{prefix} lookup table not found: {lookup_path}")
                 else:
                     errors.extend(_validate_passive_lookup_table(prefix, lookup_path))
-        if device.mapping_mode == "formula":
+        if device.mapping_mode in {"formula", "callback"}:
             geometry = (
                 device.min_width_m,
                 device.max_width_m,
@@ -709,22 +749,33 @@ def validate_pdk_profile(
                 device.geometry_grid_m,
             )
             if any(value is None or value <= 0 for value in geometry):
-                errors.append(f"{prefix} formula mapping requires positive geometry limits/grid")
+                errors.append(f"{prefix} geometry mapping requires positive limits/grid")
             elif (
                 device.min_width_m > device.max_width_m
                 or device.min_length_m > device.max_length_m
             ):
                 errors.append(f"{prefix} minimum geometry exceeds maximum")
-            if device.kind == "resistor" and not (
+            if device.mapping_mode == "formula" and device.kind == "resistor" and not (
                 device.sheet_resistance_ohm_per_square
                 and device.sheet_resistance_ohm_per_square > 0
             ):
                 errors.append(f"{prefix} formula requires sheet resistance")
-            if device.kind == "capacitor" and not (
+            if device.mapping_mode == "formula" and device.kind == "capacitor" and not (
                 device.capacitance_per_area_f_per_m2
                 and device.capacitance_per_area_f_per_m2 > 0
             ):
                 errors.append(f"{prefix} formula requires capacitance per area")
+        if device.mapping_mode == "callback" and not device.evaluator_key:
+            errors.append(f"{prefix} callback mapping requires evaluator_key")
+        if device.default_width_m is not None and device.default_width_m <= 0:
+            errors.append(f"{prefix} default_width_m must be positive")
+        if (
+            device.default_aspect_ratio is not None
+            and device.default_aspect_ratio <= 0
+        ):
+            errors.append(f"{prefix} default_aspect_ratio must be positive")
+        if device.max_aspect_ratio is not None and device.max_aspect_ratio < 1:
+            errors.append(f"{prefix} max_aspect_ratio must be at least 1")
 
     for role, device_name in pdk.passive_role_map.items():
         if not role:

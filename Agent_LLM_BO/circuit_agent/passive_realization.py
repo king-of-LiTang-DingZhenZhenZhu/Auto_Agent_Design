@@ -3,14 +3,24 @@
 from __future__ import annotations
 
 import json
-import math
 import re
 import shutil
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 
 from models import format_spice_value
+from passive_mapping import (
+    CapacitorMapper,
+    PassiveDeviceEvaluator,
+    PassiveMappingError,
+    PassiveMappingConstraints,
+    PassiveMappingResult,
+    ResistorMapper,
+    build_passive_evaluator,
+    map_passive,
+    map_passive_candidates,
+)
 from pdk_profiles import PDKProfile, PassiveDeviceProfile
 from topologies.base import PassiveImplementation
 from virtuoso_export.parser import parse_netlist
@@ -40,9 +50,68 @@ class PassiveRealization:
     total_area_m2: float | None
     params: dict[str, object]
     mapping_mode: str
+    evaluator_backend: str = ""
+    evaluator_metadata: dict[str, object] | None = None
+    matching: dict[str, object] | None = None
 
     def to_dict(self) -> dict[str, object]:
-        return asdict(self)
+        data = asdict(self)
+        if self.kind == "resistor":
+            data.update(target_R=self.target_value, actual_R=self.achieved_value)
+        elif self.kind == "capacitor":
+            data.update(target_C=self.target_value, actual_C=self.achieved_value)
+        return data
+
+
+def map_ideal_netlist_passives(
+    netlist_text: str,
+    profile: PDKProfile,
+    *,
+    device_types: Mapping[str, str] | None = None,
+    constraints: Mapping[
+        str, PassiveMappingConstraints | Mapping[str, object]
+    ] | None = None,
+    evaluators: Mapping[str, PassiveDeviceEvaluator] | None = None,
+) -> tuple[str, list[PassiveRealization]]:
+    """Recognize and map every ideal R/C in the first DUT subcircuit.
+
+    Topology-driven flows should continue to use :func:`realize_passives` so
+    external/testbench intent is explicit.  This generic entry point supports
+    imported ideal DUTs that do not yet have ``PassiveImplementation`` roles.
+    """
+
+    ir = parse_netlist(netlist_text, profile=profile)
+    replacements: dict[str, list[str]] = {}
+    records: list[PassiveRealization] = []
+    for instance in ir.instances:
+        if instance.model not in {"res", "cap"}:
+            continue
+        kind = "resistor" if instance.kind == "res" else "capacitor"
+        value_key = "R" if instance.kind == "res" else "C"
+        target = _parse_engineering_value(instance.params.get(value_key, ""))
+        requested_type = (device_types or {}).get(instance.name)
+        result = map_passive(
+            kind,
+            target,
+            requested_type,
+            (constraints or {}).get(instance.name),
+            profile=profile,
+            evaluators=evaluators,
+        )
+        device = profile.passive_devices[result.device_type]
+        candidate = _candidate_from_mapping(result)
+        replacements[instance.name] = _render_instances(
+            instance.name, instance.nodes, device, candidate
+        )
+        records.append(
+            _realization_from_mapping(
+                instance=instance.name,
+                role="auto_selected",
+                device=device,
+                result=result,
+            )
+        )
+    return _replace_instance_lines(netlist_text, replacements), records
 
 
 def realize_passives(
@@ -50,6 +119,7 @@ def realize_passives(
     implementations: Iterable[PassiveImplementation],
     profile: PDKProfile,
     candidate_ranks: dict[str, int] | None = None,
+    evaluators: Mapping[str, PassiveDeviceEvaluator] | None = None,
 ) -> tuple[str, list[PassiveRealization]]:
     """Return a PDK-passive DUT netlist and its realization audit records."""
 
@@ -102,7 +172,14 @@ def realize_passives(
             )
         value_key = "R" if instance.kind == "res" else "C"
         target = _parse_engineering_value(instance.params.get(value_key, ""))
-        candidates = solve_passive_candidates(target, device)
+        mapped_candidates = map_passive_candidates(
+            spec.kind,
+            target,
+            device_name,
+            profile=profile,
+            evaluator=(evaluators or {}).get(device_name),
+        )
+        candidates = [_candidate_from_mapping(item) for item in mapped_candidates]
         rank = (candidate_ranks or {}).get(name, 0)
         if rank >= len(candidates):
             raise ValueError(f"Passive {name} has no realization candidate rank {rank}")
@@ -127,19 +204,13 @@ def realize_passives(
             else None
         )
         records.append(
-            PassiveRealization(
+            _realization_from_mapping(
                 instance=name,
-                kind=spec.kind,
                 role=spec.role,
-                device=device_name,
-                target_value=target,
-                achieved_value=candidate.achieved_value,
-                relative_error=error,
-                series_units=candidate.series_units,
-                parallel_units=candidate.parallel_units,
+                device=device,
+                result=mapped_candidates[rank],
+                rendered_params=candidate.params,
                 total_area_m2=total_area,
-                params=candidate.params,
-                mapping_mode=device.mapping_mode,
             )
         )
 
@@ -151,6 +222,7 @@ def realize_project_passives(
     *,
     simulate: bool = False,
     profile: PDKProfile | None = None,
+    evaluators: Mapping[str, PassiveDeviceEvaluator] | None = None,
 ) -> dict[str, Any]:
     """Realize a BO/review netlist and optionally run its nominal testbenches."""
     from config import settings
@@ -199,6 +271,7 @@ def realize_project_passives(
             selected_netlist.read_text(encoding="utf-8"),
             implementations,
             pdk,
+            evaluators=evaluators,
         )
     except Exception as exc:
         report = {
@@ -210,6 +283,7 @@ def realize_project_passives(
             "source_netlist": str(selected_netlist),
             "netlist_file": None,
             "realizations": [],
+            "error_type": _mapping_error_type(exc),
             "error": str(exc),
         }
         _write_json(report_path, report)
@@ -256,6 +330,7 @@ def realize_project_passives(
                         implementations,
                         pdk,
                         candidate_ranks={record.instance: rank},
+                        evaluators=evaluators,
                     )
                 except ValueError:
                     break
@@ -336,6 +411,14 @@ def _write_json(path: Path, data: dict[str, Any]) -> None:
     )
 
 
+def _mapping_error_type(error: Exception) -> str:
+    if isinstance(error, PassiveMappingError):
+        return "mapping_no_solution_or_configuration"
+    if isinstance(error, ValueError):
+        return "mapping_input_error"
+    return "pdk_evaluator_error"
+
+
 def solve_passive(
     target_value: float,
     device: PassiveDeviceProfile,
@@ -349,204 +432,55 @@ def solve_passive_candidates(
     target_value: float,
     device: PassiveDeviceProfile,
 ) -> list[PassiveCandidate]:
-    """Return legal candidates ordered by value error and then total area."""
-    if not math.isfinite(target_value) or target_value <= 0:
-        raise ValueError(f"Passive target must be positive and finite: {target_value}")
-    if device.mapping_mode == "value":
-        return [PassiveCandidate(
-            achieved_value=target_value,
-            unit_value=target_value,
-            params={
-                **device.fixed_parameters,
-                device.value_parameter: format_spice_value(target_value),
-            },
-        )]
-    if device.mapping_mode == "lookup":
-        candidates = _lookup_candidates(target_value, device)
-    elif device.mapping_mode == "formula":
-        candidates = _formula_candidates(target_value, device)
-    else:
-        raise ValueError(f"Unsupported passive mapping mode: {device.mapping_mode}")
-    if not candidates:
-        raise ValueError(
-            f"No legal geometry for {target_value:g} using model {device.spectre_model}"
-        )
-    ordered = sorted(candidates, key=lambda item: _candidate_score(item, target_value))
-    unique: list[PassiveCandidate] = []
-    signatures: set[tuple[object, ...]] = set()
-    for candidate in ordered:
-        signature = (
-            round(candidate.achieved_value / target_value, 12),
-            candidate.series_units,
-            candidate.parallel_units,
-            tuple(sorted((key, str(value)) for key, value in candidate.params.items())),
-        )
-        if signature in signatures:
-            continue
-        signatures.add(signature)
-        unique.append(candidate)
-    return unique
+    """Compatibility wrapper over the PDK-evaluator based mapping engine."""
+
+    mapper_cls = ResistorMapper if device.kind == "resistor" else CapacitorMapper
+    mapped = mapper_cls(
+        "device", device, build_passive_evaluator("device", device)
+    ).map(target_value)
+    return [_candidate_from_mapping(item) for item in mapped]
 
 
-def _formula_candidates(
-    target: float,
-    device: PassiveDeviceProfile,
-) -> list[PassiveCandidate]:
-    assert device.min_width_m is not None
-    assert device.max_width_m is not None
-    assert device.min_length_m is not None
-    assert device.max_length_m is not None
-    assert device.geometry_grid_m is not None
-    candidates: list[PassiveCandidate] = []
-    for series in range(1, device.max_series_units + 1):
-        for parallel in range(1, device.max_parallel_units + 1):
-            unit_target = (
-                target * parallel / series
-                if device.kind == "resistor"
-                else target * series / parallel
-            )
-            for width in _candidate_widths(unit_target, device):
-                width = _snap(width, device.geometry_grid_m)
-                width = min(max(width, device.min_width_m), device.max_width_m)
-                length = _length_for_value(unit_target, width, device)
-                length = _snap(length, device.geometry_grid_m)
-                if not device.min_length_m <= length <= device.max_length_m:
-                    continue
-                area = width * length
-                if device.max_unit_area_m2 is not None and area > device.max_unit_area_m2:
-                    continue
-                unit_value = _formula_value(width, length, device)
-                achieved = (
-                    unit_value * series / parallel
-                    if device.kind == "resistor"
-                    else unit_value * parallel / series
-                )
-                params = {
-                    **device.fixed_parameters,
-                    device.width_parameter: format_spice_value(width),
-                    device.length_parameter: format_spice_value(length),
-                }
-                candidates.append(
-                    PassiveCandidate(
-                        achieved_value=achieved,
-                        unit_value=unit_value,
-                        params=params,
-                        series_units=series,
-                        parallel_units=parallel,
-                        unit_area_m2=area,
-                    )
-                )
-    return candidates
-
-
-def _candidate_widths(
-    unit_target: float,
-    device: PassiveDeviceProfile,
-) -> set[float]:
-    assert device.min_width_m is not None
-    assert device.max_width_m is not None
-    assert device.min_length_m is not None
-    assert device.max_length_m is not None
-    widths = {device.min_width_m, device.max_width_m}
-    if device.kind == "resistor":
-        assert device.sheet_resistance_ohm_per_square is not None
-        for length in (device.min_length_m, device.max_length_m):
-            widths.add(device.sheet_resistance_ohm_per_square * length / unit_target)
-    else:
-        assert device.capacitance_per_area_f_per_m2 is not None
-        area_cap = device.capacitance_per_area_f_per_m2
-        edge_cap = device.capacitance_perimeter_f_per_m
-        for length in (device.min_length_m, device.max_length_m):
-            denominator = area_cap * length + 2 * edge_cap
-            if denominator > 0:
-                widths.add((unit_target - 2 * edge_cap * length) / denominator)
-    return {
-        width
-        for width in widths
-        if math.isfinite(width) and device.min_width_m <= width <= device.max_width_m
-    }
-
-
-def _length_for_value(
-    unit_target: float,
-    width: float,
-    device: PassiveDeviceProfile,
-) -> float:
-    if device.kind == "resistor":
-        assert device.sheet_resistance_ohm_per_square is not None
-        return unit_target * width / device.sheet_resistance_ohm_per_square
-    assert device.capacitance_per_area_f_per_m2 is not None
-    edge = device.capacitance_perimeter_f_per_m
-    return (unit_target - 2 * edge * width) / (
-        device.capacitance_per_area_f_per_m2 * width + 2 * edge
+def _candidate_from_mapping(result: PassiveMappingResult) -> PassiveCandidate:
+    return PassiveCandidate(
+        achieved_value=result.actual_value,
+        unit_value=result.unit_value or result.actual_value,
+        params={
+            key: format_spice_value(value) if isinstance(value, float) else value
+            for key, value in result.params.items()
+        },
+        series_units=result.series_units,
+        parallel_units=result.parallel_units,
+        unit_area_m2=result.unit_area_m2,
     )
 
 
-def _formula_value(
-    width: float,
-    length: float,
+def _realization_from_mapping(
+    *,
+    instance: str,
+    role: str,
     device: PassiveDeviceProfile,
-) -> float:
-    if device.kind == "resistor":
-        assert device.sheet_resistance_ohm_per_square is not None
-        return device.sheet_resistance_ohm_per_square * length / width
-    assert device.capacitance_per_area_f_per_m2 is not None
-    return (
-        device.capacitance_per_area_f_per_m2 * width * length
-        + 2 * device.capacitance_perimeter_f_per_m * (width + length)
+    result: PassiveMappingResult,
+    rendered_params: dict[str, object] | None = None,
+    total_area_m2: float | None = None,
+) -> PassiveRealization:
+    return PassiveRealization(
+        instance=instance,
+        kind=result.device_kind,
+        role=role,
+        device=result.device_type,
+        target_value=result.target_value,
+        achieved_value=result.actual_value,
+        relative_error=result.relative_error,
+        series_units=result.series_units,
+        parallel_units=result.parallel_units,
+        total_area_m2=(result.area_m2 if total_area_m2 is None else total_area_m2),
+        params=rendered_params or _candidate_from_mapping(result).params,
+        mapping_mode=device.mapping_mode,
+        evaluator_backend=result.evaluator_backend,
+        evaluator_metadata=result.evaluator_metadata,
+        matching=result.matching,
     )
-
-
-def _lookup_candidates(
-    target: float,
-    device: PassiveDeviceProfile,
-) -> list[PassiveCandidate]:
-    path = Path(device.lookup_table_path).expanduser()
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except Exception as exc:
-        raise ValueError(f"Cannot read passive lookup table {path}: {exc}") from exc
-    points = raw.get("points", []) if isinstance(raw, dict) else raw
-    if not isinstance(points, list):
-        raise ValueError(f"Passive lookup table {path} must contain a points array")
-    candidates: list[PassiveCandidate] = []
-    for point in points:
-        if not isinstance(point, dict) or "value" not in point or "params" not in point:
-            raise ValueError(f"Invalid characterized point in {path}")
-        unit_value = float(point["value"])
-        for series in range(1, device.max_series_units + 1):
-            for parallel in range(1, device.max_parallel_units + 1):
-                achieved = (
-                    unit_value * series / parallel
-                    if device.kind == "resistor"
-                    else unit_value * parallel / series
-                )
-                candidates.append(
-                    PassiveCandidate(
-                        achieved_value=achieved,
-                        unit_value=unit_value,
-                        params={**device.fixed_parameters, **dict(point["params"])},
-                        series_units=series,
-                        parallel_units=parallel,
-                        unit_area_m2=(
-                            float(point["area_m2"])
-                            if point.get("area_m2") is not None
-                            else None
-                        ),
-                    )
-                )
-    return candidates
-
-
-def _candidate_score(candidate: PassiveCandidate, target: float) -> tuple[float, float]:
-    error = abs(candidate.achieved_value - target) / target
-    total_area = (
-        candidate.unit_area_m2 * candidate.series_units * candidate.parallel_units
-        if candidate.unit_area_m2 is not None
-        else math.inf
-    )
-    # Numerically equivalent snapped geometries should be ranked by area.
-    return round(error, 12), total_area
 
 
 def _render_instances(
@@ -645,10 +579,6 @@ def _parse_engineering_value(raw: str) -> float:
         "t": 1e12,
     }
     return float(match.group(1)) * scales[match.group(2).lower()]
-
-
-def _snap(value: float, grid: float) -> float:
-    return round(value / grid) * grid
 
 
 def _format_parameter(value: object) -> str:

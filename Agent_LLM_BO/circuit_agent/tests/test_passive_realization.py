@@ -8,9 +8,21 @@ from pathlib import Path
 from unittest.mock import patch
 
 from passive_realization import (
+    map_ideal_netlist_passives,
     realize_passives,
     realize_project_passives,
     solve_passive,
+)
+from passive_mapping import (
+    CallablePassiveEvaluator,
+    DeviceEvaluation,
+    PassiveMappingError,
+    PassiveMappingConstraints,
+    map_capacitor,
+    map_passive,
+    map_resistor,
+    register_passive_evaluator,
+    unregister_passive_evaluator,
 )
 from pdk_passive_probe import render_cdf_probe
 from pdk_profiles import (
@@ -25,6 +37,254 @@ from virtuoso_export.parser import parse_netlist
 
 
 class PassiveRealizationTests(unittest.TestCase):
+    def test_map_1k_resistor_uses_pdk_black_box_callback(self):
+        profile, resistor, _ = self._callback_profile()
+        calls = []
+
+        def pdk_resistor(device, params):
+            calls.append(dict(params))
+            width = float(params[device.width_parameter])
+            length = float(params[device.length_parameter])
+            actual = 100.0 * (length + 0.2e-6) / (width - 0.05e-6) + 25.0
+            return DeviceEvaluation(
+                actual,
+                width * length,
+                resolved_params=dict(params),
+                metadata={"source": "mock_cdf"},
+            )
+
+        result = map_resistor(
+            1_000.0,
+            "callback_rpoly",
+            profile=profile,
+            evaluator=CallablePassiveEvaluator(pdk_resistor, backend_name="mock_cdf"),
+        )
+
+        self.assertLess(result.relative_error, resistor.value_tolerance)
+        self.assertEqual(result.device_type, "callback_rpoly")
+        self.assertEqual(result.evaluator_backend, "mock_cdf")
+        self.assertGreater(len(calls), 2)
+        self.assertEqual(result.to_dict()["target_R"], 1_000.0)
+
+    def test_profile_evaluator_key_resolves_registered_pdk_callback(self):
+        profile, _, _ = self._callback_profile()
+
+        def pdk_resistor(device, params):
+            width = float(params[device.width_parameter])
+            length = float(params[device.length_parameter])
+            return 100.0 * (length + 0.2e-6) / (width - 0.05e-6) + 25.0
+
+        register_passive_evaluator(
+            "test_rpoly_callback",
+            CallablePassiveEvaluator(pdk_resistor, backend_name="registered_cdf"),
+        )
+        try:
+            result = map_resistor(1_000.0, "callback_rpoly", profile=profile)
+        finally:
+            unregister_passive_evaluator("test_rpoly_callback")
+
+        self.assertEqual(result.evaluator_backend, "registered_cdf")
+
+    def test_unregistered_callback_and_unreachable_target_report_no_solution(self):
+        profile, resistor, _ = self._callback_profile()
+        with self.assertRaisesRegex(PassiveMappingError, "not registered"):
+            map_resistor(1_000.0, "callback_rpoly", profile=profile)
+
+        limited = replace(
+            resistor,
+            max_series_units=1,
+            max_parallel_units=1,
+        )
+        profile = replace(
+            profile,
+            passive_devices={**profile.passive_devices, "callback_rpoly": limited},
+        )
+        evaluator = CallablePassiveEvaluator(
+            lambda device, params: 100.0
+            * float(params[device.length_parameter])
+            / float(params[device.width_parameter])
+        )
+        with self.assertRaisesRegex(PassiveMappingError, "cannot realize"):
+            map_resistor(
+                1e9,
+                "callback_rpoly",
+                profile=profile,
+                evaluator=evaluator,
+            )
+
+    def test_map_10k_resistor_uses_root_search_and_grid(self):
+        profile, resistor, _ = self._callback_profile()
+
+        def pdk_resistor(device, params):
+            width = float(params[device.width_parameter])
+            length = float(params[device.length_parameter])
+            return 100.0 * (length + 0.2e-6) / (width - 0.05e-6) + 25.0
+
+        result = map_passive(
+            "resistor",
+            10_000.0,
+            "callback_rpoly",
+            PassiveMappingConstraints(fixed_width_m=1e-6),
+            profile=profile,
+            evaluator=CallablePassiveEvaluator(pdk_resistor),
+        )
+
+        length = float(result.params[resistor.length_parameter])
+        self.assertLess(result.relative_error, resistor.value_tolerance)
+        self.assertAlmostEqual(length / resistor.geometry_grid_m, round(length / resistor.geometry_grid_m))
+        self.assertEqual(result.series_units, 1)
+
+    def test_map_1pf_capacitor_uses_pdk_black_box_callback(self):
+        profile, _, capacitor = self._callback_profile()
+
+        def pdk_capacitor(device, params):
+            width = float(params[device.width_parameter])
+            length = float(params[device.length_parameter])
+            effective_w = width - 0.1e-6
+            effective_l = length - 0.1e-6
+            actual = (
+                1e-3 * effective_w * effective_l
+                + 20e-12 * (effective_w + effective_l)
+                + 20e-15
+            )
+            return DeviceEvaluation(actual, width * length)
+
+        result = map_capacitor(
+            1e-12,
+            "callback_mim",
+            profile=profile,
+            evaluator=CallablePassiveEvaluator(pdk_capacitor, backend_name="mock_pcell"),
+        )
+
+        self.assertLess(result.relative_error, capacitor.value_tolerance)
+        self.assertEqual(result.parallel_units, 1)
+        self.assertEqual(result.to_dict()["target_C"], 1e-12)
+
+    def test_map_10pf_capacitor_decomposes_beyond_single_pcell_range(self):
+        profile, _, capacitor = self._callback_profile()
+
+        def pdk_capacitor(device, params):
+            width = float(params[device.width_parameter])
+            length = float(params[device.length_parameter])
+            effective_w = width - 0.1e-6
+            effective_l = length - 0.1e-6
+            return (
+                1e-3 * effective_w * effective_l
+                + 20e-12 * (effective_w + effective_l)
+                + 20e-15
+            )
+
+        result = map_capacitor(
+            10e-12,
+            "callback_mim",
+            profile=profile,
+            evaluator=CallablePassiveEvaluator(pdk_capacitor),
+        )
+
+        self.assertLess(result.relative_error, capacitor.value_tolerance)
+        self.assertGreater(result.parallel_units, 1)
+        self.assertLessEqual(
+            float(result.params[capacitor.width_parameter]), capacitor.max_width_m
+        )
+        self.assertLessEqual(
+            float(result.params[capacitor.length_parameter]), capacitor.max_length_m
+        )
+
+    def test_resistor_target_beyond_single_pcell_uses_series_decomposition(self):
+        profile, resistor, _ = self._callback_profile()
+        limited = replace(
+            resistor,
+            max_length_m=20e-6,
+            max_series_units=8,
+            value_tolerance=0.005,
+        )
+        profile = replace(
+            profile,
+            passive_devices={**profile.passive_devices, "callback_rpoly": limited},
+        )
+
+        def pdk_resistor(device, params):
+            width = float(params[device.width_parameter])
+            length = float(params[device.length_parameter])
+            return 100.0 * (length + 0.2e-6) / (width - 0.05e-6) + 25.0
+
+        result = map_resistor(
+            10_000.0,
+            "callback_rpoly",
+            profile=profile,
+            evaluator=CallablePassiveEvaluator(pdk_resistor),
+        )
+
+        self.assertLess(result.relative_error, limited.value_tolerance)
+        self.assertGreater(result.series_units, 1)
+
+    def test_pdk_callback_can_resolve_multiplier_parameter(self):
+        profile, resistor, _ = self._callback_profile()
+        multiplied = replace(
+            resistor,
+            min_length_m=10e-6,
+            max_length_m=10e-6,
+            multiplier_parameter="m",
+            max_multiplier=4,
+            max_series_units=1,
+            max_parallel_units=1,
+        )
+        profile = replace(
+            profile,
+            passive_devices={**profile.passive_devices, "callback_rpoly": multiplied},
+        )
+
+        def pdk_resistor(device, params):
+            width = float(params[device.width_parameter])
+            length = float(params[device.length_parameter])
+            multiplier = int(params.get(device.multiplier_parameter, 1))
+            return (
+                100.0 * (length + 0.2e-6) / (width - 0.05e-6) + 25.0
+            ) / multiplier
+
+        target = pdk_resistor(multiplied, {"w": 1e-6, "l": 10e-6, "m": 4})
+        result = map_resistor(
+            target,
+            "callback_rpoly",
+            PassiveMappingConstraints(fixed_width_m=1e-6),
+            profile=profile,
+            evaluator=CallablePassiveEvaluator(pdk_resistor),
+        )
+
+        self.assertEqual(result.params["m"], 4)
+        self.assertLess(result.relative_error, multiplied.value_tolerance)
+
+    def test_generic_ideal_netlist_recognizes_and_replaces_r_and_c(self):
+        profile, _, _ = self._callback_profile()
+
+        def evaluate(device, params):
+            width = float(params[device.width_parameter])
+            length = float(params[device.length_parameter])
+            if device.kind == "resistor":
+                return 100.0 * (length + 0.2e-6) / (width - 0.05e-6) + 25.0
+            return 1e-3 * (width - 0.1e-6) * (length - 0.1e-6) + 20e-15
+
+        netlist = """simulator lang=spectre
+subckt unit (a b c)
+R1 (a b) resistor r=1k
+C1 (b c) capacitor c=1p
+ends unit
+"""
+        mapped, records = map_ideal_netlist_passives(
+            netlist,
+            profile,
+            evaluators={
+                "callback_rpoly": CallablePassiveEvaluator(evaluate),
+                "callback_mim": CallablePassiveEvaluator(evaluate),
+            },
+        )
+
+        self.assertNotIn(" resistor r=1k", mapped)
+        self.assertNotIn(" capacitor c=1p", mapped)
+        self.assertIn("callback_rpoly_model", mapped)
+        self.assertIn("callback_mim_model", mapped)
+        self.assertEqual({record.instance for record in records}, {"R1", "C1"})
+
     def test_formula_resistor_snaps_to_legal_geometry(self):
         device = self._resistor()
 
@@ -268,6 +528,55 @@ ends unit
                 "compensation_capacitor": "unit_mim",
             },
         )
+
+    @staticmethod
+    def _callback_profile():
+        resistor = PassiveDeviceProfile(
+            kind="resistor",
+            spectre_model="callback_rpoly_model",
+            virtuoso_lib="unitTech",
+            virtuoso_cell="callback_rpoly",
+            mapping_mode="callback",
+            evaluator_key="test_rpoly_callback",
+            min_width_m=0.5e-6,
+            max_width_m=5e-6,
+            min_length_m=0.5e-6,
+            max_length_m=100e-6,
+            geometry_grid_m=0.01e-6,
+            default_width_m=1e-6,
+            max_aspect_ratio=120.0,
+            max_series_units=4,
+            max_parallel_units=2,
+            value_tolerance=0.002,
+            sheet_resistance_ohm_per_square=100.0,
+        )
+        capacitor = PassiveDeviceProfile(
+            kind="capacitor",
+            spectre_model="callback_mim_model",
+            virtuoso_lib="unitTech",
+            virtuoso_cell="callback_mim",
+            mapping_mode="callback",
+            evaluator_key="test_mim_callback",
+            min_width_m=1e-6,
+            max_width_m=50e-6,
+            min_length_m=1e-6,
+            max_length_m=50e-6,
+            geometry_grid_m=0.1e-6,
+            default_aspect_ratio=1.0,
+            max_aspect_ratio=4.0,
+            max_parallel_units=8,
+            value_tolerance=0.005,
+            capacitance_per_area_f_per_m2=1e-3,
+        )
+        profile = replace(
+            get_pdk_profile(),
+            passive_devices={
+                "callback_rpoly": resistor,
+                "callback_mim": capacitor,
+            },
+            passive_role_map={},
+        )
+        return profile, resistor, capacitor
 
 
 if __name__ == "__main__":

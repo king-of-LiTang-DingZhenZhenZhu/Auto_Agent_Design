@@ -238,10 +238,18 @@ python pdk_profiles.py --validate --require-gmid --require-virtuoso
       "spectre_model": "<model-from-pdk>",
       "virtuoso_lib": "<pdk-library>",
       "virtuoso_cell": "<pcell-name>",
-      "mapping_mode": "lookup",
+      "mapping_mode": "callback",
+      "evaluator_key": "my_pdk_rpoly_callback",
       "term_order": ["PLUS", "MINUS"],
       "parameter_map": {"W": "w", "L": "l"},
-      "lookup_table_path": "characterization/example_rpoly.json",
+      "min_width_m": 5e-7,
+      "max_width_m": 5e-6,
+      "min_length_m": 5e-7,
+      "max_length_m": 1e-4,
+      "geometry_grid_m": 1e-8,
+      "default_width_m": 1e-6,
+      "max_aspect_ratio": 100,
+      "sheet_resistance_ohm_per_square": 100,
       "max_series_units": 8,
       "max_parallel_units": 4,
       "value_tolerance": 0.02
@@ -251,8 +259,17 @@ python pdk_profiles.py --validate --require-gmid --require-virtuoso
       "spectre_model": "<model-from-pdk>",
       "virtuoso_lib": "<pdk-library>",
       "virtuoso_cell": "<pcell-name>",
-      "mapping_mode": "value",
-      "value_parameter": "c",
+      "mapping_mode": "lookup",
+      "lookup_table_path": "characterization/example_mim.json",
+      "min_width_m": 1e-6,
+      "max_width_m": 50e-6,
+      "min_length_m": 1e-6,
+      "max_length_m": 50e-6,
+      "geometry_grid_m": 1e-7,
+      "default_aspect_ratio": 1,
+      "max_aspect_ratio": 4,
+      "capacitance_per_area_f_per_m2": 0.001,
+      "max_parallel_units": 16,
       "term_order": ["PLUS", "MINUS"]
     }
   },
@@ -268,8 +285,52 @@ python pdk_profiles.py --validate --require-gmid --require-virtuoso
 映射模式：
 
 - `value`：Spectre/PCell 有经过验证的可写容阻值参数。必须填写 `value_parameter`。
-- `formula`：使用已验证的方阻或单位面积/周长电容公式，并填写 W/L 范围、制造栅格和单位面积限制。
-- `lookup`：推荐用于真实 PDK。JSON 包含 `version`、提取条件和 `points`；每个 point 至少有 `value` 与实际 Spectre `params`，可附 `area_m2`。
+- `callback`：推荐用于可调用 CDF/PCell/Spectre 探针的真实 PDK。必须填写
+  `evaluator_key`，并在运行进程中注册对应 evaluator。
+- `lookup`：使用预 characterization 数据。JSON 包含 `version`、提取条件和
+  `points`；每个 point 至少有 `value` 与实际 Spectre `params`，可附 `area_m2`。
+- `formula`：仅作为离线开发/测试 fallback。方阻或电容密度只用于初始点；映射器
+  仍通过统一 evaluator 获得 `actual_R/C`，生产 signoff 不应把简化公式当 PDK 真值。
+
+几何字段集中在 `PassiveDeviceProfile`，包括 W/L min/max、manufacturing grid、默认
+W/长宽比、最大 aspect ratio、单位面积上限，以及 `m/nseg/finger/array row/column`
+参数名和上限。外部 series/parallel decomposition 只在单个合法 PCell 无法达到容差
+时启用。
+
+Python callback 的接入方式：
+
+```python
+from passive_mapping import (
+    CallablePassiveEvaluator,
+    DeviceEvaluation,
+    IllegalDeviceGeometry,
+    register_passive_evaluator,
+)
+
+def evaluate_rpoly(device, params):
+    # 在这里复用站点已有的 SKILL server、CDF/PCell callback 或 Spectre probe。
+    # params 中 W/L 为 SI 数值；回调必须返回 PDK 计算的真实值。
+    response = site_pdk_bridge.evaluate(device.virtuoso_cell, params)
+    return DeviceEvaluation(
+        actual_value=response["actual_value"],
+        area_m2=response.get("area_m2"),
+        resolved_params=response.get("resolved_params", params),
+        metadata={"run_id": response.get("run_id")},
+    )
+
+register_passive_evaluator(
+    "my_pdk_rpoly_callback",
+    CallablePassiveEvaluator(evaluate_rpoly, backend_name="site_skill_server"),
+)
+```
+
+`resolved_params` 用于回传 CDF callback 最终接受的合法 W/L/m/nseg 等参数；如果
+callback 未改参数可原样返回。单个尺寸被 PCell 拒绝时 callback 应抛出
+`IllegalDeviceGeometry`，搜索器会继续其他 grid 点；工具/许可证/通信失败应抛出其他
+异常并立即终止，不能伪装成“无合法尺寸”。callback 未注册、返回非正/非有限值或
+找不到满足容差的合法尺寸时，流程会明确 blocked，不会退回硬编码 foundry 公式。
+报告用 `mapping_no_solution_or_configuration`、`mapping_input_error` 和
+`pdk_evaluator_error` 区分无解/配置、输入错误与外部 PDK 工具故障。
 
 ```json
 {
@@ -299,9 +360,14 @@ virtuoso -nograph -replay passive_cdf_probe.il
 BO 达标后运行设计流时，无源器件阶段会：
 
 1. 只转换 topology 标记为 `on_chip` 的 DUT 器件；`external/testbench` 保持理想。
-2. 输出 `passive_realization/passive_realization.json` 和物理网表。
-3. 使用 PDK 模型重跑 nominal；失败时尝试少量邻近合法几何。
-4. 只有 nominal 验证通过，才允许 Design Audit、PVT 和 Virtuoso 导出。
+2. 固定合理 W，以解析近似或合法几何生成 L 初值，然后在 grid 上调用 PDK evaluator
+   做 bracket/bisection 和邻点离散搜索；电容还会搜索接近方形的多个 W 候选。
+3. 单 PCell 无解时尝试合法的 m/nseg/finger/array 和外部 series/parallel 组合。
+4. 按误差、面积、unit 数量选择解，输出
+   `passive_realization/passive_realization.json` 和 PDK 网表；报告同时保留 target、
+   actual、relative error、area、evaluator backend 和 decomposition。
+5. 使用 PDK 模型重跑 nominal；只有映射后 nominal 验证通过，才允许 Design Audit、
+   PVT 和 Virtuoso 导出。
 
 ```bash
 python design_flow_graph.py --project outputs/<project> --run-pvt --simulate

@@ -26,6 +26,8 @@ Auto_Agent_Design/
 │       ├── optimizer.py               # BO 与 reward
 │       ├── simulator.py               # Spectre 调用
 │       ├── pdk_profiles.py            # PDK、电压域、model 和 preset
+│       ├── passive_mapping.py          # 理想 R/C 到 PDK PCell 的黑盒数值映射
+│       ├── passive_realization.py      # DUT 替换、映射报告和映射后 nominal 验证
 │       ├── topologies/                # 硬约束 DUT/testbench 生成
 │       ├── virtuoso_export/           # Virtuoso SKILL 导出
 │       ├── tests/
