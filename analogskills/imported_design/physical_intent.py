@@ -4,13 +4,13 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field, replace
 from typing import Any, Mapping
 
-try:
-    import z3  # type: ignore[import-not-found]
-except Exception:  # pragma: no cover
-    z3 = None
-
-from analogskills.contracts import LayoutConstraintSet, TopologyGraph
+from analogskills.contracts import LayoutConstraintSet, RoutingConstraint, TopologyGraph
 from analogskills.layout.analog_layout_dsl import AnalogLayoutSpec, layout_spec
+from analogskills.layout.analog_routing import (
+    build_advanced_analog_routing_plan,
+    build_analog_local_smt_problem,
+    solve_analog_local_smt,
+)
 from analogskills.layout.analog_smt_compiler import CompiledAnalogLayout, compile_analog_layout_smt
 from analogskills.layout.constraints import extract_layout_constraints
 from analogskills.layout.placement import Placement
@@ -72,6 +72,7 @@ class ImportedPhysicalSmtResult:
     placements: tuple[Placement, ...]
     route_resource_assignments: Mapping[str, Mapping[str, object]]
     matching_realization: Mapping[str, Mapping[str, object]]
+    routing_evidence: Mapping[str, object] = field(default_factory=dict)
 
     @property
     def passed(self) -> bool:
@@ -96,6 +97,7 @@ class ImportedPhysicalSmtResult:
             "matching_realization": {
                 str(name): dict(value) for name, value in self.matching_realization.items()
             },
+            "routing_evidence": dict(self.routing_evidence),
             "checks": dict(self.compiled.checks),
         }
 
@@ -135,29 +137,52 @@ def compile_physical_intent(
     # remains owned by the PDK rules and Calibre.
     spacing_um = max(3.0, float(pdk.rules.min_spacing_um(metals[0])))
     builder = layout_spec("two_stage_ota")
-    builder.pattern("mirror_pair", ("Mmirr1", "Mmirr2"), role="pmos_match", kind="row", spacing_um=spacing_um)
+    builder.pattern("bias_reference", ("Mbias",), role="nmos_bias_reference", kind="row", spacing_um=spacing_um)
+    builder.pattern("tail_device", ("Mtail",), role="nmos_tail", kind="row", spacing_um=spacing_um)
     builder.pattern("input_pair", ("Mdiff1", "Mdiff2"), role="nmos_match", kind="row", spacing_um=spacing_um)
-    builder.pattern("tail_bias", ("Mbias", "Mtail"), role="nmos_bias", kind="row", spacing_um=spacing_um)
+    builder.pattern("mirror_pair", ("Mmirr1", "Mmirr2"), role="pmos_match", kind="row", spacing_um=spacing_um)
     builder.pattern("second_stage", ("Mload", "Mcs"), role="output_stage", kind="column", spacing_um=spacing_um)
-    builder.pattern("compensation", ("Rz", "Cc"), role="miller_compensation", kind="row", spacing_um=spacing_um)
+    builder.pattern("compensation", ("Rz", "Cc"), role="miller_compensation", kind="column", spacing_um=spacing_um)
     builder.pair("input_pair_symmetry", "Mdiff1", "Mdiff2", role="input_pair", mirror_right=False, same_y=True)
     builder.pair("mirror_pair_symmetry", "Mmirr1", "Mmirr2", role="current_mirror", mirror_right=False, same_y=True)
     # Relation names follow the compiler convention: source is below/left of target.
-    builder.relation("tail_bias", "input_pair", "above", min_gap_um=spacing_um, notes="tail and bias below input pair")
+    builder.relation("tail_device", "input_pair", "above", min_gap_um=spacing_um, notes="tail below input pair")
+    builder.relation("tail_device", "input_pair", "overlap_x", notes="tail must remain routable beneath input pair")
     builder.relation("input_pair", "mirror_pair", "above", min_gap_um=spacing_um, notes="PMOS mirror above NMOS input pair")
+    builder.relation("input_pair", "mirror_pair", "overlap_x", notes="first-stage stack shares a vertical routing corridor")
+    builder.relation("bias_reference", "tail_device", "right_of", min_gap_um=spacing_um, notes="bias reference beside tail device")
+    builder.relation("bias_reference", "tail_device", "overlap_y", notes="bias and tail retain a horizontal routing corridor")
     builder.relation("input_pair", "compensation", "right_of", min_gap_um=spacing_um, notes="compensation beside first stage")
+    builder.relation("input_pair", "compensation", "overlap_y", notes="first stage and compensation retain a horizontal routing corridor")
     builder.relation("compensation", "second_stage", "right_of", min_gap_um=spacing_um, notes="second stage follows compensation branch")
-    builder.soft_relation("tail_bias", "input_pair", "align_center_x", weight=8)
+    builder.relation("compensation", "second_stage", "overlap_y", notes="compensation and second stage retain a horizontal routing corridor")
+    builder.soft_relation("bias_reference", "tail_device", "align_center_y", weight=5)
+    builder.soft_relation("tail_device", "input_pair", "align_center_x", weight=12)
     builder.soft_relation("input_pair", "mirror_pair", "align_center_x", weight=8)
-    builder.soft_relation("compensation", "second_stage", "align_center_y", weight=3)
-    builder.pack("ota_core", ("mirror_pair", "input_pair", "tail_bias", "second_stage", "compensation"), weight=10, area_weight=2)
+    builder.soft_relation("input_pair", "compensation", "align_center_y", weight=4)
+    builder.soft_relation("compensation", "second_stage", "align_center_y", weight=6)
+    builder.pack(
+        "first_stage",
+        ("bias_reference", "tail_device", "input_pair", "mirror_pair"),
+        weight=14,
+        area_weight=4,
+        notes="compact symmetric first-stage stack",
+    )
+    builder.pack(
+        "ota_core",
+        ("mirror_pair", "input_pair", "tail_device", "bias_reference", "compensation", "second_stage"),
+        weight=12,
+        area_weight=3,
+    )
+    builder.align_centers("first_stage_axis", ("tail_device", "input_pair", "mirror_pair"), axis="x", weight=12)
+    builder.align_centers("signal_flow_axis", ("input_pair", "compensation", "second_stage"), axis="y", weight=5)
     builder.aesthetic_objectives(
         "ota_core",
-        ("mirror_pair", "input_pair", "tail_bias", "compensation", "second_stage"),
-        squareness_weight=2,
-        compactness_weight=5,
-        alignment_weight=2,
-        regularity_weight=1,
+        ("bias_reference", "tail_device", "input_pair", "mirror_pair", "compensation", "second_stage"),
+        squareness_weight=3,
+        compactness_weight=8,
+        alignment_weight=3,
+        regularity_weight=0,
     )
     critical_nets = set(constraints.critical_nets)
     for net in graph.nets:
@@ -182,12 +207,14 @@ def compile_physical_intent(
             notes="SMT-assigned layer and horizontal strap lane" if net in critical_nets else "ordinary-net lane reserved before detailed routing",
         )
     builder.objective(
-        bbox_weight=100,
+        bbox_weight=80,
         width_weight=5,
-        height_weight=3,
-        hpwl_weight=15,
-        aspect_weight=2,
-        objective_term_weight=3,
+        height_weight=4,
+        true_area_weight=2,
+        max_side_weight=8,
+        hpwl_weight=20,
+        aspect_weight=3,
+        objective_term_weight=4,
     )
     builder.drc_policy(
         placement_spacing_um=spacing_um,
@@ -205,7 +232,7 @@ def compile_physical_intent(
         metadata={
             "constraint_precedence": ("pdk_hard", "topology_hard", "graph_inferred"),
             "common_centroid_policy": "legal_unit_array_else_explicit_symmetric_degradation",
-            "route_resource_solver": "z3_solver",
+            "route_resource_solver": "analogskills_local_smt",
         },
     )
 
@@ -233,10 +260,10 @@ def solve_imported_physical_smt(
     if not compiled.passed:
         issues = tuple(compiled.checks.get("issues", ()))
         raise PhysicalIntentError("smt_unsat_or_timeout", f"two_stage_ota placement SMT failed: {issues}")
-    assignments = _solve_route_resources(
-        intent.spec,
-        timeout_ms=solver_timeout_ms,
-        fixed_lanes={str(net): index for index, net in enumerate(graph.pins)},
+    assignments, routing_evidence = _solve_analogskills_route_resources(
+        graph,
+        intent,
+        candidate_layers=tuple(dict.fromkeys(layer for row in intent.spec.route_resources for layer in row.allowed_layers)),
     )
     matching = _matching_realization_report(intent.layout_constraints)
     checks = {
@@ -249,7 +276,14 @@ def solve_imported_physical_smt(
         ),
     }
     compiled = replace(compiled, checks=checks, route_resource_assignments=assignments)
-    return ImportedPhysicalSmtResult(intent, compiled, tuple(compiled.placements), assignments, matching)
+    return ImportedPhysicalSmtResult(
+        intent,
+        compiled,
+        tuple(compiled.placements),
+        assignments,
+        matching,
+        routing_evidence,
+    )
 
 
 def _resolved_pcell_sizes(
@@ -289,71 +323,98 @@ def _resolved_pcell_sizes(
     return result
 
 
-def _solve_route_resources(
-    spec: AnalogLayoutSpec,
+def _solve_analogskills_route_resources(
+    graph: TopologyGraph,
+    intent: PhysicalDesignIntent,
     *,
-    timeout_ms: int,
-    fixed_lanes: Mapping[str, int] | None = None,
-) -> dict[str, dict[str, object]]:
-    if z3 is None:  # pragma: no cover
-        raise PhysicalIntentError("smt_unavailable", "z3-solver is required for route resource assignment")
-    rows = tuple(spec.route_resources)
-    if not rows:
-        raise PhysicalIntentError("constraint_compile_failed", "no critical route resources were declared")
-    all_layers = tuple(dict.fromkeys(layer for row in rows for layer in (row.allowed_layers or ((row.layer,) if row.layer else ()))))
-    if not all_layers:
+    candidate_layers: tuple[str, ...],
+) -> tuple[dict[str, dict[str, object]], dict[str, object]]:
+    """Lower AnalogSkills' critical-region SMT result into router resources."""
+
+    if not candidate_layers:
         raise PhysicalIntentError("constraint_compile_failed", "route resources have no allowed layers")
-    layer_index = {name: index for index, name in enumerate(all_layers)}
-    solver = z3.Solver()
-    solver.set(timeout=max(1, int(timeout_ms)))
-    layer_vars: dict[str, object] = {}
-    lane_vars: dict[str, object] = {}
-    demand: dict[str, int] = {}
-    for index, row in enumerate(rows):
-        name = str(row.name)
-        layer_var = z3.Int(f"ota_route_layer_{index}")
-        lane_var = z3.Int(f"ota_route_lane_{index}")
-        allowed_layers = tuple(row.allowed_layers or ((row.layer,) if row.layer else all_layers))
-        allowed_lanes = tuple(row.cyclic_lanes or ((row.lane,) if row.lane is not None else tuple(range(12))))
-        solver.add(z3.Or(*(layer_var == layer_index[layer] for layer in allowed_layers)))
-        solver.add(z3.Or(*(lane_var == int(lane) for lane in allowed_lanes)))
-        if name in dict(fixed_lanes or {}):
-            solver.add(lane_var == int(dict(fixed_lanes or {})[name]))
-        layer_vars[name] = layer_var
-        lane_vars[name] = lane_var
-        demand[name] = max(1, int(dict(row.route_policy).get("track_demand", 1) or 1))
-    names = tuple(str(row.name) for row in rows)
-    for index, left in enumerate(names):
-        for right in names[index + 1:]:
-            # A route to an upper layer carries a via stack through lower
-            # layers.  Reserve lanes globally so those stacks cannot pierce a
-            # different net's lower-metal strap.  Wide/power demand remains an
-            # auditable width class; the 3um lane pitch supplies its clearance.
-            solver.add(lane_vars[left] != lane_vars[right])
-    if "vip" in lane_vars and "vin" in lane_vars:
-        solver.add(layer_vars["vip"] == layer_vars["vin"])
-        solver.add(z3.Abs(lane_vars["vip"] - lane_vars["vin"]) == 1)
-    status = solver.check()
-    if status != z3.sat:
-        reason = "smt_timeout" if status == z3.unknown else "smt_unsat"
-        raise PhysicalIntentError(reason, f"critical route resource SMT returned {status}")
-    model = solver.model()
-    by_index = {value: key for key, value in layer_index.items()}
+    routing_constraints = tuple(intent.layout_constraints.routing) + (
+        RoutingConstraint("vip", "differential_partner", ("vin",), "OTA differential input pair"),
+        RoutingConstraint("vin", "differential_partner", ("vip",), "OTA differential input pair"),
+        RoutingConstraint("vout", "route_layer", "M4", "high-current output trunk"),
+        RoutingConstraint("n_s1", "shield", True, "high-impedance first-stage output"),
+        RoutingConstraint("n_s1", "avoid_nets", ("vip", "vin"), "isolate high-Z node from inputs"),
+        RoutingConstraint("vdd", "wide", True, "power template"),
+        RoutingConstraint("vss", "wide", True, "ground template"),
+    )
+    augmented = replace(
+        intent.layout_constraints,
+        routing=routing_constraints,
+        critical_nets=tuple(dict.fromkeys((*intent.layout_constraints.critical_nets, "vip", "vin", "n_s1", "vout"))),
+    )
+    routing_graph = replace(graph, layout_constraints=augmented)
+    plan = build_advanced_analog_routing_plan(routing_graph, constraints=augmented)
+    raw_assignments: dict[str, tuple[str, int, str]] = {}
+    patch_evidence: list[dict[str, object]] = []
+    for patch in plan.local_smt_patch_regions:
+        problem = build_analog_local_smt_problem(
+            routing_graph,
+            plan,
+            patch.name,
+            candidate_layers=candidate_layers,
+            track_count=16,
+        )
+        solved = solve_analog_local_smt(problem, max_solutions=1, backend="z3")
+        if not solved.solutions:
+            raise PhysicalIntentError("smt_unsat", f"AnalogSkills local routing SMT failed for {patch.name}")
+        solution = solved.solutions[0]
+        for net, layer, track in solution.assignments:
+            if net in raw_assignments and raw_assignments[net][:2] != (layer, track):
+                raise PhysicalIntentError("constraint_compile_failed", f"conflicting SMT assignments for {net}")
+            raw_assignments[net] = (layer, int(track), patch.name)
+        patch_evidence.append({
+            "patch": asdict(patch),
+            "problem": asdict(problem),
+            "solution": asdict(solution),
+            "stats": asdict(solved.stats),
+        })
+
+    resource_by_net = {str(row.name): row for row in intent.spec.route_resources}
+    ordered_signal_nets = sorted(raw_assignments, key=lambda net: (raw_assignments[net][1], raw_assignments[net][0], net))
+    differential = [net for net in ("vip", "vin") if net in raw_assignments]
+    ordered_signal_nets = differential + [net for net in ordered_signal_nets if net not in differential]
+    template_nets = [net for net in ("vss", "vdd") if net in resource_by_net]
+    remaining_nets = [net for net in resource_by_net if net not in raw_assignments and net not in template_nets]
+    ordered_nets = tuple(dict.fromkeys((*differential, *ordered_signal_nets, *remaining_nets, *template_nets)))
+
     result: dict[str, dict[str, object]] = {}
-    for row in rows:
-        name = str(row.name)
-        layer = by_index[int(model.eval(layer_vars[name], model_completion=True).as_long())]
-        lane = int(model.eval(lane_vars[name], model_completion=True).as_long())
-        result[name] = {
+    for lane, net in enumerate(ordered_nets):
+        resource = resource_by_net[net]
+        if net in raw_assignments:
+            layer, solver_track, patch_name = raw_assignments[net]
+            source = "analogskills_local_smt"
+        else:
+            allowed = tuple(resource.allowed_layers or ((resource.layer,) if resource.layer else candidate_layers))
+            layer = "M4" if net in {"vss", "vout"} and "M4" in allowed else allowed[0]
+            solver_track = lane
+            patch_name = "template_power" if net in template_nets else "template_escape"
+            source = "template"
+        demand = max(1, int(dict(resource.route_policy).get("track_demand", 1) or 1))
+        result[net] = {
             "layer": layer,
             "lane": lane,
-            "track_demand": demand[name],
-            "corridor": f"horizontal_{layer}_{lane}",
-            "orientation": str(row.channel_orientation or "horizontal"),
-            "style": str(row.style or "signal"),
-            "solver": "z3_solver",
+            "solver_track": solver_track,
+            "track_demand": demand,
+            "corridor": f"top_horizontal_{layer}_{lane}",
+            "orientation": str(resource.channel_orientation or "horizontal"),
+            "style": str(resource.style or "signal"),
+            "region": patch_name,
+            "solver": source,
         }
-    return result
+    if set(result) != set(resource_by_net):
+        raise PhysicalIntentError("constraint_compile_failed", "routing resource lowering omitted nets")
+    return result, {
+        "planner": "analogskills.layout.analog_routing",
+        "plan": asdict(plan),
+        "local_smt_patches": patch_evidence,
+        "template_nets": tuple(template_nets),
+        "lowering": "SMT track order to globally unique physical strap lanes",
+    }
 
 
 def _constraint_evidence(
@@ -400,16 +461,17 @@ def _matching_realization_report(constraints: LayoutConstraintSet) -> dict[str, 
         if group.style == "common_centroid":
             result[group.name] = {
                 "requested_style": group.style,
-                "realized_style": "symmetric_pair",
+                "realized_style": "symmetric_same_orientation",
                 "status": "degraded_explicit",
-                "reason": "no calibrated legal unit-array realization selected for the current small devices",
+                "reason": "no calibrated legal unit-array or mirrored-access realization is available for the current devices",
                 "devices": tuple(group.devices),
             }
         else:
             result[group.name] = {
                 "requested_style": group.style,
-                "realized_style": "symmetric_pair",
-                "status": "realized",
+                "realized_style": "symmetric_same_orientation",
+                "status": "degraded_explicit",
+                "reason": "mirrored CRN28 terminal-access calibration is not qualified for sign-off",
                 "devices": tuple(group.devices),
             }
     return result

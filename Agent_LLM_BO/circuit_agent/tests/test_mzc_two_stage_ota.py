@@ -41,9 +41,10 @@ class MZCTwoStageOTATest(unittest.TestCase):
             "subckt pmos_input_mzc_two_stage_ota (vip vin vout ibias vdd vss)",
             circuit,
         )
-        self.assertIn("Mdiff1 (n_mirr vip n_tail vdd)", circuit)
-        self.assertIn("Mffdiff1 (n_ff_mirr vin n_ff_tail vdd)", circuit)
-        self.assertIn("Mffdiff2 (vout vip n_ff_tail vdd)", circuit)
+        self.assertIn("Mdiff1 (n_mirr vin n_tail vdd)", circuit)
+        self.assertIn("Mdiff2 (n_s1 vip n_tail vdd)", circuit)
+        self.assertIn("Mffdiff1 (n_ff_mirr vip n_ff_tail vdd)", circuit)
+        self.assertIn("Mffdiff2 (vout vin n_ff_tail vdd)", circuit)
         self.assertIn("Mtailff (n_ff_tail ibias vdd vdd)", circuit)
         self.assertIn("parameters Cc=500f fts_ratio=1.1", circuit)
         self.assertIn("Cc (n_s1 vout) capacitor c=Cc", circuit)

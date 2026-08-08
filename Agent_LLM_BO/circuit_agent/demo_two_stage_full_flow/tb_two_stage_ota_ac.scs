@@ -1,0 +1,26 @@
+// tb_two_stage_ota_ac.scs -- Two-Stage OTA differential AC analysis
+simulator lang=spectre insensitive=yes
+
+include "circuit.cir"
+
+parameters VDD=0.9 VCM=0.7 IBIAS=20u CL=2p
+
+VDDsrc (vdd 0) vsource type=dc dc=VDD
+VSSsrc (vss 0) vsource type=dc dc=0
+IBIASsrc (vdd ibias) isource type=dc dc=IBIAS
+VCMsrc (vcm 0) vsource type=dc dc=VCM
+VIPsrc (vinp vcm) vsource type=dc dc=0 mag=1
+Rfb (vout vinn) resistor r=1G
+Cfb (vinn 0) capacitor c=1
+
+Xdut (vinp vinn vout ibias vdd vss) two_stage_ota
+CLload (vout 0) capacitor c=CL
+
+tempOption options temp=27
+outOpts options rawfmt=psfascii soft_bin=allmodels
+op1 dc oppoint=rawfile
+opInfo info what=oppoint where=rawfile
+ac1 ac start=1 stop=10G dec=20
+
+save vout
+save VDDsrc:p

@@ -33,6 +33,7 @@ class PreparePhysicalIntegrationTest(unittest.TestCase):
                 )
                 result = prepare_imported_physical_run(handoff)
                 self.assertEqual(result.status, "prepared")
+                self.assertTrue(Path(result.physical_root).is_absolute())
                 self.assertTrue(Path(result.layout_plan_path).is_file())
                 self.assertTrue(Path(result.layout_skill_path).is_file())
                 self.assertTrue(Path(result.lvs_source_path).is_file())

@@ -1,0 +1,80 @@
+{
+  "original_requirement": "Two-stage OTA unified full-flow smoke example: gain>=45dB, GBW>=10MHz, PM>=30deg, power<=10mW (dry-run orchestration target)",
+  "targets": {
+    "gain_db": 45,
+    "bandwidth_hz": 10000000.0,
+    "phase_margin_deg": 30,
+    "power_w": 0.01,
+    "load_cap_f": 2e-12,
+    "slew_rate_v_per_s": null,
+    "settling_time_s": null,
+    "vref_v": null,
+    "vref_tolerance_v": 0.01,
+    "tempco_ppm_per_c": null,
+    "vref_temp_nonlinearity_v": null,
+    "psrr_db": null,
+    "line_regulation_v_per_v": null,
+    "startup_time_s": null
+  },
+  "topology_hint": "",
+  "custom_specs": {},
+  "metric_goals": {
+    "gain_db": {
+      "constraint": "min",
+      "target": 45.0,
+      "low": null,
+      "high": null,
+      "tolerance": null,
+      "objective": "none",
+      "objective_target": null,
+      "priority": 1.0
+    },
+    "bandwidth_hz": {
+      "constraint": "min",
+      "target": 10000000.0,
+      "low": null,
+      "high": null,
+      "tolerance": null,
+      "objective": "none",
+      "objective_target": null,
+      "priority": 1.0
+    },
+    "phase_margin_deg": {
+      "constraint": "min",
+      "target": 30.0,
+      "low": null,
+      "high": null,
+      "tolerance": null,
+      "objective": "target",
+      "objective_target": 67.5,
+      "priority": 1.0
+    },
+    "power_w": {
+      "constraint": "max",
+      "target": 0.01,
+      "low": null,
+      "high": null,
+      "tolerance": null,
+      "objective": "minimize",
+      "objective_target": null,
+      "priority": 1.0
+    }
+  },
+  "topology_name": "two_stage_ota",
+  "topology_display_name": "Two-Stage Miller OTA",
+  "generated_at": "2026-08-04T13:07:24.414641",
+  "default_params": {
+    "Wbias": 5e-06,
+    "Lbias": 2e-07,
+    "m_tail_unit": 2,
+    "ratio_load_tail": 2,
+    "Wdiff": 1e-05,
+    "Ldiff": 6e-08,
+    "Wmirr": 5e-06,
+    "Lmirr": 1e-07,
+    "Wcs": 2e-05,
+    "Cc": 5e-13,
+    "Rz": 1000.0,
+    "IBIAS": 2e-05
+  }
+}

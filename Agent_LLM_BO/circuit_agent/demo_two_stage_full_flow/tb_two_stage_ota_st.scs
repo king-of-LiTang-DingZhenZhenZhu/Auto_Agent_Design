@@ -1,0 +1,22 @@
+// tb_two_stage_ota_st.scs -- Unity-gain 0.1% settling-time analysis
+simulator lang=spectre insensitive=yes
+
+include "circuit.cir"
+
+parameters VDD=0.9 VCM=0.7 IBIAS=20u CL=2p
+parameters VLOW=0.7 VHIGH=0.71
+
+VDDsrc (vdd 0) vsource type=dc dc=VDD
+VSSsrc (vss 0) vsource type=dc dc=0
+IBIASsrc (vdd ibias) isource type=dc dc=IBIAS
+VIPsrc (vinp 0) vsource type=pulse val0=VLOW val1=VHIGH delay=5n rise=100p fall=100p width=80n period=160n
+VFBsrc (vin vout) vsource type=dc dc=0
+
+Xdut (vinp vin vout ibias vdd vss) two_stage_ota
+CLload (vout 0) capacitor c=CL
+
+tempOption options temp=27
+outOpts options rawfmt=psfascii soft_bin=allmodels
+stTran tran stop=180n maxstep=10p
+
+save vinp vout

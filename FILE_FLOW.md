@@ -81,6 +81,11 @@ Agent 结合：
 
 选择固定 topology。BO 默认不会在运行中自动升级 topology。
 
+所有已注册 topology 的真实电气验证状态见
+`Agent_LLM_BO/circuit_agent/TOPOLOGY_VALIDATION_STATUS.md`。生成测试通过不等于
+电路已验证；状态表区分“已验证”“未验证”和“特定情况可行”，并引用对应的
+Spectre/PVT 证据。
+
 ### 3.3 生成项目
 
 ```python

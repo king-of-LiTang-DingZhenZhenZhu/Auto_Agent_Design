@@ -703,7 +703,8 @@ def _collect_terminals(
             )
 
     for idx, net in enumerate(top_level_nets):
-        y = cfg.pin_origin_um[1] + idx * cfg.pin_pitch_um
+        lane = int(cfg.strap_lane_by_net.get(str(net), idx))
+        y = cfg.pin_origin_um[1] + lane * cfg.pin_pitch_um
         x, y = pdk.rules.snap_point_um((cfg.pin_origin_um[0], y))
         terminals.setdefault(str(net), []).append(_TerminalAccess(x, y, pdk.layer_map.metals[0], pdk.layer_map.contact, True, "", str(net)))
     return _dedupe_terminals_by_access(terminals, pdk)

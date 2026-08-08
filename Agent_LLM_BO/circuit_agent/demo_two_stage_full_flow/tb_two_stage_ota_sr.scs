@@ -1,0 +1,23 @@
+// tb_two_stage_ota_sr.scs -- Unity-gain large-signal slew-rate analysis
+// 对于 SR 的测量，不能把输出目标推到电路根本到不了的位置，比如 0.9V
+simulator lang=spectre insensitive=yes
+
+include "circuit.cir"
+
+parameters VDD=0.9 VCM=0.7 IBIAS=20u CL=2p
+parameters VLOW=0.49999999999999994 VHIGH=0.8999999999999999
+
+VDDsrc (vdd 0) vsource type=dc dc=VDD
+VSSsrc (vss 0) vsource type=dc dc=0
+IBIASsrc (vdd ibias) isource type=dc dc=IBIAS
+VIPsrc (vinp 0) vsource type=pulse val0=VLOW val1=VHIGH delay=2n rise=100p fall=100p width=50n period=100n
+VFBsrc (vin vout) vsource type=dc dc=0
+
+Xdut (vinp vin vout ibias vdd vss) two_stage_ota
+CLload (vout 0) capacitor c=CL
+
+tempOption options temp=27
+outOpts options rawfmt=psfascii soft_bin=allmodels
+srTran tran stop=200n maxstep=10p
+
+save vinp vout

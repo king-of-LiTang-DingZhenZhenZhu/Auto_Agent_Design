@@ -347,8 +347,8 @@ subckt pmos_input_two_stage_ota (vip vin vout ibias vdd vss)
 // Bias generator: external current pulled from diode-connected PMOS
 Mbias (ibias ibias vdd vdd) {pmos_lvt_model} w=Wbias l=Lbias nf=1
 // First stage: PMOS differential pair with NMOS current-mirror load
-Mdiff1 (n_mirr vip n_tail vdd) {pmos_lvt_model} w=Wdiff l=Ldiff nf=1
-Mdiff2 (n_s1 vin n_tail vdd) {pmos_lvt_model} w=Wdiff l=Ldiff nf=1
+Mdiff1 (n_mirr vin n_tail vdd) {pmos_lvt_model} w=Wdiff l=Ldiff nf=1
+Mdiff2 (n_s1 vip n_tail vdd) {pmos_lvt_model} w=Wdiff l=Ldiff nf=1
 Mmirr1 (n_mirr n_mirr vss vss) {nmos_lvt_model} w=Wmirr l=Lmirr nf=1
 Mmirr2 (n_s1 n_mirr vss vss) {nmos_lvt_model} w=Wmirr l=Lmirr nf=1
 Mtail (n_tail ibias vdd vdd) {pmos_lvt_model} w=Wbias l=Lbias nf=1 m=m_tail_unit

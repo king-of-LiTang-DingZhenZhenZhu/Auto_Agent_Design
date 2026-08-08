@@ -191,8 +191,8 @@ class PMOSInputMZCTwoStageOTA(PMOSInputTwoStageOTA):
         base_params["Rz"] = 1.0
         pdk = get_pdk_profile_for_params(params)
         fts_devices = f"""\
-Mffdiff1 (n_ff_mirr vin n_ff_tail vdd) {pdk.pmos_lvt_model} w=Wdiff*fts_ratio l=Ldiff nf=1
-Mffdiff2 (vout vip n_ff_tail vdd) {pdk.pmos_lvt_model} w=Wdiff*fts_ratio l=Ldiff nf=1
+Mffdiff1 (n_ff_mirr vip n_ff_tail vdd) {pdk.pmos_lvt_model} w=Wdiff*fts_ratio l=Ldiff nf=1
+Mffdiff2 (vout vin n_ff_tail vdd) {pdk.pmos_lvt_model} w=Wdiff*fts_ratio l=Ldiff nf=1
 Mffmirr1 (n_ff_mirr n_ff_mirr vss vss) {pdk.nmos_lvt_model} w=Wmirr*fts_ratio l=Lmirr nf=1
 Mffmirr2 (vout n_ff_mirr vss vss) {pdk.nmos_lvt_model} w=Wmirr*fts_ratio l=Lmirr nf=1
 Mtailff (n_ff_tail ibias vdd vdd) {pdk.pmos_lvt_model} w=Wbias*fts_ratio l=Lbias nf=1 m=m_tail_unit"""

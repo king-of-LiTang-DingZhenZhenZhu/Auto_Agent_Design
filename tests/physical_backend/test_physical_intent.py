@@ -59,10 +59,19 @@ class PhysicalIntentTest(unittest.TestCase):
             payload = intent.to_dict()
             self.assertEqual(payload["schema"], PHYSICAL_INTENT_SCHEMA)
             self.assertEqual({row["name"] for row in payload["spec"]["patterns"]}, {
-                "mirror_pair", "input_pair", "tail_bias", "second_stage", "compensation",
+                "bias_reference", "tail_device", "mirror_pair", "input_pair",
+                "second_stage", "compensation",
             })
             self.assertTrue(any(row["kind"] == "match:common_centroid" for row in payload["constraints"]))
             self.assertEqual(payload["metadata"]["constraint_precedence"][0], "pdk_hard")
+            self.assertEqual(payload["metadata"]["route_resource_solver"], "analogskills_local_smt")
+            hard_relations = {
+                (row["source"], row["target"], row["kind"])
+                for row in payload["spec"]["relations"]
+                if row["hard"]
+            }
+            self.assertIn(("tail_device", "input_pair", "overlap_x"), hard_relations)
+            self.assertIn(("compensation", "second_stage", "overlap_y"), hard_relations)
 
     def test_smt_solves_placement_and_nonconflicting_route_lanes(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -86,6 +95,12 @@ class PhysicalIntentTest(unittest.TestCase):
                 1,
             )
             self.assertEqual(result.matching_realization["input_pair"]["status"], "degraded_explicit")
+            self.assertEqual(result.routing_evidence["planner"], "analogskills.layout.analog_routing")
+            self.assertTrue(result.routing_evidence["local_smt_patches"])
+            self.assertTrue(all(
+                row["solver"] in {"analogskills_local_smt", "template"}
+                for row in result.route_resource_assignments.values()
+            ))
 
     def test_unknown_topology_fails_closed(self):
         with tempfile.TemporaryDirectory() as tmp:

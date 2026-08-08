@@ -255,7 +255,11 @@ def prepare_imported_physical_run(
 ) -> ImportedPhysicalResult:
     handoff_obj = ImportedDesignHandoff.read_json(handoff) if isinstance(handoff, (str, Path)) else handoff
     handoff_obj.validate()
-    root = Path(physical_root) if physical_root is not None else Path(handoff_obj.final_netlist).parents[1]
+    root = (
+        Path(physical_root)
+        if physical_root is not None
+        else Path(handoff_obj.final_netlist).parents[1]
+    ).resolve()
     root.mkdir(parents=True, exist_ok=True)
     layout_dir = root / "layout"
     oa_dir = root / "oa"
@@ -742,7 +746,7 @@ def _build_imported_two_stage_ota_layout(
     if core_bbox is None:
         raise ValueError("two_stage_ota device plan has no physical bbox")
     x0, _y0, _x1, y1 = core_bbox
-    route_y = y1 + 27.0
+    route_y = y1 + 3.0
     pin_x = x0 - 29.0
     metals = tuple(str(layer) for layer in pdk.layer_map.metals[2:])
     if len(metals) < 2:
@@ -783,16 +787,16 @@ def _build_imported_two_stage_ota_layout(
             pin_pitch_um=3.0,
             pin_drop_x_start_um=pin_x + 5.0,
             pin_drop_x_pitch_um=-2.0,
-            fanout_search_steps=16 if assignments else 60,
-            fanout_y_search_steps=8 if assignments else 24,
-            strap_landing_search_steps=16 if assignments else 24,
+            fanout_search_steps=60,
+            fanout_y_search_steps=24,
+            strap_landing_search_steps=24,
             maze_escape_enabled=True,
-            maze_escape_search_steps=4 if assignments else 8,
-            maze_escape_max_expansions=1024 if assignments else 4096,
+            maze_escape_search_steps=8,
+            maze_escape_max_expansions=4096,
             connect_to_existing_net=True,
             existing_net_target_limit=64 if assignments else 24,
-            existing_net_fanout_search_steps=16 if assignments else 24,
-            existing_net_fanout_y_search_steps=8 if assignments else 24,
+            existing_net_fanout_search_steps=24,
+            existing_net_fanout_y_search_steps=24,
         ),
     )
     routed_core = merge_oa_write_plans(
