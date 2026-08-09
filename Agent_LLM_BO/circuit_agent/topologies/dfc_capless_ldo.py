@@ -105,11 +105,11 @@ class DFCCaplessLDO(BaseTopology):
                 f"active device-domain limit {max_device_voltage:g} V."
             )
         if (
-            pdk.nmos_model != "nch_25ud18_mac"
-            or pdk.pmos_model != "pch_25ud18_mac"
+            pdk.nmos_model != "nch_18_mac"
+            or pdk.pmos_model != "pch_18_mac"
         ):
             return (
-                "dfc_capless_ldo requires nch_25ud18_mac/pch_25ud18_mac. "
+                "dfc_capless_ldo requires nch_18_mac/pch_18_mac. "
                 "Select the TSMC28 io_1p8 voltage domain."
             )
         return None
@@ -330,7 +330,7 @@ def default_dfc_ldo_targets() -> DesignTarget:
             "load_cap_max_f": 200e-12,
             "load_edge_s": 1e-6,
             "required_voltage_domain": "tsmc28/io_1p8",
-            "required_models": "nch_25ud18_mac/pch_25ud18_mac",
+            "required_models": "nch_18_mac/pch_18_mac",
         },
         metric_goals={
             "output_voltage_v": MetricGoal(

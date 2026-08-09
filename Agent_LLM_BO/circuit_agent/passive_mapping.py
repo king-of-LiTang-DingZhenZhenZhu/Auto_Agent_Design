@@ -191,6 +191,10 @@ class _BaseMapper:
         _validate_constraints(limits)
         if self.device.mapping_mode == "value":
             return [self._map_direct_value(target, limits)]
+        if self.device.mapping_mode == "lookup" and isinstance(
+            self.evaluator, _LookupEvaluator
+        ):
+            return self._map_lookup(target, limits, self.evaluator)
         self._require_geometry()
         candidates: list[_Candidate] = []
         max_series = limits.max_series_units or self.device.max_series_units
@@ -258,6 +262,89 @@ class _BaseMapper:
                 f"{tolerance:.2%}; best error is {unique[0].relative_error:.2%}"
             )
         return unique
+
+    def _map_lookup(
+        self,
+        target: float,
+        constraints: PassiveMappingConstraints,
+        evaluator: "_LookupEvaluator",
+    ) -> list[PassiveMappingResult]:
+        max_series = constraints.max_series_units or self.device.max_series_units
+        max_parallel = constraints.max_parallel_units or self.device.max_parallel_units
+        tolerance = (
+            constraints.tolerance
+            if constraints.tolerance is not None
+            else self.device.value_tolerance
+        )
+        candidates: list[_Candidate] = []
+        decompositions = [(1, 1)] + [
+            (series, parallel)
+            for series in range(1, max_series + 1)
+            for parallel in range(1, max_parallel + 1)
+            if (series, parallel) != (1, 1)
+        ]
+        for series, parallel in decompositions:
+            for point in evaluator.points:
+                unit_value = float(point["value"])
+                actual = self._combined_value(unit_value, series, parallel)
+                params = dict(point.get("params") or {})
+                unit_area = _lookup_point_area(point, self.device, params)
+                area = (
+                    unit_area * series * parallel
+                    if unit_area is not None
+                    else None
+                )
+                if (
+                    constraints.max_area_m2 is not None
+                    and (area is None or area > constraints.max_area_m2)
+                ):
+                    continue
+                matching = (
+                    {
+                        "required": True,
+                        "unit_count": series * parallel,
+                        "decomposition": "series_parallel",
+                    }
+                    if constraints.matching_required
+                    else {}
+                )
+                candidates.append(_Candidate(PassiveMappingResult(
+                    device_kind=self.kind,
+                    device_type=self.device_name,
+                    target_value=target,
+                    actual_value=actual,
+                    relative_error=abs(actual - target) / target,
+                    params=params,
+                    series_units=series,
+                    parallel_units=parallel,
+                    unit_value=unit_value,
+                    unit_area_m2=unit_area,
+                    area_m2=area,
+                    evaluator_backend=evaluator.backend_name,
+                    evaluator_metadata={
+                        "lookup_table": str(evaluator.path),
+                        "point": dict(point),
+                    },
+                    matching=matching,
+                )))
+            if (
+                (series, parallel) == (1, 1)
+                and candidates
+                and min(item.result.relative_error for item in candidates) <= tolerance
+            ):
+                break
+        if not candidates:
+            raise PassiveMappingError(
+                f"No characterized lookup points for '{self.device_name}'"
+            )
+        ordered = sorted(candidates, key=lambda item: item.score())
+        results = [item.result for item in ordered[: constraints.candidate_limit]]
+        if results[0].relative_error > tolerance:
+            raise PassiveMappingError(
+                f"{self.device_name} cannot realize {target:g} within "
+                f"{tolerance:.2%}; best error is {results[0].relative_error:.2%}"
+            )
+        return results
 
     def _map_direct_value(
         self,
@@ -735,6 +822,22 @@ class _LookupEvaluator:
             resolved_params=dict(best.get("params") or params),
             metadata={"lookup_table": str(self.path), "point": dict(best)},
         )
+
+
+def _lookup_point_area(
+    point: Mapping[str, object],
+    device: PassiveDeviceProfile,
+    params: Mapping[str, object],
+) -> float | None:
+    for key in ("area_m2", "estimated_area_m2"):
+        if point.get(key) is not None:
+            return float(point[key])
+    try:
+        return float(params[device.width_parameter]) * float(
+            params[device.length_parameter]
+        )
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 def build_passive_evaluator(

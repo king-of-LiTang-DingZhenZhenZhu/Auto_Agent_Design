@@ -136,8 +136,8 @@ class SpectreTopologyTest(unittest.TestCase):
             r"(?m)^subckt dfc_capless_ldo "
             r"\(vin vref vb1 vb2 vb4 vout vss\)",
         )
-        self.assertIn("nch_25ud18_mac", circuit)
-        self.assertIn("pch_25ud18_mac", circuit)
+        self.assertIn("nch_18_mac", circuit)
+        self.assertIn("pch_18_mac", circuit)
         self.assertIn(
             "M17 (n_stage1_inv n_stage1 vss vss)",
             circuit,
@@ -670,42 +670,42 @@ ends two_stage_ota
         self.assertNotIn("Wfoldn", rendered)
         self.assertNotIn("Wload", rendered)
         self.assertIn(
-            "parameters Wbp_big=4.8u*Lbias/Lbias_ref",
+            "parameters Wbp_big=1.789427u*Lbias/Lbias_ref",
             rendered,
         )
         self.assertIn(
-            "parameters Wbn_big=4.8u*Lbias/Lbias_ref",
+            "parameters Wbn_big=2.055479u*Lbias/Lbias_ref",
             rendered,
         )
         self.assertIn("parameters m_half_unit=2 m_load_ratio=2", rendered)
         self.assertIn(
             "Mtailp (ntail VB1 vdd vdd) pch_lvt_mac "
-            "w=Wbp_big l=400n nf=nf_Wbp_big m=m_tail_unit*m_Wbp_big",
+            "w=Wbp_big l=302.90388n nf=nf_Wbp_big m=m_tail_unit*m_Wbp_big",
             rendered,
         )
         self.assertIn(
             "Mfold1 (nfold_l VB4 vss vss) nch_lvt_mac "
-            "w=Wbn_big l=400n nf=nf_Wbn_big m=m_tail_unit*m_Wbn_big",
+            "w=Wbn_big l=302.90388n nf=nf_Wbn_big m=m_tail_unit*m_Wbn_big",
             rendered,
         )
         self.assertIn(
             "Mcasn1 (pmirr VB3 nfold_l vss) nch_lvt_mac "
-            "w=Wbn_big l=400n nf=nf_Wbn_big m=m_half_unit*m_Wbn_big",
+            "w=Wbn_big l=302.90388n nf=nf_Wbn_big m=m_half_unit*m_Wbn_big",
             rendered,
         )
         self.assertIn(
             "Mmirr1 (npm_l pmirr vdd vdd) pch_lvt_mac "
-            "w=Wbp_big l=400n nf=nf_Wbp_big m=m_half_unit*m_Wbp_big",
+            "w=Wbp_big l=302.90388n nf=nf_Wbp_big m=m_half_unit*m_Wbp_big",
             rendered,
         )
         self.assertIn(
             "Mcs (vout nstage1 vdd vdd) pch_lvt_mac "
-            "w=30u l=400n nf=12 m=1",
+            "w=10.357849u l=302.90388n nf=4 m=1",
             rendered,
         )
         self.assertIn(
             "Mload (vout VB4 vss vss) nch_lvt_mac "
-            "w=Wbn_big l=400n nf=nf_Wbn_big m=m_load_unit*m_Wbn_big",
+            "w=Wbn_big l=302.90388n nf=nf_Wbn_big m=m_load_unit*m_Wbn_big",
             rendered,
         )
 
@@ -713,9 +713,9 @@ ends two_stage_ota
             {"Lbias": 500e-9},
             param_space=topo.get_param_space(),
         )
-        self.assertIn("parameters Lbias=500n Lbias_ref=400n", lscaled)
+        self.assertIn("parameters Lbias=500n Lbias_ref=302.90388n", lscaled)
         self.assertIn(
-            "parameters Wbp_big=4.8u*Lbias/Lbias_ref",
+            "parameters Wbp_big=1.789427u*Lbias/Lbias_ref",
             lscaled,
         )
         self.assertIn(

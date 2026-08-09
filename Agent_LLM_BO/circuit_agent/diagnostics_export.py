@@ -290,7 +290,14 @@ def _export_operating_points(
     )
     for match in pattern.finditer(text):
         instance, values_text, model = match.groups()
-        values = [_to_float(v) for v in re.findall(r"^[ \t]*([+-]?(?:nan|inf|\d\S*))", values_text, re.MULTILINE)]
+        values = [
+            _to_float(value)
+            for value in re.findall(
+                r"^[ \t]*([+-]?(?:nan|inf|\d\S*))",
+                values_text,
+                re.MULTILINE | re.IGNORECASE,
+            )
+        ]
         if len(values) < len(fields):
             continue
         data = dict(zip(fields, values))

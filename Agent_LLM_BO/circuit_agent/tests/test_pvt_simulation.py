@@ -66,9 +66,13 @@ subckt tiny in out vdd vss
 ends tiny
 """
 
-        patched = patch_netlist_for_corner(netlist, corner, get_pdk_profile())
+        profile = get_pdk_profile()
+        patched = patch_netlist_for_corner(netlist, corner, profile)
 
-        self.assertIn('include "/PDKS/TSMC28nm/models/spectre/toplevel.scs" section=top_ss', patched)
+        self.assertIn(
+            f'include "{profile.spectre_model_path}" section=top_ss',
+            patched,
+        )
         self.assertNotIn("section=top_tt", patched)
 
     def test_patch_netlist_normalizes_pdk_include_path(self):

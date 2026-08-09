@@ -97,24 +97,24 @@ class FoldedCascodeTwoStageOTA(BaseTopology):
 
     DEFAULT_PARAMS: dict[str, float] = {
         # PMOS input differential pair
-        "Wdiffp": 12e-6,
-        "Ldiffp": 80e-9,
+        "Wdiffp": 3.3955180522219275e-6,
+        "Ldiffp": 120e-9,
         # Second-stage PMOS common-source amplifier
-        "Wcs": 30e-6,
+        "Wcs": 10.357848557046441e-6,
         # Bias-ratio current mirrors
         "m_half_unit": 2,
         "m_load_ratio": 2,
         # Internal reference-bias generator
-        "Lbias": 400e-9,
-        "Wbp_big": 4.8e-6,
-        "nf_Wbp_big": 4,
+        "Lbias": 302.90388014097647e-9,
+        "Wbp_big": 1.7894265629495777e-6,
+        "nf_Wbp_big": 1,
         "m_Wbp_big": 1,
-        "Wbn_big": 4.8e-6,
-        "nf_Wbn_big": 4,
+        "Wbn_big": 2.0554788785048967e-6,
+        "nf_Wbn_big": 1,
         "m_Wbn_big": 1,
         # Compensation
-        "Cc": 250e-15,
-        "Rz": 1000.0,
+        "Cc": 255.85577340974856e-15,
+        "Rz": 3837.731501493059,
     }
 
     def generate_circuit(self, params: dict[str, float] | None = None) -> str:
@@ -403,7 +403,7 @@ simulator lang=spectre insensitive=yes
 {spectre_include}
 
 parameters Wdiffp={Wdiffp} Ldiffp={Ldiffp} Wcs={Wcs}
-parameters Lbias={Lbias} Lbias_ref=400n
+parameters Lbias={Lbias} Lbias_ref={Lbias}
 
 parameters nf_Wbp_big={nf_Wbp_big} m_Wbp_big={m_Wbp_big}
 parameters nf_Wbn_big={nf_Wbn_big} m_Wbn_big={m_Wbn_big}

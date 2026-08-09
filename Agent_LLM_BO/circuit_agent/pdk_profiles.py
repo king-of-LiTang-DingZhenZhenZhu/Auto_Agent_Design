@@ -138,6 +138,7 @@ class PDKProfile:
     voltage_domains: dict[str, VoltageDomainProfile] = field(default_factory=dict)
     active_voltage_domain: str = ""
     special_models: dict[str, str] = field(default_factory=dict)
+    passive_device_catalog: dict[str, dict[str, object]] = field(default_factory=dict)
     passive_devices: dict[str, PassiveDeviceProfile] = field(default_factory=dict)
     passive_role_map: dict[str, str] = field(default_factory=dict)
 
@@ -230,11 +231,12 @@ PDK_PROFILES: dict[str, PDKProfile] = {
                 vdd=1.8,
                 vdd_min=1.62,
                 vdd_max=1.98,
-                max_device_voltage=3.3,
-                min_l=300e-9,
+                max_device_voltage=1.98,
+                min_l=150e-9,
+                min_width_per_finger=320e-9,
                 model_flavors={
-                    "nmos": {"svt": "nch_25ud18_mac"},
-                    "pmos": {"svt": "pch_25ud18_mac"},
+                    "nmos": {"svt": "nch_18_mac"},
+                    "pmos": {"svt": "pch_18_mac"},
                 },
             ),
         },
@@ -303,20 +305,20 @@ PDK_PROFILES: dict[str, PDKProfile] = {
             },
             "folded_cascode_two_stage": {
                 "default_params": {
-                    "Wdiffp": 12e-6,
-                    "Ldiffp": 80e-9,
-                    "Wcs": 30e-6,
+                    "Wdiffp": 3.3955180522219275e-6,
+                    "Ldiffp": 120e-9,
+                    "Wcs": 10.357848557046441e-6,
                     "m_half_unit": 2,
                     "m_load_ratio": 2,
-                    "Lbias": 400e-9,
-                    "Wbp_big": 4.8e-6,
-                    "nf_Wbp_big": 4,
+                    "Lbias": 302.90388014097647e-9,
+                    "Wbp_big": 1.7894265629495777e-6,
+                    "nf_Wbp_big": 1,
                     "m_Wbp_big": 1,
-                    "Wbn_big": 4.8e-6,
-                    "nf_Wbn_big": 4,
+                    "Wbn_big": 2.0554788785048967e-6,
+                    "nf_Wbn_big": 1,
                     "m_Wbn_big": 1,
-                    "Cc": 250e-15,
-                    "Rz": 1000.0,
+                    "Cc": 255.85577340974856e-15,
+                    "Rz": 3837.731501493059,
                 },
                 "testbench_defaults": {
                     "VCM": 0.4,
@@ -695,6 +697,8 @@ def validate_pdk_profile(
         elif not model_roles[role]:
             errors.append(f"model role '{role}' is empty")
 
+    errors.extend(_validate_passive_device_catalog(pdk))
+
     for device_name, device in pdk.passive_devices.items():
         prefix = f"passive device '{device_name}'"
         if device.kind not in {"resistor", "capacitor"}:
@@ -958,6 +962,12 @@ def _coerce_profile(data: dict[str, object]) -> PDKProfile:
         str(role): str(model)
         for role, model in dict(values.get("special_models") or {}).items()
     }
+    raw_catalog = dict(values.get("passive_device_catalog") or {})
+    values["passive_device_catalog"] = {}
+    for name, entry in raw_catalog.items():
+        if not isinstance(entry, dict):
+            raise ValueError(f"passive_device_catalog.{name} must be an object")
+        values["passive_device_catalog"][str(name)] = dict(entry)
     raw_passives = dict(values.get("passive_devices") or {})
     values["passive_devices"] = {
         str(name): _coerce_passive_device(str(name), raw)
@@ -1078,6 +1088,79 @@ def _validate_topology_presets(profile: PDKProfile) -> list[str]:
                     f"unknown parameter '{param_name}'"
                 )
 
+    return errors
+
+
+def _validate_passive_device_catalog(profile: PDKProfile) -> list[str]:
+    errors: list[str] = []
+    valid_statuses = {
+        "mapped",
+        "partially_mapped",
+        "characterization_required",
+        "unsupported_terminals",
+    }
+    for name, entry in profile.passive_device_catalog.items():
+        prefix = f"passive catalog entry '{name}'"
+        kind = entry.get("kind")
+        if kind not in {"resistor", "capacitor"}:
+            errors.append(f"{prefix} kind must be resistor or capacitor")
+        if not isinstance(entry.get("description"), str) or not entry["description"]:
+            errors.append(f"{prefix} description must be a non-empty string")
+        status = entry.get("automation_status")
+        if status not in valid_statuses:
+            errors.append(f"{prefix} has unsupported automation_status '{status}'")
+        models = entry.get("spectre_models")
+        if not isinstance(models, list) or not models or not all(models):
+            errors.append(f"{prefix} spectre_models must be a non-empty list")
+        cells = entry.get("virtuoso_cells")
+        if not isinstance(cells, list) or not cells or not all(cells):
+            errors.append(f"{prefix} virtuoso_cells must be a non-empty list")
+        terminal_counts = entry.get("terminal_counts")
+        if (
+            not isinstance(terminal_counts, list)
+            or not terminal_counts
+            or any(not isinstance(count, int) or count < 2 for count in terminal_counts)
+        ):
+            errors.append(f"{prefix} terminal_counts must contain integers >= 2")
+        cdf_parameters = entry.get("cdf_parameters")
+        if (
+            not isinstance(cdf_parameters, list)
+            or not cdf_parameters
+            or not all(cdf_parameters)
+        ):
+            errors.append(f"{prefix} cdf_parameters must be a non-empty list")
+        domains = entry.get("voltage_domains", [])
+        if not isinstance(domains, list):
+            errors.append(f"{prefix} voltage_domains must be a list")
+        else:
+            for domain in domains:
+                if domain not in profile.voltage_domains:
+                    errors.append(f"{prefix} references unknown voltage domain '{domain}'")
+        if status in {"mapped", "partially_mapped"}:
+            device_name = entry.get("passive_device")
+            device = profile.passive_devices.get(str(device_name))
+            if device is None:
+                errors.append(
+                    f"{prefix} mapped status references unknown passive_device "
+                    f"'{device_name}'"
+                )
+            elif device.kind != kind:
+                errors.append(
+                    f"{prefix} kind '{kind}' does not match passive_device "
+                    f"'{device_name}' kind '{device.kind}'"
+                )
+        if status == "partially_mapped":
+            mapped_counts = entry.get("mapped_terminal_counts")
+            if (
+                not isinstance(mapped_counts, list)
+                or not mapped_counts
+                or not isinstance(terminal_counts, list)
+                or any(count not in terminal_counts for count in mapped_counts)
+            ):
+                errors.append(
+                    f"{prefix} mapped_terminal_counts must be a non-empty "
+                    "subset of terminal_counts"
+                )
     return errors
 
 

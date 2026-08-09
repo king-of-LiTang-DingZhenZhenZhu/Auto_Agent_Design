@@ -1,8 +1,8 @@
 {
   "name": "tsmc28",
-  "spectre_model_path": "/PDKS/TSMC28nm/models/spectre/toplevel.scs",
+  "spectre_model_path": "/share/home/chenhaonan/PDKS/TSMC28nm/models/spectre/toplevel.scs",
   "spectre_section": "top_tt",
-  "hspice_model_path": "/PDKS/TSMC28nm/models/hspice/toplevel.l",
+  "hspice_model_path": "/share/home/chenhaonan/PDKS/TSMC28nm/models/hspice/toplevel.l",
   "hspice_section": "TOP_TT",
   "nmos_model": "nch_mac",
   "pmos_model": "pch_mac",
@@ -11,7 +11,9 @@
   "process_sections": {
     "tt": "top_tt",
     "ss": "top_ss",
-    "ff": "top_ff"
+    "ff": "top_ff",
+    "fs": "top_fs",
+    "sf": "top_sf"
   },
   "vdd": 0.9,
   "vdd_min": 0.9,
@@ -21,198 +23,16 @@
     27.0,
     125.0
   ],
-  "min_l": 1.2e-07,
-  "max_width_per_finger": 2.6e-06,
-  "min_width_per_finger": 2e-07,
+  "min_l": 3e-08,
+  "max_width_per_finger": 2.7e-06,
+  "min_width_per_finger": 1e-07,
   "gmid_table_path": "../gmid_lookup_table/gm_id_tables_tsmc28.json",
   "spectre_options": [
     "rawfmt=psfascii",
     "soft_bin=allmodels"
   ],
   "virtuoso_tech_lib": "tsmcN28",
-  "virtuoso_pdk_lib_path": "/PDKS/TSMC28nm/tsmcN28",
-  "topology_presets": {
-    "5t_ota": {
-      "default_params": {
-        "Wtail": 3e-06,
-        "Ltail": 2e-07,
-        "Wdp": 5e-06,
-        "Ldp": 1.3e-07,
-        "Wcm": 8e-06,
-        "Lcm": 1.3e-07,
-        "VBIAS": 0.35
-      },
-      "testbench_defaults": {
-        "VCM": 0.15,
-        "CL": 5e-13,
-        "VBIAS": 0.35
-      }
-    },
-    "two_stage_ota": {
-      "default_params": {
-        "Wbias": 5e-06,
-        "Lbias": 2e-07,
-        "m_tail_unit": 2,
-        "ratio_load_tail": 2,
-        "Wdiff": 1e-05,
-        "Ldiff": 6e-08,
-        "Wmirr": 5e-06,
-        "Lmirr": 1e-07,
-        "Wcs": 2e-05,
-        "Cc": 5e-13,
-        "Rz": 1000.0,
-        "IBIAS": 2e-05
-      },
-      "testbench_defaults": {
-        "VCM": 0.7,
-        "IBIAS": 2e-05,
-        "CL": 2e-12
-      }
-    },
-    "leung_mok_sub1v_bandgap": {
-      "default_params": {
-        "Wcore_p": 1e-05,
-        "Lcore_p": 5e-07,
-        "Wstart_p": 2e-06,
-        "Wstart_n": 3e-07,
-        "Lstart_n": 6e-07,
-        "Wbias_p": 4e-06,
-        "Wbias_n": 2e-06,
-        "Lbias": 5e-07,
-        "Wamp_p": 4e-06,
-        "Wdiff_p": 2e-05,
-        "Wamp_n": 4e-06,
-        "Lamp": 5e-07,
-        "Ldiff_p": 5e-07
-      },
-      "testbench_defaults": {
-        "CL": 1e-13
-      }
-    },
-    "folded_cascode_two_stage": {
-      "default_params": {
-        "Wdiffp": 1.2e-05,
-        "Ldiffp": 8e-08,
-        "Wcs": 3e-05,
-        "m_half_unit": 2,
-        "m_load_ratio": 2,
-        "Lbias": 4e-07,
-        "Wbp_big": 4.8e-06,
-        "nf_Wbp_big": 4,
-        "m_Wbp_big": 1,
-        "Wbn_big": 4.8e-06,
-        "nf_Wbn_big": 4,
-        "m_Wbn_big": 1,
-        "Cc": 2.5e-13,
-        "Rz": 1000.0
-      },
-      "testbench_defaults": {
-        "VCM": 0.4,
-        "IBIAS": 2e-05,
-        "CL": 1e-12
-      }
-    },
-    "nmcf_three_stage": {
-      "default_params": {
-        "Wtail1": 1.8e-05,
-        "Ltail1": 2e-07,
-        "Wdiff1": 1e-05,
-        "Ldiff1": 8e-08,
-        "Wload1": 1e-05,
-        "Lload1": 1e-07,
-        "Wgm2": 1.4e-05,
-        "Lgm2": 8e-08,
-        "Wmirror2": 1e-05,
-        "Lmirror2": 2e-07,
-        "Wsource2": 1.6e-05,
-        "Lsource2": 2e-07,
-        "Wgm3": 2.4e-05,
-        "Lgm3": 1e-07,
-        "Wgmf2": 2.4e-05,
-        "Lgmf2": 1e-07,
-        "Wbiasn": 4e-06,
-        "Lbiasn": 2e-07,
-        "Wbiasp": 8e-06,
-        "Lbiasp": 2e-07,
-        "Cc1": 8e-13,
-        "Cc2": 5e-13
-      },
-      "testbench_defaults": {
-        "VCM": 0.3,
-        "IBIAS": 4e-05,
-        "CL": 1e-11
-      }
-    },
-    "mnmc_three_stage": {
-      "default_params": {
-        "Wtail1": 1.8e-05,
-        "Ltail1": 2e-07,
-        "Wdiff1": 1e-05,
-        "Ldiff1": 8e-08,
-        "Wload1": 1e-05,
-        "Lload1": 1e-07,
-        "Wgm2": 1.4e-05,
-        "Lgm2": 8e-08,
-        "Wmirror2": 1e-05,
-        "Lmirror2": 2e-07,
-        "Wsource2": 1.6e-05,
-        "Lsource2": 2e-07,
-        "Wgm3": 2.4e-05,
-        "Lgm3": 1e-07,
-        "Wload3": 2.4e-05,
-        "Lload3": 2e-07,
-        "Wtailf1": 0.00016,
-        "Ltailf1": 2e-07,
-        "Wgmf1": 6.4e-05,
-        "Lgmf1": 8e-08,
-        "Wloadf1": 6.4e-05,
-        "Lloadf1": 2e-07,
-        "Wbiasn": 4e-06,
-        "Lbiasn": 2e-07,
-        "Wbiasp": 8e-06,
-        "Lbiasp": 2e-07,
-        "Cc1": 8e-13,
-        "Cc2": 1e-11
-      },
-      "testbench_defaults": {
-        "VCM": 0.3,
-        "IBIAS": 4e-05,
-        "CL": 1e-11
-      }
-    },
-    "nmcnr_three_stage": {
-      "default_params": {
-        "Wtail1": 1.8e-05,
-        "Ltail1": 2e-07,
-        "Wdiff1": 1e-05,
-        "Ldiff1": 8e-08,
-        "Wload1": 1e-05,
-        "Lload1": 1e-07,
-        "Wgm2": 1.4e-05,
-        "Lgm2": 8e-08,
-        "Wmirror2": 1e-05,
-        "Lmirror2": 2e-07,
-        "Wsource2": 1.6e-05,
-        "Lsource2": 2e-07,
-        "Wgm3": 2.4e-05,
-        "Lgm3": 1e-07,
-        "Wload3": 2.4e-05,
-        "Lload3": 2e-07,
-        "Wbiasn": 4e-06,
-        "Lbiasn": 2e-07,
-        "Wbiasp": 8e-06,
-        "Lbiasp": 2e-07,
-        "Cc1": 6e-12,
-        "Cc2": 2.5e-12,
-        "Rm": 1700.0
-      },
-      "testbench_defaults": {
-        "VCM": 0.3,
-        "IBIAS": 4e-05,
-        "CL": 1e-11
-      }
-    }
-  },
+  "virtuoso_pdk_lib_path": "/share/home/chenhaonan/PDKS/TSMC28nm/tsmcN28",
   "voltage_domains": {
     "core_0p9": {
       "name": "core_0p9",
@@ -248,13 +68,13 @@
       "vdd_max": 1.98,
       "model_flavors": {
         "nmos": {
-          "svt": "nch_25ud18_mac"
+          "svt": "nch_18_mac"
         },
         "pmos": {
-          "svt": "pch_25ud18_mac"
+          "svt": "pch_18_mac"
         }
       },
-      "max_device_voltage": 3.3,
+      "max_device_voltage": 1.98,
       "spectre_model_path": "",
       "spectre_section": "",
       "hspice_model_path": "",
@@ -262,9 +82,9 @@
       "process_sections": {},
       "gmid_table_path": "",
       "pvt_temperatures_c": [],
-      "min_l": 3e-07,
-      "max_width_per_finger": null,
-      "min_width_per_finger": null
+      "min_l": 1.5e-07,
+      "max_width_per_finger": 2.7e-06,
+      "min_width_per_finger": 3.2e-07
     }
   },
   "active_voltage_domain": "core_0p9",
@@ -272,8 +92,260 @@
     "pnp": "pnp5",
     "resistor_poly": "rupolym"
   },
-  "passive_devices": {},
-  "passive_role_map": {}
+  "passive_device_catalog": {
+    "high_res_poly": {
+      "kind": "resistor",
+      "description": "P+ poly resistor without salicide",
+      "spectre_models": ["rupolym", "rupolym_m"],
+      "virtuoso_cells": ["rupolym", "rupolym_m", "rupolym_mx"],
+      "terminal_counts": [2, 3],
+      "cdf_parameters": ["w", "l", "res", "m", "segments"],
+      "voltage_domains": ["core_0p9", "io_1p8"],
+      "automation_status": "partially_mapped",
+      "mapped_terminal_counts": [2],
+      "passive_device": "high_res_poly"
+    },
+    "n_diffusion_salicided": {
+      "kind": "resistor",
+      "description": "N+ diffusion resistor with salicide",
+      "spectre_models": ["rnodl", "rnods", "rnodl_m", "rnods_m"],
+      "virtuoso_cells": ["rnod", "rnod_m", "rnod_mx"],
+      "terminal_counts": [2, 3],
+      "cdf_parameters": ["w", "l", "res", "m", "segments"],
+      "voltage_domains": ["core_0p9", "io_1p8"],
+      "automation_status": "characterization_required"
+    },
+    "p_diffusion_salicided": {
+      "kind": "resistor",
+      "description": "P+ diffusion resistor with salicide",
+      "spectre_models": ["rpodl", "rpods", "rpodl_m", "rpods_m"],
+      "virtuoso_cells": ["rpod", "rpod_m", "rpod_mx"],
+      "terminal_counts": [2, 3],
+      "cdf_parameters": ["w", "l", "res", "m", "segments"],
+      "voltage_domains": ["core_0p9", "io_1p8"],
+      "automation_status": "characterization_required"
+    },
+    "n_diffusion_unsalicided": {
+      "kind": "resistor",
+      "description": "N+ diffusion resistor without salicide",
+      "spectre_models": ["rnodwo", "rnodwo_m"],
+      "virtuoso_cells": ["rnodwo", "rnodwo_m", "rnodwo_mx"],
+      "terminal_counts": [2, 3],
+      "cdf_parameters": ["w", "l", "res", "m", "segments"],
+      "voltage_domains": ["core_0p9", "io_1p8"],
+      "automation_status": "characterization_required"
+    },
+    "p_diffusion_unsalicided": {
+      "kind": "resistor",
+      "description": "P+ diffusion resistor without salicide",
+      "spectre_models": ["rpodwo", "rpodwo_m"],
+      "virtuoso_cells": ["rpodwo", "rpodwo_m", "rpodwo_mx"],
+      "terminal_counts": [2, 3],
+      "cdf_parameters": ["w", "l", "res", "m", "segments"],
+      "voltage_domains": ["core_0p9", "io_1p8"],
+      "automation_status": "characterization_required"
+    },
+    "n_metal_gate": {
+      "kind": "resistor",
+      "description": "N+ metal-gate resistor",
+      "spectre_models": ["rnmg", "rnmg_m"],
+      "virtuoso_cells": ["rnmg", "rnmg_m", "rnmg_mx"],
+      "terminal_counts": [2, 3],
+      "cdf_parameters": ["w", "l", "res", "m", "segments"],
+      "voltage_domains": ["core_0p9", "io_1p8"],
+      "automation_status": "characterization_required"
+    },
+    "p_metal_gate": {
+      "kind": "resistor",
+      "description": "P+ metal-gate resistor",
+      "spectre_models": ["rpmg", "rpmg_m"],
+      "virtuoso_cells": ["rpmg", "rpmg_m", "rpmg_mx"],
+      "terminal_counts": [2, 3],
+      "cdf_parameters": ["w", "l", "res", "m", "segments"],
+      "voltage_domains": ["core_0p9", "io_1p8"],
+      "automation_status": "characterization_required"
+    },
+    "nwell_under_od": {
+      "kind": "resistor",
+      "description": "N-well resistor under OD",
+      "spectre_models": ["rnwod", "rnwod_m"],
+      "virtuoso_cells": ["rnwod", "rnwod_m", "rnwod_mx"],
+      "terminal_counts": [2, 3],
+      "cdf_parameters": ["w", "l", "res", "m", "segments"],
+      "voltage_domains": ["core_0p9", "io_1p8"],
+      "automation_status": "characterization_required"
+    },
+    "nwell_under_sti": {
+      "kind": "resistor",
+      "description": "N-well resistor under STI",
+      "spectre_models": ["rnwsti", "rnwsti_m"],
+      "virtuoso_cells": ["rnwsti", "rnwsti_m", "rnwsti_mx"],
+      "terminal_counts": [2, 3],
+      "cdf_parameters": ["w", "l", "res", "m", "segments"],
+      "voltage_domains": ["core_0p9", "io_1p8"],
+      "automation_status": "characterization_required"
+    },
+    "finger_mom_2t": {
+      "kind": "capacitor",
+      "description": "Two-terminal finger MOM capacitor",
+      "spectre_models": ["cfmom_2t"],
+      "virtuoso_cells": ["cfmom_2t"],
+      "terminal_counts": [2],
+      "cdf_parameters": ["Wfinger", "Sfinger", "Lfinger", "Nfinger", "stm", "spm", "m"],
+      "voltage_domains": ["core_0p9", "io_1p8"],
+      "automation_status": "mapped",
+      "passive_device": "finger_mom_2t"
+    },
+    "finger_mom_3t": {
+      "kind": "capacitor",
+      "description": "Three-terminal finger MOM capacitor without poly shield",
+      "spectre_models": ["cfmom_wo"],
+      "virtuoso_cells": ["cfmom_wo"],
+      "terminal_counts": [3],
+      "cdf_parameters": ["Wfinger", "Sfinger", "Lfinger", "Nfinger", "stm", "spm", "m"],
+      "voltage_domains": ["core_0p9", "io_1p8"],
+      "automation_status": "unsupported_terminals"
+    },
+    "cross_coupled_mom_4t": {
+      "kind": "capacitor",
+      "description": "Four-terminal cross-coupled finger MOM capacitor",
+      "spectre_models": ["cfmom_mx_4t"],
+      "virtuoso_cells": ["cfmom_mx_4t"],
+      "terminal_counts": [4],
+      "cdf_parameters": ["Wfinger", "Sfinger", "Lfinger", "Nfinger", "stm", "spm", "m"],
+      "voltage_domains": ["core_0p9", "io_1p8"],
+      "automation_status": "unsupported_terminals"
+    },
+    "cross_coupled_mom_5t": {
+      "kind": "capacitor",
+      "description": "Five-terminal cross-coupled finger MOM capacitor without poly shield",
+      "spectre_models": ["cfmom_wo_mx"],
+      "virtuoso_cells": ["cfmom_wo_mx"],
+      "terminal_counts": [5],
+      "cdf_parameters": ["Wfinger", "Sfinger", "Lfinger", "Nfinger", "stm", "spm", "m"],
+      "voltage_domains": ["core_0p9", "io_1p8"],
+      "automation_status": "unsupported_terminals"
+    },
+    "core_nmos_varactor": {
+      "kind": "capacitor",
+      "description": "Core-voltage NMOS varactor",
+      "spectre_models": ["nmoscap"],
+      "virtuoso_cells": ["nmoscap"],
+      "terminal_counts": [2],
+      "cdf_parameters": ["wr", "lr", "volt", "m"],
+      "voltage_domains": ["core_0p9"],
+      "value_behavior": "voltage_dependent",
+      "automation_status": "characterization_required"
+    },
+    "core_pmos_varactor": {
+      "kind": "capacitor",
+      "description": "Core-voltage PMOS varactor",
+      "spectre_models": ["pmoscap"],
+      "virtuoso_cells": ["pmoscap"],
+      "terminal_counts": [2],
+      "cdf_parameters": ["wr", "lr", "volt", "m"],
+      "voltage_domains": ["core_0p9"],
+      "value_behavior": "voltage_dependent",
+      "automation_status": "characterization_required"
+    },
+    "io_1p8_nmos_varactor": {
+      "kind": "capacitor",
+      "description": "1.8 V NMOS varactor",
+      "spectre_models": ["nmoscap_18"],
+      "virtuoso_cells": ["nmoscap_18"],
+      "terminal_counts": [2],
+      "cdf_parameters": ["wr", "lr", "volt", "m"],
+      "voltage_domains": ["io_1p8"],
+      "value_behavior": "voltage_dependent",
+      "automation_status": "characterization_required"
+    },
+    "io_1p8_pmos_varactor": {
+      "kind": "capacitor",
+      "description": "1.8 V PMOS varactor",
+      "spectre_models": ["pmoscap_18"],
+      "virtuoso_cells": ["pmoscap_18"],
+      "terminal_counts": [2],
+      "cdf_parameters": ["wr", "lr", "volt", "m"],
+      "voltage_domains": ["io_1p8"],
+      "value_behavior": "voltage_dependent",
+      "automation_status": "characterization_required"
+    }
+  },
+  "passive_devices": {
+    "high_res_poly": {
+      "kind": "resistor",
+      "spectre_model": "rupolym",
+      "virtuoso_lib": "tsmcN28",
+      "virtuoso_cell": "rupolym",
+      "mapping_mode": "formula",
+      "virtuoso_view": "symbol",
+      "term_order": [
+        "PLUS",
+        "MINUS"
+      ],
+      "parameter_map": {
+        "W": "w",
+        "L": "l"
+      },
+      "width_parameter": "w",
+      "length_parameter": "l",
+      "min_width_m": 2e-06,
+      "max_width_m": 2e-06,
+      "min_length_m": 1e-06,
+      "max_length_m": 0.0001,
+      "geometry_grid_m": 5e-09,
+      "default_width_m": 2e-06,
+      "max_aspect_ratio": 50.0,
+      "max_series_units": 32,
+      "max_parallel_units": 8,
+      "value_tolerance": 0.02,
+      "sheet_resistance_ohm_per_square": 578.6
+    },
+    "finger_mom_2t": {
+      "kind": "capacitor",
+      "spectre_model": "cfmom_2t",
+      "virtuoso_lib": "tsmcN28",
+      "virtuoso_cell": "cfmom_2t",
+      "mapping_mode": "lookup",
+      "virtuoso_view": "symbol",
+      "term_order": [
+        "PLUS",
+        "MINUS"
+      ],
+      "parameter_map": {
+        "w": "Wfinger",
+        "s": "Sfinger",
+        "lr": "Lfinger",
+        "nr": "Nfinger",
+        "stm": "StartMn",
+        "spm": "StopMn",
+        "multi": "m"
+      },
+      "width_parameter": "w",
+      "length_parameter": "lr",
+      "finger_parameter": "nr",
+      "multiplier_parameter": "multi",
+      "min_width_m": 5e-08,
+      "max_width_m": 7.5e-08,
+      "min_length_m": 1e-06,
+      "max_length_m": 4e-05,
+      "geometry_grid_m": 5e-09,
+      "default_width_m": 5e-08,
+      "max_fingers": 288,
+      "max_series_units": 1,
+      "max_parallel_units": 16,
+      "value_tolerance": 0.02,
+      "lookup_table_path": "characterization/tsmc28_cfmom_2t_lut.json",
+      "max_voltage_v": 1.98,
+      "temperature_coefficient_ppm_per_c": 71.69
+    }
+  },
+  "passive_role_map": {
+    "resistor": "high_res_poly",
+    "resistor_poly": "high_res_poly",
+    "compensation_resistor": "high_res_poly",
+    "capacitor": "finger_mom_2t",
+    "compensation_capacitor": "finger_mom_2t",
+    "feedforward_capacitor": "finger_mom_2t"
+  }
 }
-
-

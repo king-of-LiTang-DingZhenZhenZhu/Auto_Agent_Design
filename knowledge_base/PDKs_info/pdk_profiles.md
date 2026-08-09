@@ -13,21 +13,22 @@
 
 | 字段 | 默认值 |
 |------|--------|
-| Spectre model | `/PDKS/TSMC28nm/models/spectre/toplevel.scs` |
+| Spectre model | `/share/home/chenhaonan/PDKS/TSMC28nm/models/spectre/toplevel.scs` |
 | Spectre section | `top_tt` |
-| PVT process sections | `tt:top_tt, ss:top_ss, ff:top_ff` |
-| HSPICE model | `/PDKS/TSMC28nm/models/hspice/toplevel.l` |
+| PVT process sections | `tt:top_tt, ss:top_ss, ff:top_ff, fs:top_fs, sf:top_sf` |
+| HSPICE model | `/share/home/chenhaonan/PDKS/TSMC28nm/models/hspice/toplevel.l` |
 | HSPICE section | `TOP_TT` |
 | NMOS / PMOS | `nch_mac` / `pch_mac` |
 | LVT NMOS / PMOS | `nch_lvt_mac` / `pch_lvt_mac` |
 | Special models | `pnp:pnp5`, `resistor_poly:rupolym` |
 | VDD default/range | default `0.9 V`, allowed `0.9 V ~ 1.1 V` |
-| W per finger | `0.2um ~ 2.6um` |
+| Core L minimum | `30 nm` |
+| W per finger | `0.1um ~ 2.7um` |
 | gm/Id table | `gmid_lookup_table/gm_id_tables_tsmc28.json` |
 | PVT temperatures | `-40, 27, 125 °C` |
 | Spectre options | `rawfmt=psfascii`, `soft_bin=allmodels` |
 | Virtuoso tech lib | `tsmcN28` |
-| Virtuoso OA lib path | `/PDKS/TSMC28nm/tsmcN28` |
+| Virtuoso OA lib path | `/share/home/chenhaonan/PDKS/TSMC28nm/tsmcN28` |
 
 ## VDD 使用逻辑
 
@@ -233,9 +234,17 @@ python pdk_profiles.py --validate --require-gmid --require-virtuoso
 ## 片上电阻与电容
 
 `passive_devices` 是无源器件实现的机器可读数据源；本文档中的器件名称只作说明。
+`passive_device_catalog` 是只读器件目录，记录已确认的 model/PCell、端口数、CDF
+参数名、电压域和自动化状态。catalog 条目不会参与自动映射；只有完成几何约束和
+characterization 后，才同时加入 `passive_devices` 与 `passive_role_map`。
 不要根据 Virtuoso GUI 显示值猜测 PCell 参数，也不要把受 NDA 约束的数据提交到仓库。
 这类数据必须写入对应的 `PDK_Info_Json/<厂商>_<工艺节点名称>_Information.json`；
 可通过已登记的短名称、显式 JSON 路径或 `PDK_PROFILE_FILE` 加载。
+
+当前 TSMC28 已映射的片上器件包括 `high_res_poly/rupolym` 和
+`finger_mom_2t/cfmom_2t`。后者使用离散、多维 characterization 点直接排序，
+保留 `w/s/lr/nr/stm/spm/multi` 全部参数；lookup mapper 不再把这类 MOM 器件
+简化成只含 W/L 的矩形电容。单 PCell 在容差内时优先，串并联分解只作覆盖兜底。
 
 ```json
 {
@@ -380,16 +389,31 @@ BO 达标后运行设计流时，无源器件阶段会：
 python design_flow_graph.py --project outputs/<project> --run-pvt --simulate
 ```
 
-默认 `tsmc28` profile 目前没有填写 MIM PCell、CDF 参数或无源特性表。代码会明确
-报 `configure_pdk_passives`，不会猜测器件名、换算公式或回退到 `analogLib`。
+当前 profile 已根据 OA base CDF 接入 `rupolym` 两端高阻 poly PCell。映射使用 CDF
+给出的 `578.6 ohm/square` 作为解析初值，并限制在项目采用的保守几何范围；它仍是
+`formula` 后端，必须通过映射后 nominal 仿真，不能直接作为 sign-off 数值。
+
+`passive_device_catalog` 另行登记了 9 类电阻和 8 类电容。状态含义如下：
+
+- `partially_mapped`：部分端口版本已进入 `passive_devices`，其余变体仍不可执行。
+- `characterization_required`：model/PCell/CDF 已确认，但缺少合法几何或 PVT LUT。
+- `unsupported_terminals`：器件端口数超出当前两端无源映射器能力。
+
+PDK 中可确认 `cfmom_2t` MOM PCell 及其 `Wfinger/Sfinger/Lfinger/Nfinger` CDF 参数，
+但尚无覆盖目标范围与 PVT 的特性 LUT，因此暂不写入 `passive_devices`。需要片上电容
+的项目仍会明确报 `configure_pdk_passives`，不会回退到 `analogLib`。
 
 # TSMC28 IO 1.8 V 域
 
 内置 `tsmc28` profile 提供 `io_1p8` voltage domain：
 
 - 默认/允许电源：`1.8 V`，范围 `1.62–1.98 V`
-- NMOS：`nch_25ud18_mac`
-- PMOS：`pch_25ud18_mac`
-- 最小沟道长度：`300 nm`
+- NMOS：`nch_18_mac`
+- PMOS：`pch_18_mac`
+- 最小沟道长度：`150 nm`
+- 最小单指宽度：`320 nm`
+
+该域与 core domain 共用主 1.8 V model bundle 和 `tt/ss/ff/fs/sf` section；OA CDF
+已确认两个 PCell 均可打开。
 
 项目参数或环境变量使用 `VOLTAGE_DOMAIN=io_1p8` 选择该域。当前 gm/Id lookup table 不包含这两个 IO model，因此使用它们的拓扑采用物理 W/L 参数 BO，而不调用 core-device gm/Id 表。

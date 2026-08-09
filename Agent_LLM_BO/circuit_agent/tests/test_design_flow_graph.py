@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -144,7 +145,7 @@ class DesignFlowGraphTests(unittest.TestCase):
             self.assertEqual(state["review_mode"], "audit_repair")
             self.assertFalse((project / "pvt").exists())
 
-    def test_on_chip_passives_without_pdk_mapping_stop_before_audit_and_pvt(self):
+    def test_on_chip_passives_with_incomplete_pdk_mapping_stop_before_audit_and_pvt(self):
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp) / "outputs" / "proj"
             netlist = project / "netlist" / "circuit.cir"
@@ -163,7 +164,17 @@ class DesignFlowGraphTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            with patch("design_flow_graph.run_pvt_verification") as run_pvt:
+            incomplete_profile = replace(
+                get_pdk_profile("tsmc28"),
+                passive_role_map={
+                    role: device
+                    for role, device in get_pdk_profile("tsmc28").passive_role_map.items()
+                    if role != "compensation_capacitor"
+                },
+            )
+            with patch(
+                "pdk_profiles.get_pdk_profile", return_value=incomplete_profile
+            ), patch("design_flow_graph.run_pvt_verification") as run_pvt:
                 state = run_design_flow(project, run_pvt=True, simulate=False)
 
             run_pvt.assert_not_called()
@@ -175,7 +186,8 @@ class DesignFlowGraphTests(unittest.TestCase):
                     encoding="utf-8"
                 )
             )
-            self.assertIn("compensation_resistor", report["error"])
+            self.assertIn("compensation_capacitor", report["error"])
+            self.assertIn("Cc", report["error"])
 
 
 if __name__ == "__main__":

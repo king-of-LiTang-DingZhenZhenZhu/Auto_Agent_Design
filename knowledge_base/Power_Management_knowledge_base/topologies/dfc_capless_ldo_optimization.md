@@ -3,7 +3,7 @@
 ## 电路边界
 
 - 目标结构来自论文 Fig. 4：PMOS 输入误差放大器、增益增强第二级、PMOS pass 管和 DFC 补偿网络。
-- 使用 TSMC28 `io_1p8` voltage domain，器件模型为 `nch_25ud18_mac` / `pch_25ud18_mac`。
+- 使用 TSMC28 `io_1p8` voltage domain，器件模型为 `nch_18_mac` / `pch_18_mac`。
 - `VIN=1.8 V`、`VOUT=0.9 V`、`VREF=0.1 V`，负载范围为论文采用的 `10–100 mA`。
 - `VB1`、`VB2`、`VB4` 是外部偏置端口，由 testbench 理想电压源提供，并纳入 BO。
 

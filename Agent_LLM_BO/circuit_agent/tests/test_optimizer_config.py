@@ -22,6 +22,50 @@ from topologies import get_topology
 
 
 class OptimizerConfigTest(unittest.TestCase):
+    def test_tsmc28_catalogs_and_enables_characterized_passives(self):
+        profile = get_pdk_profile("tsmc28")
+        catalog = profile.passive_device_catalog
+
+        self.assertFalse(profile.topology_presets)
+        self.assertEqual(len(catalog), 17)
+        self.assertEqual(
+            catalog["high_res_poly"]["automation_status"], "partially_mapped"
+        )
+        self.assertEqual(catalog["high_res_poly"]["passive_device"], "high_res_poly")
+        self.assertEqual(
+            catalog["finger_mom_2t"]["automation_status"],
+            "mapped",
+        )
+        self.assertEqual(
+            catalog["cross_coupled_mom_4t"]["automation_status"],
+            "unsupported_terminals",
+        )
+        capacitor = profile.passive_devices["finger_mom_2t"]
+        self.assertEqual(capacitor.mapping_mode, "lookup")
+        self.assertEqual(capacitor.spectre_model, "cfmom_2t")
+        self.assertEqual(capacitor.max_parallel_units, 16)
+        self.assertTrue(Path(capacitor.lookup_table_path).is_file())
+        self.assertEqual(
+            profile.passive_role_map["compensation_capacitor"],
+            "finger_mom_2t",
+        )
+
+    def test_tsmc28_io_domain_uses_1p8v_models_from_main_bundle(self):
+        core = get_pdk_profile("tsmc28")
+        io = get_pdk_profile("tsmc28", "io_1p8")
+
+        self.assertEqual(core.min_l, 30e-9)
+        self.assertEqual(core.min_width_per_finger, 100e-9)
+        self.assertEqual(core.process_sections["fs"], "top_fs")
+        self.assertEqual(core.process_sections["sf"], "top_sf")
+        self.assertEqual(io.nmos_model, "nch_18_mac")
+        self.assertEqual(io.pmos_model, "pch_18_mac")
+        self.assertEqual(io.spectre_model_path, core.spectre_model_path)
+        self.assertEqual(io.hspice_model_path, core.hspice_model_path)
+        self.assertEqual(io.min_l, 150e-9)
+        self.assertEqual(io.min_width_per_finger, 320e-9)
+        self.assertEqual(io.voltage_domains["io_1p8"].max_device_voltage, 1.98)
+
     def _write_unit_profile(
         self,
         root: Path,
@@ -206,19 +250,21 @@ class OptimizerConfigTest(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            profile = get_pdk_profile(str(profile_json))
-            errors = validate_pdk_profile(
-                profile,
-                require_gmid=True,
-                required_model_roles=("nmos", "pmos"),
-            )
+            with patch.dict("os.environ", {"GMID_TABLE_PATH": ""}):
+                profile = get_pdk_profile(str(profile_json))
+                errors = validate_pdk_profile(
+                    profile,
+                    require_gmid=True,
+                    required_model_roles=("nmos", "pmos"),
+                )
             self.assertFalse(errors)
 
-            errors = validate_pdk_profile(
-                profile,
-                require_gmid=True,
-                required_model_roles=("nmos_lvt", "pmos_lvt"),
-            )
+            with patch.dict("os.environ", {"GMID_TABLE_PATH": ""}):
+                errors = validate_pdk_profile(
+                    profile,
+                    require_gmid=True,
+                    required_model_roles=("nmos_lvt", "pmos_lvt"),
+                )
             self.assertTrue(any("missing_lvt_n" in error for error in errors))
 
     def test_external_pdk_profile_loads_topology_presets(self):

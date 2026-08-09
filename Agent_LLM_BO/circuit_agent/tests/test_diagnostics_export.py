@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import math
 import tempfile
 import unittest
 from pathlib import Path
@@ -59,6 +60,62 @@ class DiagnosticsExportTest(unittest.TestCase):
             mtail = next(row for row in op_rows if row["instance"] == "Xdut.Mtail")
             self.assertIn("gm", mtail)
             self.assertIn("gds", mtail)
+
+    def test_exports_uppercase_nan_without_shifting_operating_point_fields(self):
+        info_text = """\
+TYPE
+"bsim4" STRUCT(
+"ids" FLOAT DOUBLE PROP(
+)
+"vgs" FLOAT DOUBLE PROP(
+)
+"vds" FLOAT DOUBLE PROP(
+)
+"vth" FLOAT DOUBLE PROP(
+)
+"vdsat" FLOAT DOUBLE PROP(
+)
+"gm" FLOAT DOUBLE PROP(
+)
+) PROP(
+"key" "inst"
+)
+VALUE
+"Xdut.M1" "bsim4" (
+1e-5
+NaN
+0.3
+0.4
+0.2
+2e-4
+) PROP(
+"model" "nch"
+)
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            raw = root / "raw"
+            raw.mkdir()
+            (raw / "op1.info").write_text(info_text, encoding="utf-8")
+            netlist = root / "circuit.cir"
+            netlist.write_text("M1 (d g s b) nch\n", encoding="utf-8")
+
+            exported = export_diagnostics(
+                raw_dir=raw,
+                netlist_path=netlist,
+                out_dir=root / "diagnostics",
+            )
+
+            self.assertIn("dc_operating_points", exported)
+            with open(
+                exported["dc_operating_points"], newline="", encoding="utf-8"
+            ) as f:
+                row = next(csv.DictReader(f))
+            self.assertTrue(math.isnan(float(row["vgs"])))
+            self.assertEqual(float(row["vds"]), 0.3)
+            self.assertEqual(float(row["vth"]), 0.4)
+            self.assertEqual(float(row["vdsat"]), 0.2)
+            self.assertEqual(float(row["gm"]), 2e-4)
 
     def test_writes_readable_diagnostics_summary_from_csvs(self):
         with tempfile.TemporaryDirectory() as tmp:
