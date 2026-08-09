@@ -65,6 +65,7 @@ python hierarchical_flow.py --project <top_project> --simulate
 ## PDK 规则
 
 - PDK 路径、section、model、VDD、gm/Id 表、PVT、Spectre options、Virtuoso tech library 和 topology preset 统一由 `pdk_profiles.py` 管理。
+- 如果需要切换工艺库，必须先在仓库根目录的 `PDK_Info_Json/` 中完善对应的工艺信息文件，文件名统一为 `<厂商>_<工艺节点名称>_Information.json`；该文件未完善并通过校验前，不得开始新工艺下的设计、仿真或物理实现。
 - topology 中不得硬编码 PDK 路径、model、电源默认值或工艺专用初始 W/L。
 - 晶体管类型使用 profile 的 `nmos_model/pmos_model` 或 LVT 等对应字段。
 - `vdd` 是默认值，`vdd_min/vdd_max` 是允许范围；搜索 VDD 时必须显式加入参数空间。

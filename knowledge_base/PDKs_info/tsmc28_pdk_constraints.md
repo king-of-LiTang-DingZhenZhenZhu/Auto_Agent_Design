@@ -1,36 +1,43 @@
-# PDK Constraints - TSMC N28
+# TSMC28 项目约束快照
 
-## Process Summary
-- **Node**: TSMC 28nm (N28HPC+)
-- **VDD Core**: 0.9 - 1.1V
-- **VDD IO**: 1.8V / 2.5V
+本文档只说明当前项目采用的 TSMC28 约束，不重复完整的 profile 字段、加载规则和
+R/C 映射接口。机器可读配置以
+`PDK_Info_Json/TSMC_28nm_Information.json` 为准；通用说明见
+`knowledge_base/PDKs_info/pdk_profiles.md`。
 
-## Device Models
-| Type | Model Name | Notes |
-|------|-----------|-------|
-| Core NMOS | `nch_mac` | Standard threshold |
-| Core PMOS | `pch_mac` | Standard threshold |
+这些数值是当前项目的设计边界，不应解读为 foundry 手册中全部可用器件或全部
+sign-off 规则。
 
-## Device Parameter Ranges
-| Parameter | Min | Max | Notes |
-|-----------|-----|-----|-------|
-| L (channel length) | 30nm | 1um | Min L=30nm for reliability; **analog circuits: recommend L ≥ 60nm** to reduce short-channel effects and improve output impedance |
-| W/nf (finger width) | 100nm | 2.6um | Project guard-band below the PDK bin edge |
-| nf (finger count) | 1 | 32 | Splits one Spectre instance width into fingers; does not multiply effective width |
-| M (multiplier) | 1 | 32 | Integer |
+## 电压域与模型
 
-Spectre native MOS `w` is the total width of one instance. Effective width = `W * m`; `nf` only controls finger splitting.
+| 电压域 | 电源范围 | NMOS | PMOS | 最小沟道长度 |
+|---|---:|---|---|---:|
+| `core_0p9` | `0.9–1.1 V` | `nch_mac` / `nch_lvt_mac` | `pch_mac` / `pch_lvt_mac` | `30 nm`（profile 全局边界） |
+| `io_1p8` | `1.62–1.98 V` | `nch_25ud18_mac` | `pch_25ud18_mac` | `300 nm` |
 
+其他当前配置：
 
-## Current Density Guidelines
-- Recommended current density: 1~10 uA/um (per unit W)
-- For matching: use L >= 60nm, larger W
-- For speed: minimize L (30nm), optimize W/L for gm/Id
+- PVT section：`tt=top_tt`、`ss=top_ss`、`ff=top_ff`。
+- PVT 温度：`-40°C`、`27°C`、`125°C`。
+- 单指宽度：`0.2–2.6 μm`。
+- 特殊模型：PNP 使用 `pnp5`，poly resistor 模型角色使用 `rupolym`。
+- Virtuoso technology library：`tsmcN28`。
 
+## 当前限制
 
-## PDK Library Include
-```spice
-* if we write xxx.sp or xxx.cir scripts
-.lib '/path/to/your/pdk/hspice/toplevel.l' TOP_TT
-* if we write xxx.scs scripts
-include "/PDKS/TSMC28nm/models/spectre/toplevel.scs" section=top_tt
+- `io_1p8` 尚无对应的 gm/Id lookup 数据，相关拓扑应使用物理 W/L 参数优化。
+- `passive_devices` 和 `passive_role_map` 当前为空；真实 R/C PCell 名称、CDF 参数、
+  合法尺寸和 evaluator/LUT 补齐前，不得宣称完成 PDK R/C 映射。
+- `nf`、`m`、电流密度、可靠性和版图规则应从实际 PDK/CDF/deck 验证，不能使用
+  本文档中未记录的经验值代替。
+
+## 验证
+
+```bash
+cd Agent_LLM_BO/circuit_agent
+conda activate Auto_Agent_Design
+PDK_PROFILE_FILE=../../PDK_Info_Json/TSMC_28nm_Information.json \
+  python pdk_profiles.py --validate --require-gmid --require-virtuoso
+```
+
+在真实 Cadence 服务器上追加 `--check-files`，验证模型路径和 OA library 路径。

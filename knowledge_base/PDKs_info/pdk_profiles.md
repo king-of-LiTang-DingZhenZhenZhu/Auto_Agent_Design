@@ -2,6 +2,11 @@
 
 项目通过 `Agent_LLM_BO/circuit_agent/pdk_profiles.py` 集中管理工艺相关配置。拓扑脚本不应直接写死 PDK model include 路径或 MOS model 名称，而应从当前 profile 读取。
 
+工艺信息文件统一存放在仓库根目录的 `PDK_Info_Json/`，并使用
+`<厂商>_<工艺节点名称>_Information.json` 命名。当前 TSMC28 配置位于
+`PDK_Info_Json/TSMC_28nm_Information.json`；`get_pdk_profile("tsmc28")` 会优先读取
+该文件，`pdk_profiles.py` 中的同名内置项仅作为文件缺失时的兼容回退。
+
 ## 当前默认 profile
 
 `tsmc28`:
@@ -209,10 +214,11 @@ export VIRTUOSO_PDK_LIB_PATH=/my/pdk/tsmcN28
 
 推荐新增一个 profile，而不是改 topology：
 
-1. 在 `pdk_profiles.py` 的 `PDK_PROFILES` 中新增一项，或准备外部 JSON 并设置 `PDK_PROFILE_FILE=/path/to/profile.json`。
+1. 在仓库根目录 `PDK_Info_Json/` 下新增完整的 `<厂商>_<工艺节点名称>_Information.json`；不要把新工艺数据散落到 topology 中。
 2. 填写 Spectre/HSPICE model include、nominal section、PVT process section、VDD 范围、MOS/special model role、尺寸约束、gm/Id table path、Virtuoso tech lib、OA library path，以及必要 topology 的 `topology_presets`。
-3. 确认 gm/Id 表包含 topology 需要的 model 名。常规拓扑需要 `nmos/pmos`；folded cascode 当前需要 `nmos_lvt/pmos_lvt`。
-4. 运行 profile 验证：
+3. 如果希望通过短名称选择该工艺，在 `pdk_profiles.py` 的 `PDK_INFORMATION_FILES` 中登记名称与 JSON 路径；否则可通过 `PDK_PROFILE_FILE` 或把 JSON 路径直接传给 `get_pdk_profile()` 加载。
+4. 确认 gm/Id 表包含 topology 需要的 model 名。常规拓扑需要 `nmos/pmos`；folded cascode 当前需要 `nmos_lvt/pmos_lvt`。
+5. 运行 profile 验证：
 
 ```bash
 cd Agent_LLM_BO/circuit_agent
@@ -220,7 +226,7 @@ conda activate Auto_Agent_Design
 python pdk_profiles.py --validate --require-gmid --require-virtuoso
 ```
 
-5. 在真实 Cadence/Spectre 机器上加 `--check-files`，确认模型文件和 Virtuoso OA library 路径可见。
+6. 在真实 Cadence/Spectre 机器上加 `--check-files`，确认模型文件和 Virtuoso OA library 路径可见。
 
 优化完成后，`outputs/<project>/pdk_profile_used.json` 会保存当次使用的 profile 快照，方便之后复现实验或排查 PDK 切换问题。
 
@@ -228,7 +234,8 @@ python pdk_profiles.py --validate --require-gmid --require-virtuoso
 
 `passive_devices` 是无源器件实现的机器可读数据源；本文档中的器件名称只作说明。
 不要根据 Virtuoso GUI 显示值猜测 PCell 参数，也不要把受 NDA 约束的数据提交到仓库。
-这类数据可以放在外部 JSON，并通过 `PDK_PROFILE_FILE` 加载。
+这类数据必须写入对应的 `PDK_Info_Json/<厂商>_<工艺节点名称>_Information.json`；
+可通过已登记的短名称、显式 JSON 路径或 `PDK_PROFILE_FILE` 加载。
 
 ```json
 {

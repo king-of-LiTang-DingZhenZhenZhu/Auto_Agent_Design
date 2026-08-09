@@ -384,6 +384,7 @@ ends unit
                 encoding="utf-8",
             )
             profile_data = get_pdk_profile().to_dict()
+            profile_data["gmid_table_path"] = "characterization/gmid.json"
             profile_data["passive_devices"] = {
                 "rpoly": {
                     "kind": "resistor",
@@ -404,6 +405,10 @@ ends unit
             self.assertEqual(
                 Path(profile.passive_devices["rpoly"].lookup_table_path),
                 table.resolve(),
+            )
+            self.assertEqual(
+                Path(profile.gmid_table_path),
+                (root / "characterization" / "gmid.json").resolve(),
             )
             self.assertFalse([error for error in errors if "passive" in error])
 

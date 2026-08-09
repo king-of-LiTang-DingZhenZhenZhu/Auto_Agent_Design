@@ -52,6 +52,7 @@ python -c "from topologies import list_topologies; [print(m.name) for m in list_
 ## PDK
 
 - PDK 配置统一由 `pdk_profiles.py` 管理；topology 不得硬编码路径、model、VDD 或工艺初值。
+- 如果需要切换工艺库，必须先在仓库根目录的 `PDK_Info_Json/` 中完善对应的工艺信息文件，文件名统一为 `<厂商>_<工艺节点名称>_Information.json`；该文件未完善并通过校验前，不得开始新工艺下的设计、仿真或物理实现。
 - 工艺专用初值/范围写入 `topology_presets`。
 - 分析结果前检查 `outputs/<project>/pdk_profile_used.json`。
 

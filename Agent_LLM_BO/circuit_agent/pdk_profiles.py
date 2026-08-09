@@ -428,6 +428,10 @@ PDK_PROFILES: dict[str, PDKProfile] = {
     ),
 }
 
+PDK_INFORMATION_FILES = {
+    "tsmc28": REPO_ROOT / "PDK_Info_Json" / "TSMC_28nm_Information.json",
+}
+
 
 def get_pdk_profile(
     name: str | None = None,
@@ -452,6 +456,10 @@ def get_pdk_profile(
     selected_path = Path(selected).expanduser()
     if selected_path.suffix.lower() in {".json"} and selected_path.exists():
         profile = _load_external_profile(selected_path)
+        return _select_profile_domain(profile, voltage_domain)
+    information_file = PDK_INFORMATION_FILES.get(selected)
+    if information_file and information_file.exists():
+        profile = _load_external_profile(information_file)
         return _select_profile_domain(profile, voltage_domain)
     try:
         return _select_profile_domain(PDK_PROFILES[selected], voltage_domain)
@@ -911,6 +919,16 @@ def _load_external_profile(path: str | Path) -> PDKProfile:
                 f"External PDK profile file {path} contains multiple profiles; "
                 "set CIRCUIT_AGENT_PDK or PDK_PROFILE to choose one"
             )
+    relative_containers = [data]
+    relative_containers.extend(
+        domain
+        for domain in dict(data.get("voltage_domains") or {}).values()
+        if isinstance(domain, dict)
+    )
+    for container in relative_containers:
+        gmid_path = str(container.get("gmid_table_path") or "")
+        if gmid_path and not Path(gmid_path).expanduser().is_absolute():
+            container["gmid_table_path"] = str((path.parent / gmid_path).resolve())
     raw_passives = dict(data.get("passive_devices") or {})
     for raw in raw_passives.values():
         if not isinstance(raw, dict):
