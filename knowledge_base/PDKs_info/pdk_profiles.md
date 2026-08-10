@@ -242,9 +242,9 @@ characterization 后，才同时加入 `passive_devices` 与 `passive_role_map`�
 可通过已登记的短名称、显式 JSON 路径或 `PDK_PROFILE_FILE` 加载。
 
 当前 TSMC28 已映射的片上器件包括 `high_res_poly/rupolym` 和
-`finger_mom_2t/cfmom_2t`。后者使用离散、多维 characterization 点直接排序，
-保留 `w/s/lr/nr/stm/spm/multi` 全部参数；lookup mapper 不再把这类 MOM 器件
-简化成只含 W/L 的矩形电容。单 PCell 在容差内时优先，串并联分解只作覆盖兜底。
+`finger_mom_2t/cfmom_2t`。后者默认通过 Virtuoso OA 执行 PDK 登记的 CDF callback，
+读取派生参数 `c` 和 callback 最终接受的 `w/s/lr/nr/stm/spm/multi`。单 PCell 在容差
+内时优先，并联分解只作覆盖兜底；旧 LUT 只作为 characterization/PVT 参考。
 
 ```json
 {
@@ -302,7 +302,8 @@ characterization 后，才同时加入 `passive_devices` 与 `passive_role_map`�
 
 - `value`：Spectre/PCell 有经过验证的可写容阻值参数。必须填写 `value_parameter`。
 - `callback`：推荐用于可调用 CDF/PCell/Spectre 探针的真实 PDK。必须填写
-  `evaluator_key`，并在运行进程中注册对应 evaluator。
+  `evaluator_key`。项目内置 key 由 target mapper 自动加载；其他 key 需在运行进程中
+  注册对应 evaluator。
 - `lookup`：使用预 characterization 数据。JSON 包含 `version`、提取条件和
   `points`；每个 point 至少有 `value` 与实际 Spectre `params`，可附 `area_m2`。
 - `formula`：仅作为离线开发/测试 fallback。方阻或电容密度只用于初始点；映射器
@@ -361,7 +362,8 @@ callback 未改参数可原样返回。单个尺寸被 PCell 拒绝时 callback 
 ```
 
 先通过 PDK 文档、CDF 和生成的 Spectre netlist 确认可写参数与单位；电阻用 DC
-`V/I`，电容用 AC `imag(Y)/(2*pi*f)` 建表。CDF 派生显示值只用于交叉检查。
+`V/I`，电容用 AC `imag(Y)/(2*pi*f)` 验证。只有与 Spectre 对照通过的 CDF 派生值
+才能作为 nominal callback mapper，最终网表仍需 nominal/PVT 仿真。
 已知 PCell 的 library/cell 后，可以生成只读 CDF/端口探针，再在 Cadence 工作目录中运行：
 
 ```bash
@@ -399,9 +401,9 @@ python design_flow_graph.py --project outputs/<project> --run-pvt --simulate
 - `characterization_required`：model/PCell/CDF 已确认，但缺少合法几何或 PVT LUT。
 - `unsupported_terminals`：器件端口数超出当前两端无源映射器能力。
 
-PDK 中可确认 `cfmom_2t` MOM PCell 及其 `Wfinger/Sfinger/Lfinger/Nfinger` CDF 参数，
-但尚无覆盖目标范围与 PVT 的特性 LUT，因此暂不写入 `passive_devices`。需要片上电容
-的项目仍会明确报 `configure_pdk_passives`，不会回退到 `analogLib`。
+`cfmom_2t` MOM PCell 已写入 `passive_devices`，默认 evaluator key 为
+`virtuoso_cdf_cfmom_2t`。运行映射需要可用的 Virtuoso/OA 环境；callback 不可用时会
+明确报 `configure_pdk_passives`，不会静默回退到旧 LUT 或 `analogLib`。
 
 # TSMC28 IO 1.8 V 域
 

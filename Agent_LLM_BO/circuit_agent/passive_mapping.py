@@ -50,6 +50,21 @@ class PassiveDeviceEvaluator(Protocol):
         """Return actual R (ohm) or C (farad) for one legal PCell geometry."""
 
 
+class PassiveTargetMapper(Protocol):
+    """Map one target using a backend that evaluates geometries in batches."""
+
+    backend_name: str
+
+    def map_candidates(
+        self,
+        device_name: str,
+        device: PassiveDeviceProfile,
+        target_value: float,
+        constraints: "PassiveMappingConstraints",
+    ) -> list["PassiveMappingResult"]:
+        """Return legal implementations ranked by the backend."""
+
+
 class CallablePassiveEvaluator:
     """Adapter for an existing CDF/PCell/Spectre Python callback."""
 
@@ -702,6 +717,17 @@ def map_passive_candidates(
             failures.append(f"unknown device '{name}'")
             continue
         try:
+            limits = PassiveMappingConstraints.coerce(constraints)
+            target_mapper = (
+                None
+                if evaluator or (evaluators or {}).get(name)
+                else build_passive_target_mapper(name, device, pdk)
+            )
+            if target_mapper is not None:
+                results.extend(
+                    target_mapper.map_candidates(name, device, target_value, limits)
+                )
+                continue
             selected_evaluator = (
                 evaluator
                 or (evaluators or {}).get(name)
@@ -722,6 +748,22 @@ def map_passive_candidates(
         )
     ordered = sorted(results, key=lambda result: _Candidate(result).score())
     return ordered
+
+
+def build_passive_target_mapper(
+    device_name: str,
+    device: PassiveDeviceProfile,
+    profile: PDKProfile,
+) -> PassiveTargetMapper | None:
+    """Build an in-tree batched mapper selected by the profile evaluator key."""
+
+    if device.mapping_mode != "callback":
+        return None
+    if device.evaluator_key == "virtuoso_cdf_cfmom_2t":
+        from pdk_cdf_evaluator import CdfCfmomTargetMapper
+
+        return CdfCfmomTargetMapper(profile=profile, device_name=device_name)
+    return None
 
 
 def map_resistor(

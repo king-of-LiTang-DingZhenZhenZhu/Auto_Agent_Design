@@ -18,6 +18,7 @@ from passive_mapping import (
     DeviceEvaluation,
     PassiveMappingError,
     PassiveMappingConstraints,
+    PassiveMappingResult,
     map_capacitor,
     map_passive,
     map_resistor,
@@ -37,16 +38,38 @@ from virtuoso_export.parser import parse_netlist
 
 
 class PassiveRealizationTests(unittest.TestCase):
-    def test_default_tsmc28_maps_compensation_capacitor_from_characterized_lut(self):
-        result = map_capacitor(500e-15)
+    def test_default_tsmc28_maps_compensation_capacitor_with_cdf_callback(self):
+        mapped = PassiveMappingResult(
+            device_kind="capacitor",
+            device_type="finger_mom_2t",
+            target_value=500e-15,
+            actual_value=500.1e-15,
+            relative_error=0.0002,
+            params={
+                "w": 50e-9,
+                "s": 50e-9,
+                "lr": 3e-6,
+                "nr": 98,
+                "stm": 1,
+                "spm": 6,
+                "multi": 1,
+            },
+            evaluator_backend="virtuoso_cdf_callback",
+        )
+        with patch(
+            "pdk_cdf_evaluator.CdfCfmomTargetMapper.map_candidates",
+            return_value=[mapped],
+        ) as callback:
+            result = map_capacitor(500e-15)
 
         self.assertEqual(result.device_type, "finger_mom_2t")
-        self.assertEqual(result.evaluator_backend, "characterized_lookup")
+        self.assertEqual(result.evaluator_backend, "virtuoso_cdf_callback")
         self.assertLess(result.relative_error, 0.02)
         self.assertEqual(result.params["w"], 50e-9)
         self.assertEqual(result.params["s"], 50e-9)
         self.assertEqual(result.params["stm"], 1)
-        self.assertEqual(result.params["spm"], 8)
+        self.assertEqual(result.params["spm"], 6)
+        callback.assert_called_once()
 
     def test_default_tsmc28_high_res_poly_maps_to_grid_geometry(self):
         result = map_resistor(10_000.0, "high_res_poly")

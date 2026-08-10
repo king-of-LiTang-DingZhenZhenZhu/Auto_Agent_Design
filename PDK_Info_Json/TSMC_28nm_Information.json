@@ -306,7 +306,7 @@
       "spectre_model": "cfmom_2t",
       "virtuoso_lib": "tsmcN28",
       "virtuoso_cell": "cfmom_2t",
-      "mapping_mode": "lookup",
+      "mapping_mode": "callback",
       "virtuoso_view": "symbol",
       "term_order": [
         "PLUS",
@@ -321,6 +321,14 @@
         "spm": "StopMn",
         "multi": "m"
       },
+      "fixed_parameters": {
+        "w": 5e-08,
+        "s": 5e-08,
+        "stm": 1,
+        "spm": 6,
+        "multi": 1
+      },
+      "value_parameter": "c",
       "width_parameter": "w",
       "length_parameter": "lr",
       "finger_parameter": "nr",
@@ -329,12 +337,15 @@
       "max_width_m": 7.5e-08,
       "min_length_m": 1e-06,
       "max_length_m": 4e-05,
-      "geometry_grid_m": 5e-09,
+      "geometry_grid_m": 1e-08,
       "default_width_m": 5e-08,
+      "min_fingers": 6,
       "max_fingers": 288,
+      "finger_step": 2,
       "max_series_units": 1,
       "max_parallel_units": 16,
       "value_tolerance": 0.02,
+      "evaluator_key": "virtuoso_cdf_cfmom_2t",
       "lookup_table_path": "characterization/tsmc28_cfmom_2t_lut.json",
       "max_voltage_v": 1.98,
       "temperature_coefficient_ppm_per_c": 71.69

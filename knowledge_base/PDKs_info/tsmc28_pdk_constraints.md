@@ -46,11 +46,11 @@ sign-off 规则。
 | `Nfinger` | `nr` | `6–288`，偶数，步进 `2` |
 | `StartMn` | `stm` | `1–6` |
 | `StopMn` | `spm` | `3–8` |
-| `m` | `multi` | 当前 LUT 固定为 `1` |
+| `m` | `multi` | 当前自动映射固定为 `1` |
 
-金属堆叠必须至少包含 3 层，即 `spm-stm+1 >= 3`。自动映射使用高密度采样族
-`w=s=0.05 um, stm=1, spm=8`；完整合法范围保留在 LUT 元数据中，不能把采样族
-误解为 PCell 的唯一合法几何。
+金属堆叠必须至少包含 3 层，即 `spm-stm+1 >= 3`。当前 callback 自动映射固定
+`w=s=0.05 um, stm=1, spm=6, multi=1`，并搜索 `nr/lr`。这些是项目选择的映射
+族，不是 PCell 的唯一合法几何。
 
 characterization 条件与结果：
 
@@ -61,6 +61,33 @@ characterization 条件与结果：
 - 相对 TT/27°C 的 PVT 范围约为 `-25.35%–+25.92%`。
 - `max_parallel_units=16`，nominal 目标可覆盖到约 `133.8 pF`；单 PCell 满足
   2% 容差时优先使用单元，只有超出单元范围时才使用并联阵列。
+
+### OA CDF 正向映射
+
+`cfmom_2t` 的 base CDF 包含派生参数 `c`（`CapValue@0V_(F)`）。项目可以在
+临时 OA library 中设置 `Wfinger/Sfinger/Lfinger/Nfinger/StartMn/StopMn/m`，执行
+CDF 登记的 callback，并读取 `c`，无需为每个候选尺寸运行 Spectre。实现见
+`Agent_LLM_BO/circuit_agent/pdk_cdf_evaluator.py`：
+
+```bash
+python pdk_cdf_evaluator.py \
+  --target 241.291f \
+  --work-dir /share/tmp/cfmom_cdf_mapping
+```
+
+默认 `mapping_mode=callback`。mapper 缓存合法 `Nfinger` 在最小长度处的 CDF
+校准值，先评估一个预测尺寸，再用两点线性插值校正长度，最终批量评估附近的
+`Lfinger` 网格。最终值和参数都来自 callback，不用预测值替代。真实 OA
+实验对 `241.291 fF` 目标得到 `nr=280, lr=1.5 um, w=s=0.05 um, stm=1,
+spm=6, multi=1`：CDF 为 `241.389 fF`（`+0.0406%`），独立 Spectre TT/27°C
+验证为 `241.424 fF`（`+0.0550%`）。另外三组尺寸中，CDF 与 Spectre 的差异约
+为 `0.01%`，因此 CDF 可作为快速 nominal 正向 evaluator，最终结果仍需 Spectre
+和 PVT 验证。
+
+当前 OA callback 会把请求的 `StopMn=8` 合法化为 `StopMn=6`，因此生产映射使用
+callback 回写的 `spm=6`。现有 `spm=8` LUT 仅保留为旧版 characterization 和 PVT
+范围参考，不再作为默认 nominal 几何来源。对 `500 fF` 的 flow 集成验证得到 CDF
+`499.758 fF`、Spectre TT/27°C `499.831 fF`，两者相差 `0.0146%`。
 
 ## 验证
 

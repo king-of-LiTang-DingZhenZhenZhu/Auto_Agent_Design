@@ -41,7 +41,11 @@ class OptimizerConfigTest(unittest.TestCase):
             "unsupported_terminals",
         )
         capacitor = profile.passive_devices["finger_mom_2t"]
-        self.assertEqual(capacitor.mapping_mode, "lookup")
+        self.assertEqual(capacitor.mapping_mode, "callback")
+        self.assertEqual(capacitor.evaluator_key, "virtuoso_cdf_cfmom_2t")
+        self.assertEqual(capacitor.fixed_parameters["spm"], 6)
+        self.assertEqual(capacitor.min_fingers, 6)
+        self.assertEqual(capacitor.finger_step, 2)
         self.assertEqual(capacitor.spectre_model, "cfmom_2t")
         self.assertEqual(capacitor.max_parallel_units, 16)
         self.assertTrue(Path(capacitor.lookup_table_path).is_file())

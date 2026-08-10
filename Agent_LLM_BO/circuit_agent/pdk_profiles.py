@@ -95,7 +95,9 @@ class PassiveDeviceProfile:
     max_unit_area_m2: float | None = None
     max_multiplier: int = 1
     max_segments: int = 1
+    min_fingers: int = 1
     max_fingers: int = 1
+    finger_step: int = 1
     max_array_rows: int = 1
     max_array_columns: int = 1
     max_series_units: int = 1
@@ -725,6 +727,10 @@ def validate_pdk_profile(
         for field_name, value in integer_limits.items():
             if value < 1:
                 errors.append(f"{prefix} {field_name} must be positive")
+        if device.min_fingers < 1 or device.finger_step < 1:
+            errors.append(f"{prefix} min_fingers and finger_step must be positive")
+        if device.min_fingers > device.max_fingers:
+            errors.append(f"{prefix} min_fingers exceeds max_fingers")
         parameter_limits = (
             ("multiplier_parameter", device.multiplier_parameter, device.max_multiplier),
             ("segment_parameter", device.segment_parameter, device.max_segments),

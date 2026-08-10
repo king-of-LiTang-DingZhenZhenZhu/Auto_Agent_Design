@@ -72,6 +72,33 @@ python hierarchical_flow.py --project <top_project> --simulate
 - 工艺专用初值/范围优先写入 `topology_presets`。
 - 分析结果前检查 `outputs/<project>/pdk_profile_used.json`。
 
+### 切换 PDK 前置准备
+
+更换 PDK 不是只替换 model path。以下项目全部完成前，不得在新工艺下运行 BO、
+无源映射、PVT 或版图导出：
+
+1. 在 `PDK_Info_Json/<厂商>_<工艺节点名称>_Information.json` 登记并核对 model
+   bundle、section、voltage domain、VDD 范围、gm/Id 表、PVT corners、Spectre
+   options、Virtuoso tech library 和 PDK library 路径；路径不得硬编码到 topology。
+2. 为实际使用的每个 R/C PCell 配置 `passive_devices` 和 `passive_role_map`，至少包含
+   Spectre model、OA library/cell/view、端口顺序、CDF 到 Spectre 的 `parameter_map`、
+   合法几何范围/grid、固定参数、串并联上限、容差和 `evaluator_key`。不得复用其他
+   PDK 的 PCell 参数、LUT、方阻或 callback key。
+3. 适配新 PCell 的 CDF callback evaluator。电容应从 callback 读取派生电容值和
+   callback 最终接受的尺寸；电阻优先采用同类 callback。若电阻暂用方阻公式，必须
+   重新提取该 PDK/器件的 sheet resistance，不能沿用旧工艺数值。
+4. 对每种 R/C 在小值、中值、大值和几何边界选取黄金点：电阻用 Spectre DC `V/I`，
+   电容用 AC `imag(Y)/(2*pi*f)`，比较 CDF/公式与 Spectre。记录 corner、温度、偏置、
+   频率和误差；所有点满足配置容差后，才能将器件标记为可自动映射。无需制作密集
+   LUT，但不得跳过该资格验证。
+5. 在真实 Cadence 主机运行 profile 校验和 OA 文件检查。缺少 PCell、callback、模型、
+   gm/Id 表或资格证据时，流程必须报 `configure_pdk_passives`/配置错误并停止，禁止
+   静默回退到旧 PDK、旧 LUT、简化电容公式或 `analogLib`。
+6. 新项目首次运行后检查 `outputs/<project>/pdk_profile_used.json`，确保 BO、R/C
+   映射、Spectre、PVT 和 Virtuoso 导出使用同一 profile/voltage domain。映射网表
+   必须保存 callback 回写后的参数并重新通过 nominal/PVT；导出后继续做 DRC/LVS，
+   关键设计做 post-layout 仿真。
+
 ```bash
 python pdk_profiles.py --validate --require-gmid --require-virtuoso
 # 真实 Cadence 机器可追加 --check-files
