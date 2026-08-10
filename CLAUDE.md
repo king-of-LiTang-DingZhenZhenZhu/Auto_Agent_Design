@@ -9,6 +9,7 @@
 - `system_architecture_decomposition/`：各类系统架构的 block graph、child 指标/接口和预算分解实现。
 - `pdk_integration/`：PDK profile、配置校验、CDF callback、PCell 探测和工艺表征。
 - `passive_devices/`：R/C 目标映射、合法器件几何搜索和网表实现。
+- `virtuoso_schematic_generation/`：解析最终网表并生成 Virtuoso OA 原理图；命令入口为 `python -m virtuoso_schematic_generation`。
 - `hierarchical_flow.py`：child-parent 依赖、资格调用、frozen artifact 与嵌入。
 - `design_flow_graph.py`：单个 BO/Review 结果的 Design Audit、Review gate、PVT 和导出。
 - `review_optimization.py`：Review context、patch plan 和 candidate 验证。
@@ -178,16 +179,16 @@ python pvt_simulation.py --results outputs/<project>/results.json --simulate
 
 默认 corners：`tt/ss/ff × VDD(min/typ/max) × temp(-40/27/125)`。
 
-## Virtuoso 导出
+## Virtuoso 原理图生成
 
 ```bash
-python export_to_virtuoso.py \
+python -m virtuoso_schematic_generation \
   --results outputs/<project>/results.json \
   --lib BO_Designs \
   --tech-lib <tech_lib>
 ```
 
-- 优先导出达标 Review candidate，否则导出 BO best。
+- 优先使用达标 Review candidate，否则使用 BO best。
 - 默认只生成 SKILL/报告；仅在用户明确要求时使用 `--run-virtuoso`。
 
 ## 异常与验证

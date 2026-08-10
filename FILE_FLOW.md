@@ -297,7 +297,7 @@ python pvt_simulation.py \
 PVT 通过后：
 
 ```bash
-python export_to_virtuoso.py \
+python -m virtuoso_schematic_generation \
   --results outputs/<project>/results.json \
   --lib BO_Designs \
   --tech-lib <tech_lib>

@@ -18,7 +18,7 @@ from models import CircuitFiles, DesignTarget, parse_metric_goals
 from pdk_integration.profiles import PDKProfile, get_pdk_profile
 from topologies import get_topology
 from topologies.base import ExecutableChildSpec
-from virtuoso_export.exporter import select_export_netlist
+from virtuoso_schematic_generation.exporter import select_export_netlist
 
 
 class HierarchicalFlowError(RuntimeError):

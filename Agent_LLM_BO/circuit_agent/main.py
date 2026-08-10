@@ -19,7 +19,6 @@ from rich.panel import Panel
 from rich.table import Table
 
 from config import Settings, settings
-from llm_client import LLMClient
 from models import (
     CircuitFiles,
     DesignTarget,
@@ -28,6 +27,7 @@ from models import (
     SimResult,
     parse_metric_goals,
 )
+from netlist_utils import split_monolithic_netlist
 from optimizer import HybridOptimizer
 from parameter_effects import analyze_optimization_history
 from pdk_integration.profiles import get_pdk_profile, validate_pdk_profile
@@ -76,19 +76,15 @@ def main():
     # Display header
     _print_header(config)
 
-    # Initialize components.  The BO loop is Python/diagnostics driven by
-    # default; external LLM validation is optional and disabled unless
-    # explicitly requested in settings.
-    llm = LLMClient(config) if config.enable_llm_validation else None
+    # Initialize the deterministic BO and simulation components.
     sim = Simulator(config)
-    optimizer = HybridOptimizer(llm, sim, config)
+    optimizer = HybridOptimizer(sim, config)
 
-    run_from_file(args, llm, sim, optimizer, config)
+    run_from_file(args, sim, optimizer, config)
 
 
 def run_from_file(
     args: argparse.Namespace,
-    llm: LLMClient | None,
     sim: Simulator,
     optimizer: HybridOptimizer,
     config: Settings,
@@ -1061,14 +1057,14 @@ def _save_final_output(
         encoding="utf-8",
     )
 
-    # 5. Export Virtuoso SKILL schematic script (best-effort; no Cadence required)
+    # 5. Generate a Virtuoso OA schematic script (best-effort; no Cadence required)
     virtuoso_report = None
     try:
         if requires_passive_realization:
             raise ValueError(
                 "PDK passive realization and nominal verification are required before export"
             )
-        from virtuoso_export import export_netlist
+        from virtuoso_schematic_generation import export_netlist
 
         virtuoso_report = export_netlist(
             netlist_path=circuit_path,
@@ -1077,7 +1073,7 @@ def _save_final_output(
             out_path=project_root / "virtuoso" / "import_schematic.il",
             results_path=result_path,
         )
-        result_data["virtuoso_export"] = {
+        result_data["virtuoso_schematic_generation"] = {
             "skill_file": virtuoso_report["skill_file"],
             "report_file": str(project_root / "virtuoso" / "export_report.json"),
             "target": (
@@ -1209,7 +1205,7 @@ def _build_circuit_files(netlist_content: str) -> CircuitFiles | None:
     Returns None if the netlist can't be split (no subckt found).
     """
     try:
-        circuit, testbench = LLMClient._split_monolithic_netlist(netlist_content)
+        circuit, testbench = split_monolithic_netlist(netlist_content)
         circuit_name = CircuitFiles.extract_subckt_name(circuit)
         return CircuitFiles(
             circuit_netlist=circuit,

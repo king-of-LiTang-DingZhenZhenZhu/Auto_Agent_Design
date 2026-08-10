@@ -79,8 +79,7 @@ Auto_Agent_Design/
 │   ├── design_audit.py            # 前端设计审计
 │   ├── review_optimization.py     # Review context、patch plan 和 candidate 验证
 │   ├── pvt_simulation.py          # 前仿 PVT 矩阵
-│   ├── export_to_virtuoso.py      # Virtuoso 导出命令行入口
-│   ├── virtuoso_export/           # 网表 IR、器件映射和 SKILL 生成
+│   ├── virtuoso_schematic_generation/ # Virtuoso 原理图生成及命令行入口
 │   ├── topologies/                # 固定结构的 DUT/testbench 生成器
 │   └── tests/                     # 前端单元测试
 ├── knowledge_base/                # 系统、拓扑、Review 和 PDK 知识
@@ -100,7 +99,7 @@ Auto_Agent_Design/
 | 电路优化层 | 固定 topology 的参数如何优化 | `main.py`、`optimizer.py` |
 | 仿真解析层 | 如何执行 Spectre 并得到统一指标 | `simulator.py`、`psf_results.py` |
 | 结构生成层 | DUT/testbench 的合法结构是什么 | `topologies/` |
-| 原理图导出层 | 如何把最终网表变成 Virtuoso schematic | `virtuoso_export/` |
+| 原理图生成层 | 如何把最终网表变成 Virtuoso schematic | `virtuoso_schematic_generation/` |
 | 物理实现层 | placement/routing/DRC/LVS/PEX/post-layout | **待实现** |
 
 ## 3. 当前已实现能力
@@ -375,7 +374,7 @@ python pvt_simulation.py \
 导出 Virtuoso schematic：
 
 ```bash
-python export_to_virtuoso.py \
+python -m virtuoso_schematic_generation \
   --results outputs/<project>/results.json \
   --lib BO_Designs \
   --tech-lib <tech_lib>
@@ -438,7 +437,7 @@ results.json
 - `netlist_file`；
 - `pdk_profile`、`pdk_profile_file`；
 - `diagnostics`；
-- `virtuoso_export`（若生成成功）。
+- `virtuoso_schematic_generation`（若生成成功）。
 
 ### 6.3 层级 child artifact
 

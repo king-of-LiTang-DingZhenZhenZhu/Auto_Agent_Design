@@ -1,9 +1,8 @@
-"""Bayesian Optimization engine with optional external LLM validation.
+"""Bayesian Optimization engine.
 
 Netlist generation is handled by the hard-constrained topology library.
 The main loop is driven by BO, Spectre parsing, gm/Id sizing, diagnostics,
-and operating-point penalties.  External LLM validation is disabled by default
-and is intended only as an experimental physical-feasibility check.
+and operating-point penalties.
 """
 
 from __future__ import annotations
@@ -17,7 +16,6 @@ import optuna
 from optuna.samplers import TPESampler
 
 from config import Settings
-from llm_client import LLMClient
 from models import (
     CircuitFiles,
     DesignTarget,
@@ -38,21 +36,17 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 
 class HybridOptimizer:
-    """BO-driven optimization with optional external LLM parameter validation.
+    """BO-driven circuit optimization.
 
-    BO handles continuous/integer parameter search.  When explicitly enabled,
-    an external LLM can review BO-proposed parameters every N iterations.
     Topology changes use predefined escalation paths (not LLM).
     Netlist repair is unnecessary — topologies are correct-by-construction.
     """
 
     def __init__(
         self,
-        llm_client: LLMClient,
         simulator: Simulator,
         config: Settings,
     ):
-        self.llm = llm_client
         self.sim = simulator
         self.config = config
 
@@ -137,29 +131,6 @@ class HybridOptimizer:
             physical_params = proposed_params  # default: same (physical W/L mode)
             if gmid_sizer is not None:
                 physical_params = gmid_sizer.size(proposed_params)
-
-            # Step 2b: Optional external LLM validation. Disabled by default;
-            # local Agent Review after BO is the preferred analysis path.
-            if (
-                self.config.enable_llm_validation
-                and self.config.llm_validation_frequency > 0
-                and self.llm is not None
-                and (iteration + 1) % self.config.llm_validation_frequency == 0
-            ):
-                logger.info(f"[Iter {iteration+1}] LLM parameter validation")
-                last_result = (
-                    state.history[-1].result if state.history else None
-                )
-                try:
-                    physical_params = self.llm.validate_and_adjust_params(
-                        physical_params, last_result, param_space, targets,
-                        circuit_template=current_template.template_content,
-                        dialogue_dir=str(self.config.get_workspace_path() / "LLM_DIALOGUE"),
-                        iteration=iteration,
-                        topology_name=topology_name,
-                    )
-                except Exception as e:
-                    logger.warning(f"LLM validation failed, using BO params: {e}")
 
             # Step 3: Render netlist (always uses physical W/L params)
             run_dir = self.config.get_run_dir(iteration)

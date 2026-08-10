@@ -22,7 +22,7 @@ from optimizer import HybridOptimizer
 
 class OptimizerEarlyStopTest(unittest.TestCase):
     def _optimizer(self) -> HybridOptimizer:
-        return HybridOptimizer(None, None, Settings())
+        return HybridOptimizer(None, Settings())
 
     def _state_with_results(self, targets: DesignTarget, results: list[SimResult]):
         state = OptimizationState(targets=targets, param_space=ParamSpace())
@@ -52,7 +52,7 @@ class OptimizerEarlyStopTest(unittest.TestCase):
     def test_history_persists_search_space_and_physical_params(self):
         with tempfile.TemporaryDirectory() as tmp:
             optimizer = HybridOptimizer(
-                None, None, Settings(workspace_dir=tmp)
+                None, Settings(workspace_dir=tmp)
             )
             state = OptimizationState(
                 targets=DesignTarget(),
@@ -285,7 +285,7 @@ class OptimizerEarlyStopTest(unittest.TestCase):
     def test_writes_iteration_summary_and_metrics_csv(self):
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(workspace_dir=tmp)
-            optimizer = HybridOptimizer(None, None, settings)
+            optimizer = HybridOptimizer(None, settings)
             run_dir = Path(tmp) / "run_000"
             run_dir.mkdir()
             result = SimResult(
@@ -348,7 +348,7 @@ class OptimizerEarlyStopTest(unittest.TestCase):
     def test_writes_operating_point_status_to_summary_and_metrics_csv(self):
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(workspace_dir=tmp)
-            optimizer = HybridOptimizer(None, None, settings)
+            optimizer = HybridOptimizer(None, settings)
             run_dir = Path(tmp) / "run_000"
             diagnostics = run_dir / "diagnostics"
             diagnostics.mkdir(parents=True)

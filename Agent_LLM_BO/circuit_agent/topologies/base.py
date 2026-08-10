@@ -234,7 +234,7 @@ class BaseTopology(ABC):
         """Produce CircuitFiles ready for the existing optimisation pipeline.
 
         Returns a CircuitFiles object indistinguishable from what
-        LLMClient.generate_initial_netlist() used to produce.
+        legacy monolithic-netlist generators used to produce.
         """
         circuit_content = self.generate_circuit(params)
         tb_content = self.generate_testbench(params)

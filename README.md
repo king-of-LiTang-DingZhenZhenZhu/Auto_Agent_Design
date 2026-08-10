@@ -29,7 +29,7 @@ Auto_Agent_Design/
 │       ├── pdk_integration/           # PDK profile、校验、callback 和器件表征
 │       ├── passive_devices/           # R/C 器件映射和网表实现
 │       ├── topologies/                # 按 amplifiers/references/regulators/comparators 分类
-│       ├── virtuoso_export/           # Virtuoso SKILL 导出
+│       ├── virtuoso_schematic_generation/ # Virtuoso OA 原理图生成
 │       ├── tests/
 │       ├── outputs/
 │       └── workspace/
@@ -84,7 +84,7 @@ conda activate Auto_Agent_Design
 # 2. 准备本地配置（PDK/.env；LLM API 仅在显式启用时需要）
 cd Agent_LLM_BO/circuit_agent
 cp .env.example .env
-# 按需编辑 .env；默认 BO 优化不需要 DEEPSEEK_API_KEY
+# 按需编辑 .env，配置 PDK 与本机运行路径
 
 # 3. 一行生成网表项目
 python -c "
@@ -217,14 +217,14 @@ python design_flow_graph.py \
 
 安装 `langgraph` 后会使用真实 `StateGraph`；若当前环境暂时没有该依赖，脚本会用同样节点顺序的 fallback 执行，便于先验证流程。
 
-## Virtuoso 导出
+## Virtuoso 原理图生成
 
-`export_to_virtuoso.py --results outputs/<project>/results.json` 会导出最终应采用的 netlist：若 `agent_review/candidate_metrics.csv` 中存在满足原始目标的 review candidate，则优先导出该 candidate；否则导出 BO 最优的 `outputs/<project>/netlist/circuit.cir`。建议在 PVT 也通过后再导出。也可以用 `--netlist` 显式指定要导出的 `.cir`。
+`python -m virtuoso_schematic_generation --results outputs/<project>/results.json` 会选择最终应采用的 netlist 并生成 Virtuoso OA 原理图：若 `agent_review/candidate_metrics.csv` 中存在满足原始目标的 review candidate，则优先使用该 candidate；否则使用 BO 最优的 `outputs/<project>/netlist/circuit.cir`。建议在 PVT 通过后再生成。也可以用 `--netlist` 显式指定 `.cir`。
 
 默认行为只生成 SKILL，不启动 Cadence：
 
 ```bash
-python export_to_virtuoso.py \
+python -m virtuoso_schematic_generation \
   --results outputs/<project>/results.json \
   --lib BO_Designs
 ```
@@ -232,7 +232,7 @@ python export_to_virtuoso.py \
 如需自动创建 Virtuoso 工作目录、生成 `cds.lib` 和 wrapper SKILL，并用批处理加载原理图：
 
 ```bash
-python export_to_virtuoso.py \
+python -m virtuoso_schematic_generation \
   --results outputs/<project>/results.json \
   --lib BO_Designs \
   --tech-lib tsmcN28 \

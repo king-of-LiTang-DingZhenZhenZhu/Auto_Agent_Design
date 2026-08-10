@@ -1,4 +1,4 @@
-"""Export optimized BO netlists to Cadence Virtuoso SKILL."""
+"""Generate Cadence Virtuoso OA schematics from optimized netlists."""
 
 from .exporter import export_from_results, export_netlist, prepare_virtuoso_workspace
 from .models import DeviceMap, SchematicIR

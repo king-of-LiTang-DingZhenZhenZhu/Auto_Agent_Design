@@ -16,11 +16,6 @@ _DEFAULT_PDK = get_pdk_profile()
 
 
 class Settings(BaseSettings):
-    # LLM
-    deepseek_api_key: str = ""
-    deepseek_base_url: str = "https://api.deepseek.com"
-    deepseek_model: str = "deepseek-v4-pro"
-
     # PDK — HSPICE format (.cir / .sp)
     pdk_profile: str = _DEFAULT_PDK.name
     pdk_hspice_path: str = _DEFAULT_PDK.hspice_model_path
@@ -57,8 +52,6 @@ class Settings(BaseSettings):
     # Optimization
     max_iterations: int = 50
     bo_n_startup_trials: int = 20
-    enable_llm_validation: bool = False
-    llm_validation_frequency: int = 0
     stagnation_window: int = 10
     severe_deviation_patience: int = 5
     severe_gain_gap_db: float = 40.0
@@ -144,12 +137,6 @@ class Settings(BaseSettings):
     def validate_required(self) -> None:
         """Validate that required settings are present."""
         errors = []
-        if (
-            self.enable_llm_validation
-            and not self.dry_run
-            and not self.deepseek_api_key
-        ):
-            errors.append("DEEPSEEK_API_KEY is not set")
         if not self.pdk_hspice_path:
             errors.append("PDK_HSPICE_PATH is not set")
         if not self.pdk_spectre_path:

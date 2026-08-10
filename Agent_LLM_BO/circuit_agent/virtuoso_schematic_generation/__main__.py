@@ -1,11 +1,11 @@
-"""CLI for exporting optimized BO netlists to Virtuoso SKILL."""
+"""CLI for generating Virtuoso OA schematics from optimized netlists."""
 
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
 
-from virtuoso_export.exporter import (
+from .exporter import (
     default_device_map_json,
     export_from_results,
     export_netlist,
@@ -78,7 +78,7 @@ def main() -> None:
 def parse_args() -> argparse.Namespace:
     pdk = get_pdk_profile()
     parser = argparse.ArgumentParser(
-        description="Export Circuit Agent BO final netlist to Virtuoso SKILL"
+        description="Generate a Virtuoso OA schematic from a Circuit Agent final netlist"
     )
     parser.add_argument(
         "--results",
@@ -173,7 +173,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--run-virtuoso",
         action="store_true",
-        help="Launch virtuoso -nograph -replay run_import.il after exporting SKILL",
+        help="Launch virtuoso -nograph -replay run_import.il after generating SKILL",
     )
     return parser.parse_args()
 

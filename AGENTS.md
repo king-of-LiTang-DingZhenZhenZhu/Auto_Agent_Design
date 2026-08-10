@@ -9,6 +9,7 @@
 - `system_architecture_decomposition/`：各类系统架构的 block graph、child 指标/接口和预算分解实现。
 - `pdk_integration/`：PDK profile、配置校验、CDF callback、PCell 探测和工艺表征。
 - `passive_devices/`：R/C 目标映射、合法器件几何搜索和网表实现。
+- `virtuoso_schematic_generation/`：解析最终网表并生成 Virtuoso OA 原理图；命令入口为 `python -m virtuoso_schematic_generation`。
 - `hierarchical_flow.py`：child-parent 依赖、资格调用、frozen artifact 与嵌入。
 - `design_flow_graph.py`：单个 BO/Review 结果的 Design Audit、Review gate、PVT 和导出。
 - `review_optimization.py`：生成 Review context、校验 patch plan、生成并验证 candidate。
@@ -40,7 +41,7 @@ conda activate Auto_Agent_Design
 5. 叶子模块运行 `main.py`；层级项目运行 `hierarchical_flow.py`。
 6. 读取 `results.json`：达标则执行 Design Audit，未达标则进入 `failure_repair`；Audit blocker 进入 `audit_repair`。
 7. nominal 与 Design Audit 合格后运行 PVT；parent gap 必要时回传并重分配 child targets。
-8. nominal/PVT 合格后用 `export_to_virtuoso.py` 导出。
+8. nominal/PVT 合格后用 `python -m virtuoso_schematic_generation` 生成 Virtuoso 原理图。
 
 `main.py` 不自动运行 Review/PVT。`design_flow_graph.py` 负责状态编排，不替代 BO，也不自动填写 `patch_plan.json`。
 
@@ -173,14 +174,14 @@ python review_optimization.py \
 - `design_flow_graph.py` 只在 BO 未达标或 Audit blocker 时提示 Review；Audit 无 blocker 的成功结果直接进入 PVT。
 - Review candidate 进入 PVT 前必须检查 diagnostics。
 
-## PVT 与导出
+## PVT 与 Virtuoso 原理图生成
 
 ```bash
 python pvt_simulation.py --results outputs/<project>/results.json --simulate
 ```
 
 ```bash
-python export_to_virtuoso.py \
+python -m virtuoso_schematic_generation \
   --results outputs/<project>/results.json \
   --lib BO_Designs \
   --tech-lib <tech_lib>
@@ -188,7 +189,7 @@ python export_to_virtuoso.py \
 
 - 默认 PVT：`tt/ss/ff × VDD(min/typ/max) × temp(-40/27/125)`。
 - PVT 失败先读 `pvt_report.md` 和失败 corner diagnostics。
-- 导出器优先选择达标 Review candidate，否则选择 BO best。
+- 原理图生成器优先选择达标 Review candidate，否则选择 BO best。
 - 仅在用户明确要求时使用 `--run-virtuoso`。
 
 ## 修改与验证

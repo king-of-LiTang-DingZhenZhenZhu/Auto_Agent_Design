@@ -33,8 +33,8 @@ from pdk_integration.profiles import (
 )
 from models import SimResult
 from topologies import get_topology
-from virtuoso_export.exporter import load_device_map
-from virtuoso_export.parser import parse_netlist
+from virtuoso_schematic_generation.exporter import load_device_map
+from virtuoso_schematic_generation.parser import parse_netlist
 
 
 class PassiveRealizationTests(unittest.TestCase):
@@ -501,7 +501,7 @@ C1 (b c) unit_mim w=2u l=5u
 ends unit
 """
         with patch("pdk_integration.profiles.get_pdk_profile", return_value=profile), patch(
-            "virtuoso_export.models.get_pdk_profile", return_value=profile
+            "virtuoso_schematic_generation.models.get_pdk_profile", return_value=profile
         ):
             ir = parse_netlist(netlist)
             device_map = load_device_map()

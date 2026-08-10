@@ -8,14 +8,14 @@ from pathlib import Path
 from unittest.mock import patch
 
 from topologies import get_topology
-from virtuoso_export.exporter import (
+from virtuoso_schematic_generation.exporter import (
     export_from_results,
     prepare_virtuoso_workspace,
     select_export_netlist,
 )
-from virtuoso_export.models import DEFAULT_DEVICE_MAP, default_device_map
-from virtuoso_export.parser import parse_netlist
-from virtuoso_export.skill_writer import write_skill
+from virtuoso_schematic_generation.models import DEFAULT_DEVICE_MAP, default_device_map
+from virtuoso_schematic_generation.parser import parse_netlist
+from virtuoso_schematic_generation.skill_writer import write_skill
 
 
 class VirtuosoExportTest(unittest.TestCase):
@@ -392,7 +392,7 @@ ends mapped_passives
             user_cds = root / "home" / "cds.lib"
             pdk_path = root / "PDKS" / "TSMC28nm" / "tsmcN28"
 
-            with patch("virtuoso_export.exporter.subprocess.run") as run_mock:
+            with patch("virtuoso_schematic_generation.exporter.subprocess.run") as run_mock:
                 report = prepare_virtuoso_workspace(
                     skill_path=skill_path,
                     lib_name="BO_Designs",
@@ -448,7 +448,7 @@ ends mapped_passives
             workdir = root / "virtuoso_runs" / "proj"
             cds_log = workdir / "batch_CDS.log"
 
-            with patch("virtuoso_export.exporter.subprocess.run") as run_mock:
+            with patch("virtuoso_schematic_generation.exporter.subprocess.run") as run_mock:
                 run_mock.return_value.returncode = 0
                 run_mock.return_value.stdout = "ok\n"
                 report = prepare_virtuoso_workspace(

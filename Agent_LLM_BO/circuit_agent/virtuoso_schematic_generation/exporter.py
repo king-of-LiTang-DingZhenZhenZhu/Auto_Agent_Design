@@ -1,4 +1,4 @@
-"""High-level Virtuoso export helpers."""
+"""High-level Virtuoso OA schematic generation helpers."""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ def export_from_results(
     pdk_lib_path: str | Path | None = None,
     cds_log_path: str | Path | None = None,
 ) -> dict[str, Any]:
-    """Export a Virtuoso SKILL script from an optimizer results.json file."""
+    """Generate a Virtuoso OA schematic script from optimizer results."""
     results_path = Path(results_path)
     result_data = json.loads(results_path.read_text(encoding="utf-8"))
     profile_path = results_path.parent / "pdk_profile_used.json"
@@ -86,7 +86,7 @@ def export_netlist(
     cds_log_path: str | Path | None = None,
     profile: PDKProfile | None = None,
 ) -> dict[str, Any]:
-    """Export a final rendered DUT netlist to a Virtuoso SKILL script."""
+    """Generate a Virtuoso OA schematic script from a rendered DUT netlist."""
     netlist_path = Path(netlist_path)
     out_path = Path(out_path)
     pdk = profile or get_pdk_profile()

@@ -23,7 +23,7 @@ from passive_devices.mapping import (
 )
 from pdk_integration.profiles import PDKProfile, PassiveDeviceProfile
 from topologies.base import PassiveImplementation
-from virtuoso_export.parser import parse_netlist
+from virtuoso_schematic_generation.parser import parse_netlist
 
 
 @dataclass(frozen=True)
@@ -230,7 +230,7 @@ def realize_project_passives(
     from pvt_simulation import _load_targets
     from simulator import Simulator
     from topologies import get_topology
-    from virtuoso_export.exporter import select_pre_realization_netlist
+    from virtuoso_schematic_generation.exporter import select_pre_realization_netlist
 
     results_path = Path(results_path).resolve()
     project = results_path.parent

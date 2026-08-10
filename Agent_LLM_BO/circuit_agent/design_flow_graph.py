@@ -13,7 +13,7 @@ from models import DesignTarget
 from passive_devices.realization import realize_project_passives
 from pdk_integration.profiles import PDKProfile
 from pvt_simulation import run_pvt_verification
-from virtuoso_export.exporter import export_from_results, select_export_netlist
+from virtuoso_schematic_generation.exporter import export_from_results, select_export_netlist
 
 try:  # Optional at runtime; requirements.txt includes it for real graph use.
     from langgraph.graph import END, StateGraph

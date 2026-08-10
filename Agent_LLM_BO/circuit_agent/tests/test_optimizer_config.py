@@ -111,30 +111,6 @@ class OptimizerConfigTest(unittest.TestCase):
     def test_bo_uses_twenty_startup_trials_by_default(self):
         self.assertEqual(Settings().bo_n_startup_trials, 20)
 
-    def test_llm_validation_is_disabled_by_default(self):
-        settings = Settings(deepseek_api_key="", dry_run=False)
-        self.assertFalse(settings.enable_llm_validation)
-        settings.validate_required()
-
-    def test_llm_validation_frequency_is_ignored_when_disabled(self):
-        settings = Settings(
-            enable_llm_validation=False,
-            llm_validation_frequency=5,
-            deepseek_api_key="",
-            dry_run=False,
-        )
-        settings.validate_required()
-
-    def test_llm_validation_requires_api_key_when_enabled(self):
-        settings = Settings(
-            enable_llm_validation=True,
-            llm_validation_frequency=5,
-            deepseek_api_key="",
-            dry_run=False,
-        )
-        with self.assertRaisesRegex(ValueError, "DEEPSEEK_API_KEY"):
-            settings.validate_required()
-
     def test_default_gmid_lookup_table_path_exists(self):
         from pathlib import Path
 
