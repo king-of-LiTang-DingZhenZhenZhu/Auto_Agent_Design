@@ -56,6 +56,7 @@ class Simulator:
         run_dir: Path,
         param_space: ParamSpace | None = None,
         w_l_grid_step: float | None = None,
+        auxiliary_files: dict[str, str] | None = None,
     ) -> list[Path]:
         """Render circuit and testbench files into run_dir.
 
@@ -64,6 +65,18 @@ class Simulator:
         Returns the list of testbench paths as entry points for Spectre.
         """
         self._prepare_render_dir(run_dir)
+
+        for relative_name, content in (auxiliary_files or {}).items():
+            relative_path = Path(relative_name)
+            if (
+                relative_path.is_absolute()
+                or ".." in relative_path.parts
+                or not relative_path.name
+            ):
+                raise ValueError(f"Unsafe auxiliary file path: {relative_name}")
+            output_path = run_dir / relative_path
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(content, encoding="utf-8")
 
         # Render circuit with parameter values
         circuit_content = circuit_template.render(
@@ -428,7 +441,17 @@ class Simulator:
         params = self._extract_params_from_netlist(netlist_content)
 
         # Generate plausible mock results based on parameters
-        mock_results = self._compute_mock_results(params)
+        if "adcFunctionalTran" in netlist_content:
+            mock_results = {
+                "conversion_count": 16.0,
+                "conversion_success_rate": 1.0,
+                "max_code_error_lsb": 0.0,
+                "missing_code_count": 0.0,
+                "monotonicity_violation_count": 0.0,
+                "conversion_time_max_s": 1.4e-6,
+            }
+        else:
+            mock_results = self._compute_mock_results(params)
 
         # Format as a mock Spectre log
         log_lines = [

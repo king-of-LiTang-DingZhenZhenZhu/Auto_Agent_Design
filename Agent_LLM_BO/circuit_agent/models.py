@@ -1164,6 +1164,7 @@ class CircuitFiles:
     testbenches: list[str]   # Testbench contents (include, stimulus, analyses, save)
     circuit_name: str        # Subcircuit name extracted from subckt line
     testbench_suffixes: list[str] = field(default_factory=list)
+    auxiliary_files: dict[str, str] = field(default_factory=dict)
 
     @property
     def testbench(self) -> str | None:

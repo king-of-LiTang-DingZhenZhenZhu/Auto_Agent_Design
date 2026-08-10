@@ -18,12 +18,7 @@ from system_decomposition import (
     "successive approximation adc",
 )
 def decompose_sar_adc(request: SystemDesignRequest) -> SystemDesignSpec:
-    """Budget the paper-inspired 12-bit segmented-CDAC SAR architecture.
-
-    This rule intentionally stops at an auditable block graph.  The repository
-    does not yet contain a SAR parent topology, CDAC generator, offset-calibrated
-    comparator, or ADC code-domain metric parser.
-    """
+    """Build either the physical SAR budget or the 4-bit functional route."""
     architecture = "single_ended_segmented_charge_redistribution"
     if request.architecture_hint and request.architecture_hint != architecture:
         raise SystemDecompositionError(
@@ -31,10 +26,24 @@ def decompose_sar_adc(request: SystemDesignRequest) -> SystemDesignSpec:
         )
 
     custom = dict(request.targets.custom_specs)
-    resolution_bits = int(custom.get("resolution_bits", 12))
+    implementation_level = str(
+        custom.get("implementation_level", "physical")
+    ).strip().lower()
+    if implementation_level not in {"physical", "behavioral"}:
+        raise SystemDecompositionError(
+            "SAR ADC implementation_level must be 'physical' or 'behavioral'"
+        )
+    behavioral = implementation_level == "behavioral"
+    resolution_bits = int(custom.get("resolution_bits", 4 if behavioral else 12))
+    if behavioral and resolution_bits != 4:
+        raise SystemDecompositionError(
+            "Behavioral SAR ADC validation currently supports exactly 4 bits"
+        )
     sample_rate_hz = float(custom.get("sample_rate_hz", 500e3))
-    reference_voltage_v = float(custom.get("reference_voltage_v", 2.5))
-    high_segment_bits = int(custom.get("high_segment_bits", 6))
+    reference_voltage_v = float(
+        custom.get("reference_voltage_v", 0.9 if behavioral else 2.5)
+    )
+    high_segment_bits = int(custom.get("high_segment_bits", 2 if behavioral else 6))
     low_segment_bits = int(
         custom.get("low_segment_bits", resolution_bits - high_segment_bits)
     )
@@ -51,9 +60,17 @@ def decompose_sar_adc(request: SystemDesignRequest) -> SystemDesignSpec:
 
     lsb_v = reference_voltage_v / (2**resolution_bits)
     conversion_period_s = 1.0 / sample_rate_hz
-    serial_clock_hz = float(custom.get("serial_clock_hz", 30 * sample_rate_hz))
+    serial_clock_hz = float(
+        custom.get(
+            "serial_clock_hz",
+            (5 if behavioral else 30) * sample_rate_hz,
+        )
+    )
     comparison_clock_hz = float(
-        custom.get("comparison_clock_hz", 0.5 * serial_clock_hz)
+        custom.get(
+            "comparison_clock_hz",
+            serial_clock_hz if behavioral else 0.5 * serial_clock_hz,
+        )
     )
     if serial_clock_hz <= 0 or comparison_clock_hz <= 0:
         raise SystemDecompositionError("SAR ADC clocks must be positive")
@@ -187,6 +204,40 @@ def decompose_sar_adc(request: SystemDesignRequest) -> SystemDesignSpec:
             margin="remaining half-cycle is reserved for CDAC settling and logic",
         ),
     )
+    if behavioral:
+        comparator_targets = DesignTarget(
+            topology_hint="ideal behavioral comparator",
+            custom_specs={"comparison_clock_hz": comparison_clock_hz},
+        )
+        comparator_pvt_targets = DesignTarget(
+            topology_hint="ideal behavioral comparator"
+        )
+        comparator_derivations = ()
+
+    if behavioral:
+        rationale = (
+            "A four-cycle ideal SAR loop provides the smallest end-to-end conversion check.",
+            "A 2+2 logical split preserves the segmented-CDAC interface without modeling physical capacitors.",
+            "Straight-binary code centers exercise all 16 output codes at 500 kS/s.",
+        )
+        assumptions = (
+            "The sample/hold, CDAC, comparator, reference, and logic are ideal behavioral blocks.",
+            "Power, noise, mismatch, DNL/INL, SNDR/ENOB, and PVT are outside this validation route.",
+            "Passing this route does not qualify the transistor-level SAR architecture.",
+        )
+    else:
+        rationale = (
+            "A charge-redistribution SAR avoids a residue amplifier and suits the low-power, moderate-speed target.",
+            "A symmetric 6+6 split reduces the ideal 12-bit binary array from 4096 to 128 unit capacitors.",
+            "Thermometer coding the top three bits improves high-code monotonicity.",
+            "The paper's single-ended interface is retained for traceability; a differential redesign is preferred for a new tapeout.",
+        )
+        assumptions = (
+            "Defaults reproduce the thesis target: 2.5 V, 12 bit, 500 kS/s, and 1.2 mW.",
+            "The 15 MHz serial clock and divide-by-two comparison clock provide 30 serial clocks per conversion.",
+            "The power allocation is a first-pass budget and must be rebalanced after block characterization.",
+            "CDAC parasitics and bridge-cap correction must be extracted before final linearity signoff.",
+        )
 
     blocks = (
         SystemBlockSpec(
@@ -209,14 +260,18 @@ def decompose_sar_adc(request: SystemDesignRequest) -> SystemDesignSpec:
             operating_conditions={
                 "segmentation_bits": [high_segment_bits, low_segment_bits],
                 "thermometer_coded_msb_bits": int(
-                    custom.get("thermometer_coded_msb_bits", 3)
+                    custom.get("thermometer_coded_msb_bits", 0 if behavioral else 3)
                 ),
                 "unit_cap_f": unit_cap_f,
                 "unit_cap_count": unit_cap_count,
                 "effective_input_cap_f": float(
                     custom.get("effective_input_cap_f", 6.5e-12)
                 ),
-                "layout": "common-centroid unit-cap array with grounded dummies",
+                "layout": (
+                    "not modeled"
+                    if behavioral
+                    else "common-centroid unit-cap array with grounded dummies"
+                ),
             },
             budget={
                 "power_w": cdac_power_w,
@@ -226,11 +281,19 @@ def decompose_sar_adc(request: SystemDesignRequest) -> SystemDesignSpec:
         ),
         SystemBlockSpec(
             block_id="comparator",
-            function="Resolve each CDAC trial with offset calibration",
+            function=(
+                "Resolve each CDAC trial with an ideal behavioral decision"
+                if behavioral
+                else "Resolve each CDAC trial with offset calibration"
+            ),
             implementation="parent_internal",
             candidate_topologies=(
-                "offset_calibrated_three_preamplifier_latch",
-                "strongarm_latch",
+                ()
+                if behavioral
+                else (
+                    "offset_calibrated_three_preamplifier_latch",
+                    "strongarm_latch",
+                )
             ),
             ports=("cdac_top", "vcm", "compare", "decision", "vdd_a", "vss_a"),
             dependencies=("cdac", "reference_buffer"),
@@ -244,16 +307,20 @@ def decompose_sar_adc(request: SystemDesignRequest) -> SystemDesignSpec:
                     custom.get("effective_input_cap_f", 6.5e-12)
                 ),
             },
-            budget={
-                "power_w": comparator_power_w,
-                "input_noise_v_rms": float(
-                    comparator_targets.custom_specs["input_referred_noise_v_rms"]
-                ),
-                "offset_correction_range_v": float(
-                    comparator_targets.custom_specs["offset_correction_range_v"]
-                ),
-            },
-            sizing_policy="new_topology_required",
+            budget=(
+                {}
+                if behavioral
+                else {
+                    "power_w": comparator_power_w,
+                    "input_noise_v_rms": float(
+                        comparator_targets.custom_specs["input_referred_noise_v_rms"]
+                    ),
+                    "offset_correction_range_v": float(
+                        comparator_targets.custom_specs["offset_correction_range_v"]
+                    ),
+                }
+            ),
+            sizing_policy=("parent_internal" if behavioral else "new_topology_required"),
         ),
         SystemBlockSpec(
             block_id="reference_buffer",
@@ -270,7 +337,11 @@ def decompose_sar_adc(request: SystemDesignRequest) -> SystemDesignSpec:
         ),
         SystemBlockSpec(
             block_id="sar_logic",
-            function="Run the 12-step binary search and 3-bit thermometer decode",
+            function=(
+                "Run the four-step straight-binary search"
+                if behavioral
+                else "Run the 12-step binary search and 3-bit thermometer decode"
+            ),
             implementation="parent_internal",
             ports=("decision", "code", "enable", "serial_data", "clock"),
             dependencies=("comparator",),
@@ -278,7 +349,9 @@ def decompose_sar_adc(request: SystemDesignRequest) -> SystemDesignSpec:
                 "resolution_bits": resolution_bits,
                 "serial_clock_hz": serial_clock_hz,
                 "comparison_clock_hz": comparison_clock_hz,
-                "clocks_per_conversion": int(custom.get("clocks_per_conversion", 30)),
+                "clocks_per_conversion": int(
+                    custom.get("clocks_per_conversion", 5 if behavioral else 30)
+                ),
                 "output_format": "serial",
             },
             budget={"power_w": sar_logic_power_w},
@@ -299,7 +372,11 @@ def decompose_sar_adc(request: SystemDesignRequest) -> SystemDesignSpec:
     return SystemDesignSpec(
         system_type="sar_adc",
         architecture=architecture,
-        parent_topology="sar_adc_segmented_cdac",
+        parent_topology=(
+            "sar_adc_functional_4bit"
+            if behavioral
+            else "sar_adc_segmented_cdac"
+        ),
         request=request,
         blocks=blocks,
         connections=(
@@ -313,18 +390,8 @@ def decompose_sar_adc(request: SystemDesignRequest) -> SystemDesignSpec:
             SystemConnection("clock_powerdown", "sampling_switch", "sample", "track/hold control"),
             SystemConnection("clock_powerdown", "comparator", "compare/calibrate", "phase control"),
         ),
-        rationale=(
-            "A charge-redistribution SAR avoids a residue amplifier and suits the low-power, moderate-speed target.",
-            "A symmetric 6+6 split reduces the ideal 12-bit binary array from 4096 to 128 unit capacitors.",
-            "Thermometer coding the top three bits improves high-code monotonicity.",
-            "The paper's single-ended interface is retained for traceability; a differential redesign is preferred for a new tapeout.",
-        ),
-        assumptions=(
-            "Defaults reproduce the thesis target: 2.5 V, 12 bit, 500 kS/s, and 1.2 mW.",
-            "The 15 MHz serial clock and divide-by-two comparison clock provide 30 serial clocks per conversion.",
-            "The power allocation is a first-pass budget and must be rebalanced after block characterization.",
-            "CDAC parasitics and bridge-cap correction must be extracted before final linearity signoff.",
-        ),
+        rationale=rationale,
+        assumptions=assumptions,
         unresolved_requirements=_sar_adc_unresolved_requirements(request),
     )
 
@@ -332,6 +399,14 @@ def decompose_sar_adc(request: SystemDesignRequest) -> SystemDesignSpec:
 def _sar_adc_unresolved_requirements(
     request: SystemDesignRequest,
 ) -> tuple[str, ...]:
+    implementation_level = str(
+        request.targets.custom_specs.get("implementation_level", "physical")
+    ).strip().lower()
+    if implementation_level == "behavioral":
+        return (
+            "behavioral validation only; transistor-level SAR parent topology is not implemented",
+            "ADC DNL/INL and dynamic SNDR/ENOB testbenches are not implemented",
+        )
     unresolved = [
         "sar_adc_segmented_cdac parent topology is not implemented",
         "offset-calibrated multistage comparator topology is not implemented",

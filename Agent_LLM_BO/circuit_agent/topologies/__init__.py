@@ -23,6 +23,7 @@ from topologies.amplifiers.nmcnr_three_stage import NMCNRThreeStageOTA
 from topologies.amplifiers.nmcf_three_stage import NMCFThreeStageOTA
 from topologies.amplifiers.pmos_input_two_stage_ota import PMOSInputTwoStageOTA
 from topologies.comparators.strongarm_latch import StrongARMLatch
+from topologies.converters.sar_adc_functional_4bit import SARADCFunctional4Bit
 from topologies.amplifiers.two_stage_ota import TwoStageOTA
 
 if TYPE_CHECKING:
@@ -43,6 +44,7 @@ TOPOLOGY_REGISTRY: dict[str, type[BaseTopology]] = {
     "mnmc_three_stage": MNMCThreeStageOTA,
     "nmcf_three_stage": NMCFThreeStageOTA,
     "strongarm_latch": StrongARMLatch,
+    "sar_adc_functional_4bit": SARADCFunctional4Bit,
     "bandgap_ptat": BandgapPTAT,
     "banba_sub1v_bandgap": BanbaSub1VBandgap,
     "leung_mok_sub1v_bandgap": LeungMokSub1VBandgap,
@@ -138,6 +140,7 @@ def get_topology_for_targets(targets: DesignTarget) -> str | None:
         if name in {
             "bandgap_ptat", "banba_sub1v_bandgap", "leung_mok_sub1v_bandgap",
             "strongarm_latch",
+            "sar_adc_functional_4bit",
             "capless_ldo", "dfc_capless_ldo",
         }:
             continue

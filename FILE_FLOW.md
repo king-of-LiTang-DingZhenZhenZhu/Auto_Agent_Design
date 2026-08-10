@@ -58,9 +58,10 @@ PVT、层级工件和 Virtuoso 导出。操作约束分别见 `AGENTS.md` 和
 当前已经接入系统分解层的系统是：
 
 - `bandgap`：Bandgap core + frozen `two_stage_ota`；
-- `ldo`：PMOS-pass cap-less LDO + frozen `two_stage_ota`。
+- `ldo`：PMOS-pass cap-less LDO + frozen `two_stage_ota`；
+- `sar_adc`：12-bit 物理架构分解，以及独立的 4-bit 行为级功能验证 parent。
 
-ADC 尚未注册系统规则或 parent topology。
+SAR ADC 的晶体管级 parent topology 和 DNL/INL、SNDR/ENOB 验证尚未实现。
 
 ## 3. 叶子模块流程
 
@@ -488,7 +489,7 @@ results.json gap
 - topology Python 代码负责网表结构硬约束。
 - BO 只在固定 topology 和参数空间内优化。
 - `system_architecture_decomposition/` 当前包含 Bandgap、LDO 和 SAR ADC 分解实现。
-- SAR ADC 已支持架构与预算；parent/child topologies、码域 testbench 和指标 parser 尚未实现。
+- SAR ADC 已支持架构、预算和 4-bit 行为级码域功能验证；晶体管级 parent/child topologies 及 DNL/INL、SNDR/ENOB 验证尚未实现。
 - 默认不由 Codex 直接运行真实 Spectre、PVT 或 Virtuoso。
 
 ## 13. 相关文档

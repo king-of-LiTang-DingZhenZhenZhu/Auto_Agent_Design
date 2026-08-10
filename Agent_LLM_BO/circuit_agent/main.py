@@ -27,7 +27,7 @@ from models import (
     SimResult,
     parse_metric_goals,
 )
-from netlist_utils import split_monolithic_netlist
+from netlist_utils import load_relative_ahdl_includes, split_monolithic_netlist
 from optimizer import HybridOptimizer
 from parameter_effects import analyze_optimization_history
 from pdk_integration.profiles import get_pdk_profile, validate_pdk_profile
@@ -109,20 +109,26 @@ def run_from_file(
     netlist_content = netlist_path.read_text(encoding="utf-8")
     if args.testbench:
         testbench_contents = []
+        include_sources = [(netlist_content, netlist_path.parent)]
         for tb_str in args.testbench:
             tb_path = Path(tb_str)
             if not tb_path.exists():
                 console.print(f"[red]Testbench file not found: {tb_path}[/red]")
                 sys.exit(1)
             testbench_contents.append(tb_path.read_text(encoding="utf-8"))
+            include_sources.append((testbench_contents[-1], tb_path.parent))
             console.print(f"[green]✓[/green] Loaded testbench: {tb_path}")
         circuit_files = CircuitFiles(
             circuit_netlist=netlist_content,
             testbenches=testbench_contents,
             circuit_name=CircuitFiles.extract_subckt_name(netlist_content),
+            auxiliary_files=load_relative_ahdl_includes(include_sources),
         )
     else:
-        circuit_files = _build_circuit_files(netlist_content)
+        circuit_files = _build_circuit_files(
+            netlist_content,
+            source_dir=netlist_path.parent,
+        )
 
     # --- Load parameter search space ---
     if args.params:
@@ -370,6 +376,7 @@ def run_from_file(
             template, circuit_files.testbenches,
             initial_params, run_dir, param_space=param_space,
             w_l_grid_step=config.w_l_grid_step,
+            auxiliary_files=circuit_files.auxiliary_files,
         )
     else:
         tb_paths = [run_dir / "circuit_init.scs"]
@@ -580,6 +587,7 @@ def _run_default_param_baseline(
         run_dir,
         param_space=default_param_space,
         w_l_grid_step=config.w_l_grid_step,
+        auxiliary_files=circuit_files.auxiliary_files,
     )
 
     success, log_content, error_msg = sim.run_spectre(tb_paths[0], run_dir)
@@ -863,6 +871,26 @@ def _display_results_table(result: SimResult, targets: DesignTarget, title: str)
         mark = "[green]✓[/green]" if status.get(metric) else "[red]✗[/red]"
         table.add_row(label, target_text, actual_text, mark)
 
+    standard_metrics = {
+        "gain_db", "bandwidth_hz", "phase_margin_deg", "power_w",
+        "slew_rate_v_per_s", "settling_time_s",
+        *(metric for metric, *_ in bandgap_rows),
+    }
+    for name, goal in targets.resolved_metric_goals().items():
+        if name in standard_metrics:
+            continue
+        value = result.metric_value(name)
+        if goal.constraint == "range":
+            target_text = f"{goal.low:g} .. {goal.high:g}"
+        else:
+            operator = {"min": ">=", "max": "<=", "target": "="}[
+                goal.constraint
+            ]
+            target_text = f"{operator} {goal.target:g}"
+        actual_text = f"{value:.6g}" if value is not None else "N/A"
+        mark = "[green]✓[/green]" if status.get(name) else "[red]✗[/red]"
+        table.add_row(name, target_text, actual_text, mark)
+
     console.print(table)
 
 
@@ -921,6 +949,18 @@ def _save_final_output(
     )
     circuit_path = netlist_dir / "circuit.cir"
     circuit_path.write_text(final_circuit, encoding="utf-8")
+    if circuit_files:
+        for relative_name, content in circuit_files.auxiliary_files.items():
+            relative_path = Path(relative_name)
+            if (
+                relative_path.is_absolute()
+                or ".." in relative_path.parts
+                or not relative_path.name
+            ):
+                raise ValueError(f"Unsafe auxiliary file path: {relative_name}")
+            auxiliary_path = netlist_dir / relative_path
+            auxiliary_path.parent.mkdir(parents=True, exist_ok=True)
+            auxiliary_path.write_text(content, encoding="utf-8")
 
     # 2. Save testbenches
     if circuit_files and circuit_files.testbenches:
@@ -1043,14 +1083,20 @@ def _save_final_output(
     if original_requirement:
         result_data["original_requirement"] = original_requirement
     requires_passive_realization = False
+    supports_schematic_generation = True
     if topology_name:
         from topologies import get_topology
 
-        passive_specs = get_topology(topology_name).passive_implementations()
+        topology = get_topology(topology_name)
+        passive_specs = topology.passive_implementations()
         requires_passive_realization = any(
             item.realization in {"on_chip", "pdk"} for item in passive_specs
         )
+        supports_schematic_generation = topology.supports_schematic_generation()
         result_data["passive_realization_required"] = requires_passive_realization
+        result_data["schematic_generation_supported"] = (
+            supports_schematic_generation
+        )
     result_path = project_root / "results.json"
     result_path.write_text(
         json.dumps(result_data, indent=2, ensure_ascii=False, default=str),
@@ -1060,6 +1106,8 @@ def _save_final_output(
     # 5. Generate a Virtuoso OA schematic script (best-effort; no Cadence required)
     virtuoso_report = None
     try:
+        if not supports_schematic_generation:
+            raise ValueError("behavioral topology has no physical schematic")
         if requires_passive_realization:
             raise ValueError(
                 "PDK passive realization and nominal verification are required before export"
@@ -1199,7 +1247,10 @@ def _save_final_output(
     console.print(f"\n[dim]cd {project_root}[/dim]")
 
 
-def _build_circuit_files(netlist_content: str) -> CircuitFiles | None:
+def _build_circuit_files(
+    netlist_content: str,
+    source_dir: Path | None = None,
+) -> CircuitFiles | None:
     """Attempt to split a netlist into circuit + testbench.
 
     Returns None if the netlist can't be split (no subckt found).
@@ -1207,13 +1258,21 @@ def _build_circuit_files(netlist_content: str) -> CircuitFiles | None:
     try:
         circuit, testbench = split_monolithic_netlist(netlist_content)
         circuit_name = CircuitFiles.extract_subckt_name(circuit)
-        return CircuitFiles(
-            circuit_netlist=circuit,
-            testbenches=[testbench],
-            circuit_name=circuit_name,
-        )
     except Exception:
         return None
+    auxiliary_files = (
+        load_relative_ahdl_includes(
+            [(circuit, source_dir), (testbench, source_dir)]
+        )
+        if source_dir is not None
+        else {}
+    )
+    return CircuitFiles(
+        circuit_netlist=circuit,
+        testbenches=[testbench],
+        circuit_name=circuit_name,
+        auxiliary_files=auxiliary_files,
+    )
 
 
 def _combined_parameter_source(

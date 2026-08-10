@@ -243,6 +243,7 @@ class BaseTopology(ABC):
             circuit_netlist=circuit_content,
             testbenches=[tb_content],
             circuit_name=circuit_name,
+            auxiliary_files=self.get_auxiliary_files(params),
         )
 
     def write_project(
@@ -280,6 +281,18 @@ class BaseTopology(ABC):
         if targets and targets.load_cap_f is not None:
             generation_params.setdefault("CL", targets.load_cap_f)
         cf = self.get_circuit_files(generation_params)
+
+        for relative_name, content in cf.auxiliary_files.items():
+            relative_path = Path(relative_name)
+            if (
+                relative_path.is_absolute()
+                or ".." in relative_path.parts
+                or not relative_path.name
+            ):
+                raise ValueError(f"Unsafe auxiliary file path: {relative_name}")
+            auxiliary_path = out / relative_path
+            auxiliary_path.parent.mkdir(parents=True, exist_ok=True)
+            auxiliary_path.write_text(content, encoding="utf-8")
 
         # --- .cir ---
         cir_path = out / f"{self.meta.name}.cir"
@@ -351,6 +364,13 @@ class BaseTopology(ABC):
         """Return child modules that must be optimized before this topology."""
         return []
 
+    def get_auxiliary_files(
+        self,
+        params: dict[str, Any] | None = None,
+    ) -> dict[str, str]:
+        """Return relative-path support files required by the DUT netlist."""
+        return {}
+
     # ------------------------------------------------------------------
     # gm/Id support (optional — override to enable gm/Id sizing mode)
     # ------------------------------------------------------------------
@@ -385,6 +405,10 @@ class BaseTopology(ABC):
         Testbench passives are external by definition and are not listed.
         """
         return tuple(getattr(self, "PASSIVE_IMPLEMENTATIONS", ()))
+
+    def supports_schematic_generation(self) -> bool:
+        """Return whether the topology represents an implementable schematic."""
+        return True
 
     def availability_error(
         self,

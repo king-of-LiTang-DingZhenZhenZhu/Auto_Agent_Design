@@ -272,8 +272,9 @@ class SpectreTopologyTest(unittest.TestCase):
                 file_names = [path.name for path in project.iterdir()]
 
                 self.assertIn("simulator lang=spectre", circuit)
-                self.assertIn(f'include "{pdk.spectre_model_path}"', circuit)
-                self.assertIn(f"section={pdk.spectre_section}", circuit)
+                if topo.required_model_roles():
+                    self.assertIn(f'include "{pdk.spectre_model_path}"', circuit)
+                    self.assertIn(f"section={pdk.spectre_section}", circuit)
                 self.assertIn("parameters ", circuit)
                 self.assertRegex(circuit, rf"(?m)^subckt\s+\w+\s+\(")
                 for token in forbidden:
@@ -301,6 +302,12 @@ class SpectreTopologyTest(unittest.TestCase):
                     )
                     self.assertIn(
                         "tb_strongarm_latch_decision_neg.scs", file_names
+                    )
+                    continue
+                if meta.name == "sar_adc_functional_4bit":
+                    self.assertIn(
+                        "tb_sar_adc_functional_4bit_adc_functional.scs",
+                        file_names,
                     )
                     continue
                 self.assertIn(f"tb_{meta.name}_sr.scs", file_names)

@@ -45,7 +45,7 @@ conda activate Auto_Agent_Design
 - 系统级设计的固定顺序为：`顶层指标 → 系统架构 → block graph → child targets/接口/预算 → child topology → sizing/BO`；叶子模块从 `指标 → topology → sizing/BO` 开始。
 - child targets 必须包含来源、裕量、PVT target、负载/摆幅/共模和电源域；不得直接复制顶层指标。
 - parent BO 不展开 child W/L；child 与 parent 必须匹配 PDK profile、voltage domain、subckt 和端口。
-- `bandgap_ptat` 已接入完整设计流程；SAR ADC 已支持系统架构分解和模块预算，但 parent/child topologies、码域 testbench 与指标 parser 尚未实现。
+- `bandgap_ptat` 已接入完整设计流程；SAR ADC 已支持架构分解、模块预算和独立 4-bit 行为级功能验证，但晶体管级 parent/child topologies 及 DNL/INL、SNDR/ENOB 验证尚未实现。
 
 查看 topology：
 

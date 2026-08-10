@@ -60,7 +60,7 @@ conda activate Auto_Agent_Design
 - parent BO 不展开 child W/L；child 与 parent 必须匹配 PDK profile、voltage domain、subckt 和端口。
 - parent 失败时依次检查接口/testbench、预算假设、child PVT 裕量、child topology、系统架构。
 - 自动拓扑升级默认关闭。
-- `bandgap_ptat` 已接入完整设计流程；SAR ADC 已支持系统架构分解和模块预算，但 parent/child topologies、码域 testbench 与指标 parser 尚未实现。
+- `bandgap_ptat` 已接入完整设计流程；SAR ADC 已支持架构分解、模块预算和独立 4-bit 行为级功能验证，但晶体管级 parent/child topologies 及 DNL/INL、SNDR/ENOB 验证尚未实现。
 - 具体架构规则读取 `knowledge_base/System_knowledge_base/system_architecture_selection_guide.md`。
 
 ```bash

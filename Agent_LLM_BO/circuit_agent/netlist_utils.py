@@ -4,8 +4,29 @@ from __future__ import annotations
 
 import logging
 import re
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+def load_relative_ahdl_includes(
+    sources: list[tuple[str, Path]],
+) -> dict[str, str]:
+    """Load relative Verilog-A includes without permitting path traversal."""
+    auxiliary_files: dict[str, str] = {}
+    pattern = re.compile(r'\bahdl_include\s+"([^"]+)"', re.IGNORECASE)
+    for content, source_dir in sources:
+        for match in pattern.finditer(content):
+            relative = Path(match.group(1))
+            if relative.is_absolute() or ".." in relative.parts or not relative.name:
+                raise ValueError(f"Unsafe ahdl_include path: {relative}")
+            normalized = relative.as_posix()
+            included = (source_dir / relative).read_text(encoding="utf-8")
+            previous = auxiliary_files.get(normalized)
+            if previous is not None and previous != included:
+                raise ValueError(f"Conflicting ahdl_include content: {normalized}")
+            auxiliary_files[normalized] = included
+    return auxiliary_files
 
 
 def split_monolithic_netlist(content: str) -> tuple[str, str]:

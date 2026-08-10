@@ -139,6 +139,9 @@ class HybridOptimizer:
                     current_template, current_testbenches,
                     physical_params, run_dir, param_space=param_space,
                     w_l_grid_step=self.config.w_l_grid_step,
+                    auxiliary_files=(
+                        circuit_files.auxiliary_files if circuit_files else None
+                    ),
                 )
             else:
                 tb_paths = [run_dir / "circuit.spi"]

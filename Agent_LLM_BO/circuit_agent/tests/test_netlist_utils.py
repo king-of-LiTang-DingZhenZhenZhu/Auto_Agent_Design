@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import unittest
+import tempfile
+from pathlib import Path
 
-from netlist_utils import split_monolithic_netlist
+from netlist_utils import load_relative_ahdl_includes, split_monolithic_netlist
 
 
 class NetlistUtilsTest(unittest.TestCase):
@@ -32,6 +34,21 @@ X1 in out vdd 0 ota
         self.assertIn(".subckt dut", circuit)
         self.assertIn("M1 vout vin 0 0 nch", circuit)
         self.assertEqual(".op\n.end", testbench)
+
+    def test_loads_relative_ahdl_include(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "model.va").write_text("module model; endmodule\n", encoding="utf-8")
+            loaded = load_relative_ahdl_includes([
+                ('ahdl_include "model.va"', root)
+            ])
+        self.assertEqual(loaded, {"model.va": "module model; endmodule\n"})
+
+    def test_rejects_unsafe_ahdl_include(self):
+        with self.assertRaisesRegex(ValueError, "Unsafe"):
+            load_relative_ahdl_includes([
+                ('ahdl_include "../model.va"', Path("/tmp"))
+            ])
 
 
 if __name__ == "__main__":

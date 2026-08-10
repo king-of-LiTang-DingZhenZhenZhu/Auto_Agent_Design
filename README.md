@@ -72,8 +72,9 @@ Auto_Agent_Design/
 child targets、PVT targets、预算和 topology；`hierarchical_flow.py`
 是执行层，只消费已经确定的 `ExecutableChildSpec`。
 
-当前系统级规则已实现 Bandgap 和 LDO；ADC 尚未实现系统规则和 parent
-topology。
+当前系统级规则已实现 Bandgap、LDO 和 SAR ADC。SAR ADC 已提供独立的
+4-bit 行为级功能模型；晶体管级 parent topology、DNL/INL、SNDR/ENOB 和
+对应物理实现仍未完成。
 
 ## 快速开始
 

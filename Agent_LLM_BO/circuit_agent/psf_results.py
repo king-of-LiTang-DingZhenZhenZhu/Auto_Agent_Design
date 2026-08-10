@@ -233,6 +233,40 @@ def parse_psf_results(raw_dir: Path, testbench_content: str) -> SimResult | None
         if tran_path:
             try:
                 tran_psf = PSF(str(tran_path))
+                if tran_name.lower().startswith("adcfunctional"):
+                    time, eoc = _signal_axis(
+                        tran_psf, ("eoc", "V(eoc)", "/eoc")
+                    )
+                    signal_values: dict[str, Any] = {}
+                    for name in (
+                        "start", "d3", "d2", "d1", "d0",
+                        "vin_sampled", "vdd", "vref_metric",
+                    ):
+                        signal_time, values = _signal_axis(
+                            tran_psf, (name, f"V({name})", f"/{name}")
+                        )
+                        if not np.array_equal(np.asarray(time), np.asarray(signal_time)):
+                            raise ValueError(
+                                f"ADC signal '{name}' uses a different time axis"
+                            )
+                        signal_values[name] = values
+                    result.raw_metrics.update(
+                        calculate_adc_functional_metrics(
+                            time=time,
+                            start=signal_values["start"],
+                            eoc=eoc,
+                            bits=[
+                                signal_values["d3"],
+                                signal_values["d2"],
+                                signal_values["d1"],
+                                signal_values["d0"],
+                            ],
+                            sampled_input=signal_values["vin_sampled"],
+                            supply_voltage=signal_values["vdd"],
+                            reference_voltage=signal_values["vref_metric"],
+                        )
+                    )
+                    return result
                 if tran_name.lower().startswith("decision"):
                     time, clock = _signal_axis(
                         tran_psf, ("clk", "V(clk)", "/clk")
@@ -364,6 +398,106 @@ def parse_psf_results(raw_dir: Path, testbench_content: str) -> SimResult | None
                 )
 
     return result if found_metrics else None
+
+
+def calculate_adc_functional_metrics(
+    time: Any,
+    start: Any,
+    eoc: Any,
+    bits: list[Any],
+    sampled_input: Any,
+    supply_voltage: Any,
+    reference_voltage: Any | None = None,
+    *,
+    expected_codes: int = 16,
+) -> dict[str, float]:
+    """Measure exhaustive straight-binary conversions at EOC rising edges."""
+    t = np.asarray(time, dtype=float)
+    start_values = np.asarray(start, dtype=float)
+    eoc_values = np.asarray(eoc, dtype=float)
+    sampled_values = np.asarray(sampled_input, dtype=float)
+    vdd_values = np.asarray(supply_voltage, dtype=float)
+    bit_values = [np.asarray(bit, dtype=float) for bit in bits]
+    reference_values = (
+        np.asarray(reference_voltage, dtype=float)
+        if reference_voltage is not None
+        else vdd_values
+    )
+    arrays = [
+        start_values, eoc_values, sampled_values, vdd_values,
+        reference_values, *bit_values,
+    ]
+    if t.size < 2 or any(values.shape != t.shape for values in arrays):
+        raise ValueError("ADC functional signals must share one non-empty time axis")
+    if np.any(np.diff(t) <= 0):
+        raise ValueError("ADC functional time must be strictly increasing")
+
+    threshold = 0.5 * np.maximum(vdd_values, 1e-12)
+    start_edges = np.flatnonzero(
+        (start_values[:-1] < threshold[:-1])
+        & (start_values[1:] >= threshold[1:])
+    ) + 1
+    eoc_edges = np.flatnonzero(
+        (eoc_values[:-1] < threshold[:-1])
+        & (eoc_values[1:] >= threshold[1:])
+    ) + 1
+
+    observed_codes: list[int] = []
+    expected_output_codes: list[int] = []
+    reference_value = float(np.max(reference_values))
+    if reference_value <= 0:
+        raise ValueError("ADC functional reference voltage must be positive")
+    for index in eoc_edges:
+        code = 0
+        for bit in bit_values:
+            code = (code << 1) | int(bit[index] >= threshold[index])
+        observed_codes.append(code)
+        normalized = sampled_values[index] / reference_value * expected_codes
+        expected_output_codes.append(
+            min(expected_codes - 1, max(0, int(np.floor(normalized))))
+        )
+
+    comparison_count = min(len(observed_codes), expected_codes)
+    correct_count = sum(
+        observed_codes[index] == expected_output_codes[index]
+        for index in range(comparison_count)
+    )
+    errors = [
+        abs(observed - expected)
+        for observed, expected in zip(observed_codes, expected_output_codes)
+    ]
+    max_code_error = float(max(errors)) if errors else float(expected_codes)
+    observed_set = {
+        code for code in observed_codes if 0 <= code < expected_codes
+    }
+    monotonicity_violations = sum(
+        current < previous
+        for previous, current in zip(observed_codes, observed_codes[1:])
+    )
+
+    conversion_times: list[float] = []
+    for start_position, start_index in enumerate(start_edges):
+        next_start = (
+            start_edges[start_position + 1]
+            if start_position + 1 < len(start_edges)
+            else t.size
+        )
+        matching_eoc = eoc_edges[
+            (eoc_edges > start_index) & (eoc_edges < next_start)
+        ]
+        if matching_eoc.size:
+            conversion_times.append(float(t[matching_eoc[0]] - t[start_index]))
+
+    return {
+        "conversion_count": float(len(observed_codes)),
+        "conversion_success_rate": float(correct_count / expected_codes),
+        "max_code_error_lsb": max_code_error,
+        "missing_code_count": float(expected_codes - len(observed_set)),
+        "monotonicity_violation_count": float(monotonicity_violations),
+        "conversion_time_max_s": (
+            max(conversion_times) if conversion_times else float(t[-1] - t[0])
+        ),
+    }
 
 
 def calculate_comparator_decision_metrics(
