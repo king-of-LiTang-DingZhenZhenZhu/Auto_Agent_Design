@@ -6,7 +6,7 @@
 - `topologies/`：程序化生成 Spectre DUT/testbench；不要手改 rendered `.cir/.scs`。
 - `main.py`：给定 topology 下的 gm/Id、BO、Spectre、解析和结果保存。
 - `system_decomposition.py`：系统分解的公共数据模型、规则注册/调度和 `system_design.json` 生成入口。
-- `system_architectures/`：各系统架构的 block graph、child 指标/接口和预算定义。
+- `system_architecture_decomposition/`：各类系统架构的 block graph、child 指标/接口和预算分解实现。
 - `pdk_integration/`：PDK profile、配置校验、CDF callback、PCell 探测和工艺表征。
 - `passive_devices/`：R/C 目标映射、合法器件几何搜索和网表实现。
 - `hierarchical_flow.py`：child-parent 依赖、资格调用、frozen artifact 与嵌入。

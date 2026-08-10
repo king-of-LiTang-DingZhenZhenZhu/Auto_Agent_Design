@@ -358,7 +358,7 @@ def _load_builtin_rules() -> None:
     global _BUILTIN_RULES_LOADED
     if _BUILTIN_RULES_LOADED:
         return
-    from system_architectures import bandgap, ldo, sar_adc  # noqa: F401
+    from system_architecture_decomposition import bandgap, ldo, sar_adc  # noqa: F401
 
     _BUILTIN_RULES_LOADED = True
 
@@ -462,9 +462,9 @@ def _target_from_data(
 
 
 # Thin wrappers preserve the original public API without creating a circular
-# import when callers import a concrete system_architectures module directly.
+# import when callers import a concrete decomposition module directly.
 def decompose_bandgap(request: SystemDesignRequest) -> SystemDesignSpec:
-    from system_architectures.bandgap import decompose_bandgap as rule
+    from system_architecture_decomposition.bandgap import decompose_bandgap as rule
 
     return rule(request)
 
@@ -472,13 +472,13 @@ def decompose_bandgap(request: SystemDesignRequest) -> SystemDesignSpec:
 def derive_bandgap_opamp_targets(
     targets: DesignTarget | None = None,
 ) -> DesignTarget:
-    from system_architectures.bandgap import derive_bandgap_opamp_targets as derive
+    from system_architecture_decomposition.bandgap import derive_bandgap_opamp_targets as derive
 
     return derive(targets)
 
 
 def decompose_ldo(request: SystemDesignRequest) -> SystemDesignSpec:
-    from system_architectures.ldo import decompose_ldo as rule
+    from system_architecture_decomposition.ldo import decompose_ldo as rule
 
     return rule(request)
 
@@ -486,13 +486,13 @@ def decompose_ldo(request: SystemDesignRequest) -> SystemDesignSpec:
 def derive_ldo_error_amp_targets(
     targets: DesignTarget | None = None,
 ) -> DesignTarget:
-    from system_architectures.ldo import derive_ldo_error_amp_targets as derive
+    from system_architecture_decomposition.ldo import derive_ldo_error_amp_targets as derive
 
     return derive(targets)
 
 
 def decompose_sar_adc(request: SystemDesignRequest) -> SystemDesignSpec:
-    from system_architectures.sar_adc import decompose_sar_adc as rule
+    from system_architecture_decomposition.sar_adc import decompose_sar_adc as rule
 
     return rule(request)
 

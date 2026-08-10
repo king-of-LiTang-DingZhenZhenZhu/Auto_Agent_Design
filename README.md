@@ -25,7 +25,7 @@ Auto_Agent_Design/
 │       ├── models.py                  # 指标、参数和仿真数据模型
 │       ├── optimizer.py               # BO 与 reward
 │       ├── simulator.py               # Spectre 调用
-│       ├── system_architectures/      # 系统 block graph、接口和指标预算
+│       ├── system_architecture_decomposition/ # 系统 block graph、接口和指标预算分解
 │       ├── pdk_integration/           # PDK profile、校验、callback 和器件表征
 │       ├── passive_devices/           # R/C 器件映射和网表实现
 │       ├── topologies/                # 按 amplifiers/references/regulators/comparators 分类

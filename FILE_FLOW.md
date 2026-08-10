@@ -8,7 +8,7 @@ PVT、层级工件和 Virtuoso 导出。操作约束分别见 `AGENTS.md` 和
 
 ```text
 设计决策层
-  system_decomposition.py + system_architectures/
+  system_decomposition.py + system_architecture_decomposition/
   前者提供公共模型、注册和调度入口，后者定义各系统的 block graph、预算、
   child targets 和 child topology
 
@@ -487,7 +487,7 @@ results.json gap
 - Agent 负责需求理解、架构/拓扑决策、代码和 Review 判断。
 - topology Python 代码负责网表结构硬约束。
 - BO 只在固定 topology 和参数空间内优化。
-- `system_architectures/` 当前包含 Bandgap、LDO 和 SAR ADC 架构定义。
+- `system_architecture_decomposition/` 当前包含 Bandgap、LDO 和 SAR ADC 分解实现。
 - SAR ADC 已支持架构与预算；parent/child topologies、码域 testbench 和指标 parser 尚未实现。
 - 默认不由 Codex 直接运行真实 Spectre、PVT 或 Virtuoso。
 
