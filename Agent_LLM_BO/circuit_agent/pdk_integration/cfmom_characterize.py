@@ -16,7 +16,7 @@ MODEL_PATH = Path(
 )
 DEFAULT_WORK_DIR = Path("/share/tmp/tsmc28_cfmom_2t_characterization")
 DEFAULT_OUTPUT = (
-    Path(__file__).resolve().parents[2]
+    Path(__file__).resolve().parents[3]
     / "PDK_Info_Json/characterization/tsmc28_cfmom_2t_lut.json"
 )
 PROCESS_CORNERS = ("tt", "ss", "ff", "fs", "sf")

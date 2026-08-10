@@ -30,7 +30,7 @@ from models import (
 )
 from optimizer import HybridOptimizer
 from parameter_effects import analyze_optimization_history
-from pdk_profiles import get_pdk_profile, validate_pdk_profile
+from pdk_integration.profiles import get_pdk_profile, validate_pdk_profile
 from simulator import Simulator
 from utils import ensure_directories, setup_logging
 

@@ -1,11 +1,11 @@
 # PDK Profiles
 
-项目通过 `Agent_LLM_BO/circuit_agent/pdk_profiles.py` 集中管理工艺相关配置。拓扑脚本不应直接写死 PDK model include 路径或 MOS model 名称，而应从当前 profile 读取。
+项目通过 `Agent_LLM_BO/circuit_agent/pdk_integration/profiles.py` 集中管理工艺相关配置。拓扑脚本不应直接写死 PDK model include 路径或 MOS model 名称，而应从当前 profile 读取。
 
 工艺信息文件统一存放在仓库根目录的 `PDK_Info_Json/`，并使用
 `<厂商>_<工艺节点名称>_Information.json` 命名。当前 TSMC28 配置位于
 `PDK_Info_Json/TSMC_28nm_Information.json`；`get_pdk_profile("tsmc28")` 会优先读取
-该文件，`pdk_profiles.py` 中的同名内置项仅作为文件缺失时的兼容回退。
+该文件，`pdk_integration/profiles.py` 中的同名内置项仅作为文件缺失时的兼容回退。
 
 ## 当前默认 profile
 
@@ -217,14 +217,14 @@ export VIRTUOSO_PDK_LIB_PATH=/my/pdk/tsmcN28
 
 1. 在仓库根目录 `PDK_Info_Json/` 下新增完整的 `<厂商>_<工艺节点名称>_Information.json`；不要把新工艺数据散落到 topology 中。
 2. 填写 Spectre/HSPICE model include、nominal section、PVT process section、VDD 范围、MOS/special model role、尺寸约束、gm/Id table path、Virtuoso tech lib、OA library path，以及必要 topology 的 `topology_presets`。
-3. 如果希望通过短名称选择该工艺，在 `pdk_profiles.py` 的 `PDK_INFORMATION_FILES` 中登记名称与 JSON 路径；否则可通过 `PDK_PROFILE_FILE` 或把 JSON 路径直接传给 `get_pdk_profile()` 加载。
+3. 如果希望通过短名称选择该工艺，在 `pdk_integration/profiles.py` 的 `PDK_INFORMATION_FILES` 中登记名称与 JSON 路径；否则可通过 `PDK_PROFILE_FILE` 或把 JSON 路径直接传给 `get_pdk_profile()` 加载。
 4. 确认 gm/Id 表包含 topology 需要的 model 名。常规拓扑需要 `nmos/pmos`；folded cascode 当前需要 `nmos_lvt/pmos_lvt`。
 5. 运行 profile 验证：
 
 ```bash
 cd Agent_LLM_BO/circuit_agent
 conda activate Auto_Agent_Design
-python pdk_profiles.py --validate --require-gmid --require-virtuoso
+python -m pdk_integration.profiles --validate --require-gmid --require-virtuoso
 ```
 
 6. 在真实 Cadence/Spectre 机器上加 `--check-files`，确认模型文件和 Virtuoso OA library 路径可见。
@@ -317,7 +317,7 @@ W/长宽比、最大 aspect ratio、单位面积上限，以及 `m/nseg/finger/a
 Python callback 的接入方式：
 
 ```python
-from passive_mapping import (
+from passive_devices.mapping import (
     CallablePassiveEvaluator,
     DeviceEvaluation,
     IllegalDeviceGeometry,
@@ -367,7 +367,7 @@ callback 未改参数可原样返回。单个尺寸被 PCell 拒绝时 callback 
 已知 PCell 的 library/cell 后，可以生成只读 CDF/端口探针，再在 Cadence 工作目录中运行：
 
 ```bash
-python pdk_passive_probe.py --device <passive_devices-key> --out passive_cdf_probe.il
+python -m pdk_integration.passive_probe --device <passive_devices-key> --out passive_cdf_probe.il
 virtuoso -nograph -replay passive_cdf_probe.il
 ```
 

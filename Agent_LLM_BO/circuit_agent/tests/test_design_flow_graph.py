@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from design_flow_graph import run_design_flow
 from models import DesignTarget
-from pdk_profiles import get_pdk_profile
+from pdk_integration.profiles import get_pdk_profile
 from topologies import get_topology
 
 
@@ -173,7 +173,7 @@ class DesignFlowGraphTests(unittest.TestCase):
                 },
             )
             with patch(
-                "pdk_profiles.get_pdk_profile", return_value=incomplete_profile
+                "pdk_integration.profiles.get_pdk_profile", return_value=incomplete_profile
             ), patch("design_flow_graph.run_pvt_verification") as run_pvt:
                 state = run_design_flow(project, run_pvt=True, simulate=False)
 

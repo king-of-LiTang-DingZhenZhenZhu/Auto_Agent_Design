@@ -6,14 +6,14 @@ from pathlib import Path
 from typing import Any
 
 from models import CircuitFiles, DesignTarget, ParamDef, ParamSpace, format_spice_value
-from pdk_profiles import get_pdk_profile, get_pdk_profile_for_params, spectre_include_line
+from pdk_integration.profiles import get_pdk_profile, get_pdk_profile_for_params, spectre_include_line
 from system_decomposition import (
     SystemDesignRequest,
     decompose_bandgap,
     derive_bandgap_opamp_targets,
 )
 from topologies.base import BaseTopology, ExecutableChildSpec, PassiveImplementation, TopologyMeta
-from topologies.two_stage_ota import TwoStageOTA
+from topologies.amplifiers.two_stage_ota import TwoStageOTA
 
 
 class BandgapPTAT(BaseTopology):

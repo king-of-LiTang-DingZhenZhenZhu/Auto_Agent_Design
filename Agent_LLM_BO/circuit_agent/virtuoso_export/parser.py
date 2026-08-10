@@ -6,7 +6,7 @@ import re
 import shlex
 from pathlib import Path
 
-from pdk_profiles import PDKProfile
+from pdk_integration.profiles import PDKProfile
 
 from .models import Instance, SchematicIR
 
@@ -164,7 +164,11 @@ def _parse_spectre_instance(
             nodes=nodes,
             params=_normalize_params(params, param_values),
         )
-    if len(nodes) == 4 and name.upper().startswith("M"):
+    # Spectre instance names are user-defined. StrongARM uses S1-S4 for
+    # precharge MOS devices, so model identity must also drive classification.
+    if len(nodes) == 4 and (
+        name.upper().startswith("M") or _is_pdk_mos_model(primitive, profile)
+    ):
         return Instance(
             name=name,
             kind="mos",
@@ -175,12 +179,28 @@ def _parse_spectre_instance(
     return None
 
 
+def _is_pdk_mos_model(model: str, profile: PDKProfile | None = None) -> bool:
+    from pdk_integration.profiles import get_pdk_profile
+
+    pdk = profile or get_pdk_profile()
+    return model.lower() in {
+        str(candidate).lower()
+        for candidate in (
+            pdk.nmos_model,
+            pdk.pmos_model,
+            pdk.nmos_lvt_model,
+            pdk.pmos_lvt_model,
+        )
+        if candidate
+    }
+
+
 def _pdk_passive_kind(
     model: str,
     profile: PDKProfile | None = None,
 ) -> str | None:
     """Resolve characterized and legacy special-model two-terminal devices."""
-    from pdk_profiles import get_pdk_profile
+    from pdk_integration.profiles import get_pdk_profile
 
     pdk = profile or get_pdk_profile()
     for device in pdk.passive_devices.values():

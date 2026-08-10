@@ -8,8 +8,9 @@ PVT、层级工件和 Virtuoso 导出。操作约束分别见 `AGENTS.md` 和
 
 ```text
 设计决策层
-  system_decomposition.py
-  决定系统架构、block graph、预算、child targets 和 child topology
+  system_decomposition.py + system_architectures/
+  前者提供公共模型、注册和调度入口，后者定义各系统的 block graph、预算、
+  child targets 和 child topology
 
 执行编排层
   hierarchical_flow.py / design_flow_graph.py
@@ -25,7 +26,7 @@ PVT、层级工件和 Virtuoso 导出。操作约束分别见 `AGENTS.md` 和
   程序化生成 DUT 和 testbench，不让 Agent 直接手写最终网表
 
 无源器件实现层
-  passive_mapping.py / passive_realization.py
+  passive_devices/mapping.py / passive_devices/realization.py
   前者通过 PDK 黑盒 evaluator 搜索合法 R/C PCell geometry，后者替换 DUT、
   保存 target/actual 映射记录并执行映射后 nominal 验证
 ```
@@ -486,8 +487,8 @@ results.json gap
 - Agent 负责需求理解、架构/拓扑决策、代码和 Review 判断。
 - topology Python 代码负责网表结构硬约束。
 - BO 只在固定 topology 和参数空间内优化。
-- `system_decomposition.py` 当前已有 Bandgap 和 LDO 规则。
-- ADC 的系统规则、预算器和 parent topology 尚未实现。
+- `system_architectures/` 当前包含 Bandgap、LDO 和 SAR ADC 架构定义。
+- SAR ADC 已支持架构与预算；parent/child topologies、码域 testbench 和指标 parser 尚未实现。
 - 默认不由 Codex 直接运行真实 Spectre、PVT 或 Virtuoso。
 
 ## 13. 相关文档

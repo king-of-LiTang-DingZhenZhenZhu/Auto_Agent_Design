@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from models import format_spice_value
-from passive_mapping import (
+from passive_devices.mapping import (
     CapacitorMapper,
     PassiveDeviceEvaluator,
     PassiveMappingError,
@@ -21,7 +21,7 @@ from passive_mapping import (
     map_passive,
     map_passive_candidates,
 )
-from pdk_profiles import PDKProfile, PassiveDeviceProfile
+from pdk_integration.profiles import PDKProfile, PassiveDeviceProfile
 from topologies.base import PassiveImplementation
 from virtuoso_export.parser import parse_netlist
 
@@ -226,7 +226,7 @@ def realize_project_passives(
 ) -> dict[str, Any]:
     """Realize a BO/review netlist and optionally run its nominal testbenches."""
     from config import settings
-    from pdk_profiles import get_pdk_profile
+    from pdk_integration.profiles import get_pdk_profile
     from pvt_simulation import _load_targets
     from simulator import Simulator
     from topologies import get_topology

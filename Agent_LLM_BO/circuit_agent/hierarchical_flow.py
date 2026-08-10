@@ -15,7 +15,7 @@ from typing import Any, Callable
 from config import settings
 from design_flow_graph import run_design_flow
 from models import CircuitFiles, DesignTarget, parse_metric_goals
-from pdk_profiles import PDKProfile, get_pdk_profile
+from pdk_integration.profiles import PDKProfile, get_pdk_profile
 from topologies import get_topology
 from topologies.base import ExecutableChildSpec
 from virtuoso_export.exporter import select_export_netlist

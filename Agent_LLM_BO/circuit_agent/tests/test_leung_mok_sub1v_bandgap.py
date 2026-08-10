@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from models import DesignTarget
-from pdk_profiles import get_pdk_profile, validate_pdk_profile
+from pdk_integration.profiles import get_pdk_profile, validate_pdk_profile
 from topologies import get_topology, get_topology_for_targets
 
 

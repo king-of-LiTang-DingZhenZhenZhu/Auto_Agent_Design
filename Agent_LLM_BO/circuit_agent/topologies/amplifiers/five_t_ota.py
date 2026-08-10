@@ -14,7 +14,7 @@ import math
 
 from topologies.base import BaseTopology, TopologyMeta
 from models import CircuitFiles, ParamDef, ParamSpace, format_spice_value
-from pdk_profiles import get_pdk_profile, get_pdk_profile_for_params, spectre_include_line
+from pdk_integration.profiles import get_pdk_profile, get_pdk_profile_for_params, spectre_include_line
 
 
 class FiveTOTA(BaseTopology):

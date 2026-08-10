@@ -33,7 +33,7 @@ from __future__ import annotations
 
 from topologies.base import BaseTopology, PassiveImplementation, TopologyMeta
 from models import CircuitFiles, ParamDef, ParamSpace, format_spice_value
-from pdk_profiles import get_pdk_profile, get_pdk_profile_for_params, spectre_include_line
+from pdk_integration.profiles import get_pdk_profile, get_pdk_profile_for_params, spectre_include_line
 
 
 class NMCFThreeStageOTA(BaseTopology):

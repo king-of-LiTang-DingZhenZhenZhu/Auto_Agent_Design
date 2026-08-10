@@ -21,12 +21,12 @@ from pathlib import Path
 from typing import Mapping, Sequence
 
 from models import format_spice_value
-from passive_mapping import (
+from passive_devices.mapping import (
     PassiveMappingConstraints,
     PassiveMappingError,
     PassiveMappingResult,
 )
-from pdk_profiles import PDKProfile, PassiveDeviceProfile, get_pdk_profile
+from pdk_integration.profiles import PDKProfile, PassiveDeviceProfile, get_pdk_profile
 
 
 @dataclass(frozen=True)

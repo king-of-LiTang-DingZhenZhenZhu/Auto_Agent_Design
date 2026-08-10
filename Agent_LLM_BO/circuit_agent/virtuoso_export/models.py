@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
-from pdk_profiles import PDKProfile, get_pdk_profile
+from pdk_integration.profiles import PDKProfile, get_pdk_profile
 
 
 DeviceKind = Literal["mos", "res", "cap"]
@@ -20,6 +20,8 @@ class DeviceMapEntry:
     view: str = "symbol"
     term_order: list[str] = field(default_factory=list)
     param_map: dict[str, str] = field(default_factory=dict)
+    instantiation_method: str = "dbCreateInstByMasterName"
+    param_types: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -56,6 +58,8 @@ def default_device_map(profile: PDKProfile | None = None) -> DeviceMap:
             view="symbol",
             term_order=["D", "G", "S", "B"],
             param_map={"W": "w", "L": "l", "nf": "nf", "m": "m"},
+            instantiation_method="dbCreateParamInst",
+            param_types={"w": "float", "l": "float", "nf": "int", "m": "int"},
         ),
         pdk.nmos_lvt_model: DeviceMapEntry(
             lib=pdk.virtuoso_tech_lib,
@@ -63,6 +67,8 @@ def default_device_map(profile: PDKProfile | None = None) -> DeviceMap:
             view="symbol",
             term_order=["D", "G", "S", "B"],
             param_map={"W": "w", "L": "l", "nf": "nf", "m": "m"},
+            instantiation_method="dbCreateParamInst",
+            param_types={"w": "float", "l": "float", "nf": "int", "m": "int"},
         ),
         pdk.pmos_model: DeviceMapEntry(
             lib=pdk.virtuoso_tech_lib,
@@ -70,6 +76,8 @@ def default_device_map(profile: PDKProfile | None = None) -> DeviceMap:
             view="symbol",
             term_order=["D", "G", "S", "B"],
             param_map={"W": "w", "L": "l", "nf": "nf", "m": "m"},
+            instantiation_method="dbCreateParamInst",
+            param_types={"w": "float", "l": "float", "nf": "int", "m": "int"},
         ),
         pdk.nmos_model: DeviceMapEntry(
             lib=pdk.virtuoso_tech_lib,
@@ -77,6 +85,8 @@ def default_device_map(profile: PDKProfile | None = None) -> DeviceMap:
             view="symbol",
             term_order=["D", "G", "S", "B"],
             param_map={"W": "w", "L": "l", "nf": "nf", "m": "m"},
+            instantiation_method="dbCreateParamInst",
+            param_types={"w": "float", "l": "float", "nf": "int", "m": "int"},
         ),
         "res": DeviceMapEntry(
             lib="analogLib",
@@ -117,8 +127,31 @@ def default_device_map(profile: PDKProfile | None = None) -> DeviceMap:
             view=device.virtuoso_view,
             term_order=list(device.term_order),
             param_map=param_map,
+            instantiation_method="dbCreateParamInst",
+            param_types=_passive_param_types(device, param_map),
         )
     return device_map
+
+
+def _passive_param_types(device: object, param_map: dict[str, str]) -> dict[str, str]:
+    integer_sources = {
+        str(getattr(device, name, ""))
+        for name in (
+            "multiplier_parameter",
+            "segment_parameter",
+            "finger_parameter",
+            "array_rows_parameter",
+            "array_columns_parameter",
+        )
+        if str(getattr(device, name, ""))
+    }
+    param_types = {
+        target: "int" if source in integer_sources else "string"
+        for source, target in param_map.items()
+    }
+    for source in integer_sources:
+        param_types.setdefault(param_map.get(source, source), "int")
+    return param_types
 
 
 DEFAULT_DEVICE_MAP: DeviceMap = default_device_map()

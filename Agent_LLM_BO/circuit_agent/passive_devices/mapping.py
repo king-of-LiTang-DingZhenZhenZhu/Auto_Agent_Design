@@ -16,7 +16,7 @@ from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Callable, Mapping, Protocol, Sequence
 
-from pdk_profiles import PassiveDeviceProfile, PDKProfile, get_pdk_profile
+from pdk_integration.profiles import PassiveDeviceProfile, PDKProfile, get_pdk_profile
 
 
 class PassiveMappingError(ValueError):
@@ -760,7 +760,7 @@ def build_passive_target_mapper(
     if device.mapping_mode != "callback":
         return None
     if device.evaluator_key == "virtuoso_cdf_cfmom_2t":
-        from pdk_cdf_evaluator import CdfCfmomTargetMapper
+        from pdk_integration.cdf_evaluator import CdfCfmomTargetMapper
 
         return CdfCfmomTargetMapper(profile=profile, device_name=device_name)
     return None

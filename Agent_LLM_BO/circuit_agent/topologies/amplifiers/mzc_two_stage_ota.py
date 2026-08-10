@@ -14,10 +14,10 @@ Fig. 1(c) and (8).
 from __future__ import annotations
 
 from models import ParamDef, ParamSpace, format_spice_value
-from pdk_profiles import get_pdk_profile_for_params
+from pdk_integration.profiles import get_pdk_profile_for_params
 from topologies.base import TopologyMeta
-from topologies.pmos_input_two_stage_ota import PMOSInputTwoStageOTA
-from topologies.two_stage_ota import TwoStageOTA
+from topologies.amplifiers.pmos_input_two_stage_ota import PMOSInputTwoStageOTA
+from topologies.amplifiers.two_stage_ota import TwoStageOTA
 
 
 def _mzc_defaults(base: dict[str, float]) -> dict[str, float]:

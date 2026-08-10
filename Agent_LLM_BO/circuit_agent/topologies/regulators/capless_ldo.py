@@ -13,7 +13,7 @@ from models import (
     format_spice_value,
     split_width,
 )
-from pdk_profiles import get_pdk_profile_for_params, spectre_include_line
+from pdk_integration.profiles import get_pdk_profile_for_params, spectre_include_line
 from system_decomposition import SystemDesignRequest, decompose_ldo
 from topologies.base import (
     BaseTopology,
@@ -21,7 +21,7 @@ from topologies.base import (
     PassiveImplementation,
     TopologyMeta,
 )
-from topologies.two_stage_ota import TwoStageOTA
+from topologies.amplifiers.two_stage_ota import TwoStageOTA
 
 
 class CaplessLDO(BaseTopology):

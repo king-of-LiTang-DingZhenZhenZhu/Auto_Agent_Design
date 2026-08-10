@@ -372,7 +372,7 @@ class BaseTopology(ABC):
     def required_model_roles(self) -> tuple[str, ...]:
         """Return PDK model roles required by this topology.
 
-        The names correspond to :attr:`pdk_profiles.PDKProfile.model_names`.
+        The names correspond to :attr:`pdk_integration.profiles.PDKProfile.model_names`.
         Subclasses using special devices should override this, e.g. folded
         cascode currently requires LVT devices.
         """
@@ -416,7 +416,7 @@ class BaseTopology(ABC):
 
     def _default_params_with_preset(self) -> dict[str, float]:
         """Return DEFAULT_PARAMS after applying the active PDK preset."""
-        from pdk_profiles import apply_topology_preset
+        from pdk_integration.profiles import apply_topology_preset
 
         return apply_topology_preset(
             self.meta.name,
@@ -438,13 +438,13 @@ class BaseTopology(ABC):
         base_defaults: dict[str, float],
     ) -> dict[str, float]:
         """Return testbench defaults after applying the active PDK preset."""
-        from pdk_profiles import get_testbench_defaults
+        from pdk_integration.profiles import get_testbench_defaults
 
         return get_testbench_defaults(self.meta.name, base_defaults)
 
     def _apply_param_space_overrides(self, param_space: ParamSpace) -> ParamSpace:
         """Apply active PDK search-space overrides to a ParamSpace."""
-        from pdk_profiles import get_param_override
+        from pdk_integration.profiles import get_param_override
 
         allowed_fields = {
             "low",

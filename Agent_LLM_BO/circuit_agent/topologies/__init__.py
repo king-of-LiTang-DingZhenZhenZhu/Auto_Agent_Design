@@ -8,22 +8,22 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from topologies.bandgap_ptat import BandgapPTAT
-from topologies.banba_sub1v_bandgap import BanbaSub1VBandgap
+from topologies.references.bandgap_ptat import BandgapPTAT
+from topologies.references.banba_sub1v_bandgap import BanbaSub1VBandgap
 from topologies.base import BaseTopology, TopologyMeta
-from topologies.capless_ldo import CaplessLDO
-from topologies.dfc_capless_ldo import DFCCaplessLDO
-from topologies.five_t_ota import FiveTOTA
-from topologies.folded_cascode import FoldedCascodeOTA
-from topologies.folded_cascode_two_stage import FoldedCascodeTwoStageOTA
-from topologies.leung_mok_sub1v_bandgap import LeungMokSub1VBandgap
-from topologies.mzc_two_stage_ota import MZCTwoStageOTA, PMOSInputMZCTwoStageOTA
-from topologies.mnmc_three_stage import MNMCThreeStageOTA
-from topologies.nmcnr_three_stage import NMCNRThreeStageOTA
-from topologies.nmcf_three_stage import NMCFThreeStageOTA
-from topologies.pmos_input_two_stage_ota import PMOSInputTwoStageOTA
-from topologies.strongarm_latch import StrongARMLatch
-from topologies.two_stage_ota import TwoStageOTA
+from topologies.regulators.capless_ldo import CaplessLDO
+from topologies.regulators.dfc_capless_ldo import DFCCaplessLDO
+from topologies.amplifiers.five_t_ota import FiveTOTA
+from topologies.amplifiers.folded_cascode import FoldedCascodeOTA
+from topologies.amplifiers.folded_cascode_two_stage import FoldedCascodeTwoStageOTA
+from topologies.references.leung_mok_sub1v_bandgap import LeungMokSub1VBandgap
+from topologies.amplifiers.mzc_two_stage_ota import MZCTwoStageOTA, PMOSInputMZCTwoStageOTA
+from topologies.amplifiers.mnmc_three_stage import MNMCThreeStageOTA
+from topologies.amplifiers.nmcnr_three_stage import NMCNRThreeStageOTA
+from topologies.amplifiers.nmcf_three_stage import NMCFThreeStageOTA
+from topologies.amplifiers.pmos_input_two_stage_ota import PMOSInputTwoStageOTA
+from topologies.comparators.strongarm_latch import StrongARMLatch
+from topologies.amplifiers.two_stage_ota import TwoStageOTA
 
 if TYPE_CHECKING:
     from models import DesignTarget

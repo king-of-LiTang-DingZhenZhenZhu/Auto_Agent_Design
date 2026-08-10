@@ -71,7 +71,8 @@ Auto_Agent_Design/
 │   ├── operating_point.py         # MOS 工作区和裕量检查
 │   ├── diagnostics_export.py      # DC/AC 诊断文件导出
 │   ├── gmid_lookup.py             # gm/Id lookup 与 W/L 映射
-│   ├── pdk_profiles.py            # PDK、电压域、模型、PVT、Virtuoso 配置
+│   ├── pdk_integration/           # PDK profile、校验、callback 和器件表征
+│   ├── passive_devices/           # R/C 器件映射与网表实现
 │   ├── system_decomposition.py    # 系统架构、block graph 和 child 指标预算
 │   ├── hierarchical_flow.py       # child 优化、资格检查、冻结和 parent 嵌入
 │   ├── design_flow_graph.py       # Audit/Review/PVT/Export 状态编排
@@ -253,7 +254,7 @@ hostname
 pwd
 cd Agent_LLM_BO/circuit_agent
 conda activate Auto_Agent_Design
-python pdk_profiles.py --validate --require-gmid --require-virtuoso --check-files
+python -m pdk_integration.profiles --validate --require-gmid --require-virtuoso --check-files
 ```
 
 ### 4.4 前端测试基线

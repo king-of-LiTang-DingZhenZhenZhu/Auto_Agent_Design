@@ -10,7 +10,7 @@ from unittest.mock import patch
 from config import Settings
 from main import _prepare_workspace_for_new_optimization
 from models import DesignTarget
-from pdk_profiles import (
+from pdk_integration.profiles import (
     apply_topology_preset,
     get_pdk_profile,
     get_pdk_profile_for_params,

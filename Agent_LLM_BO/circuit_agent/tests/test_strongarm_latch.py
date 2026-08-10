@@ -16,7 +16,7 @@ from psf_results import (
     parse_psf_results,
 )
 from topologies import get_topology, get_topology_for_targets
-from topologies.strongarm_latch import default_strongarm_targets
+from topologies.comparators.strongarm_latch import default_strongarm_targets
 
 
 class StrongARMLatchTest(unittest.TestCase):

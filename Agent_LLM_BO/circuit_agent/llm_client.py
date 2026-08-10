@@ -23,7 +23,7 @@ from openai import OpenAI
 
 from config import Settings
 from models import DesignTarget, ParamSpace, SimResult, parse_metric_goals
-from pdk_profiles import get_pdk_profile
+from pdk_integration.profiles import get_pdk_profile
 
 logger = logging.getLogger(__name__)
 

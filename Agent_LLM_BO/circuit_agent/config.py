@@ -6,7 +6,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
-from pdk_profiles import get_pdk_profile, validate_pdk_profile
+from pdk_integration.profiles import get_pdk_profile, validate_pdk_profile
 
 # Load .env from the circuit_agent directory
 _ENV_PATH = Path(__file__).parent / ".env"

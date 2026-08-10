@@ -9,11 +9,11 @@ from unittest.mock import patch
 
 from models import DesignTarget, NetlistTemplate, format_spice_value, split_width
 from config import Settings
-from pdk_profiles import get_pdk_profile
+from pdk_integration.profiles import get_pdk_profile
 from simulator import Simulator
 from topologies import get_topology, get_topology_for_targets, list_topologies
-from topologies.capless_ldo import default_ldo_targets
-from topologies.dfc_capless_ldo import default_dfc_ldo_targets
+from topologies.regulators.capless_ldo import default_ldo_targets
+from topologies.regulators.dfc_capless_ldo import default_dfc_ldo_targets
 
 
 class SpectreTopologyTest(unittest.TestCase):
@@ -80,10 +80,10 @@ class SpectreTopologyTest(unittest.TestCase):
             active_voltage_domain="",
         )
         with patch(
-            "topologies.capless_ldo.get_pdk_profile_for_params",
+            "topologies.regulators.capless_ldo.get_pdk_profile_for_params",
             return_value=io_pdk,
         ), patch(
-            "topologies.two_stage_ota.get_pdk_profile_for_params",
+            "topologies.amplifiers.two_stage_ota.get_pdk_profile_for_params",
             return_value=io_pdk,
         ), tempfile.TemporaryDirectory() as tmp:
             topology = get_topology("capless_ldo")

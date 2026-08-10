@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from pdk_profiles import get_pdk_profile
+from pdk_integration.profiles import get_pdk_profile
 from topologies import get_topology
 
 

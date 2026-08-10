@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from pdk_cdf_evaluator import (
+from pdk_integration.cdf_evaluator import (
     CdfCfmomTargetMapper,
     CdfEvaluation,
     _cfmom_target_candidates,
@@ -13,8 +13,8 @@ from pdk_cdf_evaluator import (
     parse_cdf_evaluation_report,
     render_cdf_evaluation_probe,
 )
-from passive_mapping import PassiveMappingConstraints
-from pdk_profiles import get_pdk_profile
+from passive_devices.mapping import PassiveMappingConstraints
+from pdk_integration.profiles import get_pdk_profile
 
 
 class PdkCdfEvaluatorTests(unittest.TestCase):

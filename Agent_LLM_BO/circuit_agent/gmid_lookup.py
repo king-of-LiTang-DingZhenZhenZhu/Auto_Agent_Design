@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 
 def _default_max_per_finger() -> float:
     try:
-        from pdk_profiles import get_pdk_profile
+        from pdk_integration.profiles import get_pdk_profile
         return get_pdk_profile().max_width_per_finger
     except Exception:
         return 2.6e-6
@@ -631,7 +631,7 @@ class GmidSizer:
                     result[m_name] = self._spec.fixed_params[m_name]
                 if nf_name not in result or m_name not in result:
                     try:
-                        from pdk_profiles import get_pdk_profile
+                        from pdk_integration.profiles import get_pdk_profile
                         max_per_finger = get_pdk_profile().max_width_per_finger
                     except Exception:
                         max_per_finger = 2.6e-6

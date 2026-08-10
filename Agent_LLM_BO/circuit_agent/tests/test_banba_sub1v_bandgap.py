@@ -7,7 +7,7 @@ from pathlib import Path
 
 from knowledge_review import build_knowledge_analysis
 from models import DesignTarget, NetlistTemplate
-from pdk_profiles import get_pdk_profile
+from pdk_integration.profiles import get_pdk_profile
 from topologies import get_topology, get_topology_for_targets
 
 

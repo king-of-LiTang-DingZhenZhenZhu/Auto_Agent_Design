@@ -10,8 +10,8 @@ from __future__ import annotations
 from typing import Any
 
 from models import DesignTarget, ParamDef, ParamSpace, format_spice_value
-from pdk_profiles import get_pdk_profile_for_params, spectre_include_line
-from topologies.bandgap_ptat import (
+from pdk_integration.profiles import get_pdk_profile_for_params, spectre_include_line
+from topologies.references.bandgap_ptat import (
     BandgapPTAT,
     _TB_LINE_TEMPLATE,
     _TB_PSRR_TEMPLATE,

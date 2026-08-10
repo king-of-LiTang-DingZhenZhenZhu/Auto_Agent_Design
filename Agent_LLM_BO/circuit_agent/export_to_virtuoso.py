@@ -10,7 +10,7 @@ from virtuoso_export.exporter import (
     export_from_results,
     export_netlist,
 )
-from pdk_profiles import get_pdk_profile
+from pdk_integration.profiles import get_pdk_profile
 
 
 def main() -> None:

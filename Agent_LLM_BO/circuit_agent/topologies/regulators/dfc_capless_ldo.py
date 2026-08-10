@@ -13,7 +13,7 @@ from models import (
     format_spice_value,
     split_width,
 )
-from pdk_profiles import get_pdk_profile_for_params, spectre_include_line
+from pdk_integration.profiles import get_pdk_profile_for_params, spectre_include_line
 from topologies.base import BaseTopology, PassiveImplementation, TopologyMeta
 
 

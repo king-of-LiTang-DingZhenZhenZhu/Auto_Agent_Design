@@ -6,7 +6,7 @@ import argparse
 from dataclasses import dataclass
 from pathlib import Path
 
-from pdk_profiles import get_pdk_profile
+from pdk_integration.profiles import get_pdk_profile
 
 
 @dataclass(frozen=True)

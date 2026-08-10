@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from pdk_cfmom_characterize import (
+from pdk_integration.cfmom_characterize import (
     MAX_NR,
     MIN_NR,
     parse_capacitances,

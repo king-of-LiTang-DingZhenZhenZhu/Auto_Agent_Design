@@ -14,10 +14,10 @@ Fig. 1(f) and (23)-(27).
 from __future__ import annotations
 
 from models import ParamDef, ParamSpace, format_spice_value
-from pdk_profiles import get_pdk_profile, get_pdk_profile_for_params
-from pdk_profiles import spectre_include_line
+from pdk_integration.profiles import get_pdk_profile, get_pdk_profile_for_params
+from pdk_integration.profiles import spectre_include_line
 from topologies.base import TopologyMeta
-from topologies.nmcf_three_stage import NMCFThreeStageOTA
+from topologies.amplifiers.nmcf_three_stage import NMCFThreeStageOTA
 
 
 def _mnmc_defaults() -> dict[str, float]:

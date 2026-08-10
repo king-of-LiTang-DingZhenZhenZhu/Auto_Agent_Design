@@ -5,7 +5,10 @@
 - Claude：解析顶层需求、选择系统架构、派生 child targets、选择/修改 topology、运行测试/dry-run、分析 BO/Review/PVT 结果。
 - `topologies/`：生成 Spectre DUT/testbench；不要手改 rendered netlist。
 - `main.py`：单 topology 的 gm/Id、BO、Spectre 和结果保存。
-- `system_decomposition.py`：系统架构、block graph、child 指标/预算与 `system_design.json`。
+- `system_decomposition.py`：系统分解的公共数据模型、规则注册/调度和 `system_design.json` 生成入口。
+- `system_architectures/`：各系统架构的 block graph、child 指标/接口和预算定义。
+- `pdk_integration/`：PDK profile、配置校验、CDF callback、PCell 探测和工艺表征。
+- `passive_devices/`：R/C 目标映射、合法器件几何搜索和网表实现。
 - `hierarchical_flow.py`：child-parent 依赖、资格调用、frozen artifact 与嵌入。
 - `design_flow_graph.py`：单个 BO/Review 结果的 Design Audit、Review gate、PVT 和导出。
 - `review_optimization.py`：Review context、patch plan 和 candidate 验证。
@@ -24,7 +27,7 @@ conda activate Auto_Agent_Design
 4. 用 `write_project()` 生成项目；层级项目同时生成 `hierarchy.json`。
 5. 叶子模块运行 `main.py`；层级项目运行 `hierarchical_flow.py`。
 6. 读取 `results.json`：达标则执行 Design Audit，未达标则进入 `failure_repair`；Audit blocker 进入 `audit_repair`。
-7. nominal、Design Audit 和 PVT 合格后导出 Virtuoso。（待定，尚未完善）
+7. nominal、Design Audit 和 PVT 合格后导出 Virtuoso。（能够导出正确原理图但是可读性差）
 
 `main.py` 不自动运行 Review/PVT。`design_flow_graph.py` 不自动填写 `patch_plan.json`。
 
@@ -34,14 +37,14 @@ conda activate Auto_Agent_Design
 - BO 采用 feasibility-first：先满足全部硬约束，再在可行解中优化软目标；功耗默认是上限约束并同时最小化。
 - 旧版 `DesignTarget` 字段会自动映射为 `MetricGoal`；显式 `metric_goals` 优先。格式见 `Agent_LLM_BO/circuit_agent/METRIC_GOALS.md`。
 
-## 架构与 Topology
+## 系统架构与电路 Topology
 
-- 固定顺序：`顶层指标 → 系统架构 → block graph → child targets → child topology → sizing/BO`。
-- child targets 必须包含来源、裕量、PVT、负载/摆幅/共模和电源域。
-- parent BO 不展开 child W/L；child/parent 必须匹配 PDK、voltage domain、subckt 和端口。
-- 当前已接入 `bandgap_ptat`；ADC 架构、预算器和 topologies 尚未实现。
-- 系统规则：`knowledge_base/System_knowledge_base/system_architecture_selection_guide.md`。
-- 运放 topology：`knowledge_base/Opamp_knowledge_base/topology_selection_guide.md`。
+- **系统架构**只针对包含多个模块的系统级需求，定义功能分块、block graph、模块接口及指标预算；叶子模块不做系统分解。
+- **电路 topology**是实现某个 child/叶子模块的晶体管级结构（如 5T OTA、`bandgap_ptat`），在 child targets 明确后选择，选择 topology 后才进行器件 sizing/BO。不要把 topology 选择当作系统架构选择。
+- 系统级设计的固定顺序为：`顶层指标 → 系统架构 → block graph → child targets/接口/预算 → child topology → sizing/BO`；叶子模块从 `指标 → topology → sizing/BO` 开始。
+- child targets 必须包含来源、裕量、PVT target、负载/摆幅/共模和电源域；不得直接复制顶层指标。
+- parent BO 不展开 child W/L；child 与 parent 必须匹配 PDK profile、voltage domain、subckt 和端口。
+- `bandgap_ptat` 已接入完整设计流程；SAR ADC 已支持系统架构分解和模块预算，但 parent/child topologies、码域 testbench 与指标 parser 尚未实现。
 
 查看 topology：
 
@@ -51,9 +54,8 @@ python -c "from topologies import list_topologies; [print(m.name) for m in list_
 
 ## PDK
 
-- PDK 配置统一由 `pdk_profiles.py` 管理；topology 不得硬编码路径、model、VDD 或工艺初值。
+- PDK 配置统一由 `pdk_integration/profiles.py` 管理；topology 不得硬编码路径、model、VDD 或工艺初值。
 - 如果需要切换工艺库，必须先在仓库根目录的 `PDK_Info_Json/` 中完善对应的工艺信息文件，文件名统一为 `<厂商>_<工艺节点名称>_Information.json`；该文件未完善并通过校验前，不得开始新工艺下的设计、仿真或物理实现。
-- 工艺专用初值/范围写入 `topology_presets`。
 - 分析结果前检查 `outputs/<project>/pdk_profile_used.json`。
 
 ### 切换 PDK 前置准备
@@ -84,7 +86,7 @@ python -c "from topologies import list_topologies; [print(m.name) for m in list_
    关键设计做 post-layout 仿真。
 
 ```bash
-python pdk_profiles.py --validate --require-gmid --require-virtuoso
+python -m pdk_integration.profiles --validate --require-gmid --require-virtuoso
 # 真实 Cadence 机器可追加 --check-files
 ```
 
@@ -200,13 +202,7 @@ python -m unittest discover -s tests
 
 ## 文档入口
 
-- 总规约：`AGENTS.md`
 - 完整项目流程：`FILE_FLOW.md`
-- 系统架构：`knowledge_base/System_knowledge_base/system_architecture_selection_guide.md`
-- Bandgap：`knowledge_base/Bandgap_knowledge_base/topologies/bandgap_ptat_optimization.md`
-- PDK：`knowledge_base/PDKs_info/pdk_profiles.md`
-- 层级优化：`Agent_LLM_BO/circuit_agent/HIERARCHICAL_OPTIMIZATION.md`
-- 系统分解：`Agent_LLM_BO/circuit_agent/SYSTEM_DECOMPOSITION.md`
-- 指标策略：`Agent_LLM_BO/circuit_agent/METRIC_GOALS.md`
-- Review：`Agent_LLM_BO/circuit_agent/AGENT_REVIEW.md`
-- gm/Id：`Agent_LLM_BO/circuit_agent/SIZING_MODES.md`
+- 架构与 topology 选择：`knowledge_base/System_knowledge_base/system_architecture_selection_guide.md`、`knowledge_base/Opamp_knowledge_base/topology_selection_guide.md`
+- PDK 配置：`knowledge_base/PDKs_info/pdk_profiles.md`
+- 指标与 Review：`Agent_LLM_BO/circuit_agent/METRIC_GOALS.md`、`Agent_LLM_BO/circuit_agent/AGENT_REVIEW.md`

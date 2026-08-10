@@ -53,6 +53,12 @@ nominal/PVT target、假设和未决需求。只有 `hierarchical_child` 会进�
 - SAR ADC 不必然需要运放。
 - 只有前端缓冲或参考驱动存在闭环精度、驱动能力或建立速度需求时，才派生运放 child target。
 - 比较器、CDAC、参考驱动和采样开关需要分别分配噪声、失调、建立误差和功耗预算。
+- `system_decomposition.py` 已接入论文启发的单端 6+6 分段电荷重分配 SAR
+  架构及预算，可生成 `system_design.json`。晶体管级 parent topology、分段
+  CDAC、带失调校准的多级比较器以及 ADC 码域指标解析仍未实现，因此当前
+  只可执行架构分解，不可声称完成 nominal/PVT 签核。
+- 该基线的具体指标、功耗预算和版图验证重点见
+  `ADC/sar_adc_segmented_cdac.md`。
 
 ### Pipeline ADC
 
@@ -83,7 +89,8 @@ ADC 总周期不能直接作为运放建立时间，必须扣除采样、非重�
 error amplifier 的增益、输入共模、失调、输出摆幅、GBW、负载和功耗应由 bandgap 环路和误差预算派生，而不是直接套用通用运放指标。
 
 当前代码中的 `bandgap_ptat` 已接入系统分解层和 frozen child opamp 流程；`banba_sub1v_bandgap` 实现 Banba 电流求和结构；`leung_mok_sub1v_bandgap` 则直接实现 Leung/Mok 2002 Fig. 3 的完整低压放大器、体偏置和启动电路，不再分解 generic opamp child。
-LDO、ADC 架构规则、专用指标预算器和对应 parent topologies 尚未实现。
+LDO 与 SAR ADC 已有系统架构规则；SAR ADC 对应 parent topology 和专用
+static/dynamic metric parser 尚未实现。
 
 ## 扩展约定
 

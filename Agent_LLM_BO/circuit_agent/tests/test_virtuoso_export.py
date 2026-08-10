@@ -13,7 +13,7 @@ from virtuoso_export.exporter import (
     prepare_virtuoso_workspace,
     select_export_netlist,
 )
-from virtuoso_export.models import DEFAULT_DEVICE_MAP
+from virtuoso_export.models import DEFAULT_DEVICE_MAP, default_device_map
 from virtuoso_export.parser import parse_netlist
 from virtuoso_export.skill_writer import write_skill
 
@@ -61,6 +61,22 @@ class VirtuosoExportTest(unittest.TestCase):
         self.assertEqual(cc.nodes, ["n_rz", "vout"])
         self.assertEqual(cc.params["C"], "255.856f")
 
+    def test_parse_and_export_mos_instances_with_non_m_prefix(self):
+        ir = parse_netlist(get_topology("strongarm_latch").generate_circuit())
+
+        s1 = next(inst for inst in ir.instances if inst.name == "S1")
+        self.assertEqual(s1.kind, "mos")
+        self.assertEqual(len(s1.nodes), 4)
+
+        skill = write_skill(
+            ir,
+            DEFAULT_DEVICE_MAP,
+            lib_name="BO_Designs",
+            cell_name="strongarm_latch_opt",
+        )
+        self.assertIn('"S1"', skill)
+        self.assertIn('inst_S1 = dbCreateParamInst', skill)
+
     def test_skill_writer_contains_target_and_instances(self):
         ir = parse_netlist(get_topology("5t_ota").generate_circuit())
 
@@ -71,14 +87,32 @@ class VirtuosoExportTest(unittest.TestCase):
             cell_name="ota_5t_opt",
         )
 
-        self.assertIn('libName = "BO_Designs"', skill)
-        self.assertIn('cellName = "ota_5t_opt"', skill)
-        self.assertIn('dbCreateInst(cv master "Mtail"', skill)
-        self.assertIn('dbCreateInst(cv master "Mdp1"', skill)
-        self.assertIn("boCreateNetStub", skill)
-        self.assertIn("boMaybeCreateLabel", skill)
-        for port in ["vip", "vin", "vout", "vbias", "vdd", "vss"]:
-            self.assertIn(f'dbCreateTerm(net "{port}"', skill)
+        self.assertIn('ddGetObj("BO_Designs")', skill)
+        self.assertIn(
+            'dbOpenCellViewByType("BO_Designs" "ota_5t_opt" "schematic"',
+            skill,
+        )
+        self.assertIn('dbCreateParamInst(cv dbOpenCellViewByType', skill)
+        self.assertIn('"Mtail" 0:6 "R0"', skill)
+        self.assertIn('"Mdp1" -3:3 "R0"', skill)
+        self.assertIn("dbFindTermByName", skill)
+        self.assertIn("dbTransformPoint", skill)
+        self.assertIn("schCreateWireLabel", skill)
+        self.assertNotIn("dbCreateConnByName", skill)
+        expected_pin_cells = {
+            "vip": "ipin",
+            "vin": "ipin",
+            "vout": "opin",
+            "vbias": "ipin",
+            "vdd": "iopin",
+            "vss": "iopin",
+        }
+        for port, pin_cell in expected_pin_cells.items():
+            self.assertIn(
+                f'dbOpenCellViewByType("basic" "{pin_cell}" "symbol"',
+                skill,
+            )
+            self.assertIn(f') "{port}" ', skill)
 
     def test_skill_writer_preserves_m_and_uses_compact_coordinates(self):
         ir = parse_netlist(
@@ -98,12 +132,34 @@ ends tiny
             cell_name="tiny_opt",
         )
 
-        self.assertIn('boReplaceProp(inst "m"', skill)
-        self.assertIn('dbCreateProp(obj name "int" atoi(value))', skill)
-        self.assertIn('boReplaceProp(inst "nf" "5")', skill)
-        self.assertIn('boReplaceProp(inst "m" "4")', skill)
-        self.assertIn('dbCreateInst(cv master "Mtail" list(-7.5 3.0) "R0")', skill)
-        self.assertIn('boCreateNetStub(cv "vout"', skill)
+        self.assertIn('list("m" "int" 4)', skill)
+        self.assertIn('list("nf" "int" 5)', skill)
+        self.assertIn('"Mtail" -7.5:3 "R0"', skill)
+        self.assertIn('schCreateWireLabel(cv car(wireObjs) stubXY "vout"', skill)
+
+    def test_skill_writer_uses_pcell_parameters_for_mapped_passives(self):
+        ir = parse_netlist(
+            """
+simulator lang=spectre
+subckt mapped_passives in out vss
+R1 (in out) rupolym w=1u l=10u m=2
+C1 (out vss) cfmom_2t nr=24 lr=1u w=0.05u s=0.05u stm=1 spm=8
+ends mapped_passives
+"""
+        )
+
+        skill = write_skill(
+            ir,
+            default_device_map(),
+            lib_name="BO_Designs",
+            cell_name="mapped_passives_opt",
+        )
+
+        self.assertIn('dbOpenCellViewByType("tsmcN28" "rupolym" "symbol"', skill)
+        self.assertIn('dbOpenCellViewByType("tsmcN28" "cfmom_2t" "symbol"', skill)
+        self.assertIn('list("m" "int" 2)', skill)
+        self.assertIn('list("Nfinger" "int" 24)', skill)
+        self.assertIn('list("Wfinger" "string" "50n")', skill)
 
     def test_missing_device_map_fails_before_writing_skill(self):
         ir = parse_netlist(get_topology("5t_ota").generate_circuit())
@@ -357,6 +413,14 @@ ends tiny
             self.assertIn(f"SOFTINCLUDE {user_cds}", cds_lib)
             self.assertIn(f"DEFINE tsmcN28 {pdk_path}", cds_lib)
             self.assertIn("DEFINE BO_Designs ./BO_Designs", cds_lib)
+            self.assertIn(
+                "DEFINE basic $CDSHOME/tools/dfII/etc/cdslib/basic",
+                cds_lib,
+            )
+            self.assertIn(
+                "DEFINE analogLib $CDSHOME/tools/dfII/etc/cdslib/artist/analogLib",
+                cds_lib,
+            )
             wrapper = (workdir / "run_import.il").read_text(encoding="utf-8")
             self.assertIn('libName = "BO_Designs"', wrapper)
             self.assertIn('cellName = "proj_opt"', wrapper)
@@ -365,6 +429,9 @@ ends tiny
             self.assertIn("techBindTechFile(libObj techLibName)", wrapper)
             self.assertIn("ddReleaseObj(libObj)", wrapper)
             self.assertIn('load(importSkill)', wrapper)
+            self.assertIn("regExitBefore('AStidyUpAtExit)", wrapper)
+            self.assertIn("exit()", wrapper)
+            self.assertNotIn("exit(0)", wrapper)
             readme = (workdir / "README_import.md").read_text(encoding="utf-8")
             self.assertIn(f"SOFTINCLUDE `{user_cds}`", readme)
             self.assertIn(f"DEFINE `tsmcN28` `{pdk_path}`", readme)

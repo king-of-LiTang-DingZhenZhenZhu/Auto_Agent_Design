@@ -14,7 +14,7 @@ from system_decomposition import (
     write_system_project,
 )
 from topologies.base import ExecutableChildSpec, HierarchicalBlockSpec
-from topologies.capless_ldo import default_ldo_targets
+from topologies.regulators.capless_ldo import default_ldo_targets
 
 
 class SystemDecompositionTests(unittest.TestCase):
@@ -87,8 +87,87 @@ class SystemDecompositionTests(unittest.TestCase):
         with self.assertRaisesRegex(SystemDecompositionError, "Unsupported"):
             decompose_system(
                 SystemDesignRequest(
-                    system_type="adc",
+                    system_type="pipeline adc",
                     targets=DesignTarget(),
+                )
+            )
+
+    def test_sar_adc_decomposition_reproduces_paper_architecture(self):
+        request = SystemDesignRequest(
+            system_type="SAR ADC",
+            original_requirement="paper-inspired low-power SAR ADC",
+            voltage_domain="mixed_signal_2p5",
+            constraints={"reference_source": "external 2.5 V low-noise reference"},
+            targets=DesignTarget(
+                power_w=1.2e-3,
+                custom_specs={
+                    "resolution_bits": 12,
+                    "sample_rate_hz": 500e3,
+                    "reference_voltage_v": 2.5,
+                },
+            ),
+        )
+
+        spec = decompose_system(request)
+
+        self.assertEqual(spec.system_type, "sar_adc")
+        self.assertEqual(
+            spec.architecture,
+            "single_ended_segmented_charge_redistribution",
+        )
+        self.assertEqual(spec.parent_topology, "sar_adc_segmented_cdac")
+        self.assertEqual(
+            [block.block_id for block in spec.blocks],
+            [
+                "sampling_switch",
+                "cdac",
+                "comparator",
+                "reference_buffer",
+                "sar_logic",
+                "clock_powerdown",
+            ],
+        )
+        cdac = next(block for block in spec.blocks if block.block_id == "cdac")
+        self.assertEqual(cdac.operating_conditions["segmentation_bits"], [6, 6])
+        self.assertEqual(cdac.operating_conditions["unit_cap_count"], 128)
+        self.assertEqual(cdac.operating_conditions["unit_cap_f"], 100e-15)
+        comparator = next(
+            block for block in spec.blocks if block.block_id == "comparator"
+        )
+        self.assertIsNone(comparator.selected_topology)
+        self.assertEqual(
+            comparator.targets.custom_specs["input_resolution_v"],
+            0.2e-3,
+        )
+        self.assertEqual(
+            comparator.targets.custom_specs["offset_correction_range_v"],
+            10e-3,
+        )
+        self.assertEqual(spec.unresolved_requirements[:3], (
+            "sar_adc_segmented_cdac parent topology is not implemented",
+            "offset-calibrated multistage comparator topology is not implemented",
+            "ADC static/dynamic code-domain testbenches and metric parsers are not implemented",
+        ))
+        self.assertEqual(
+            SystemDesignSpec.from_dict(spec.to_dict()).to_dict(),
+            spec.to_dict(),
+        )
+
+    def test_sar_adc_rejects_invalid_segment_split(self):
+        with self.assertRaisesRegex(
+            SystemDecompositionError,
+            "high_segment_bits.*low_segment_bits",
+        ):
+            decompose_system(
+                SystemDesignRequest(
+                    system_type="sar-adc",
+                    targets=DesignTarget(
+                        custom_specs={
+                            "resolution_bits": 12,
+                            "high_segment_bits": 7,
+                            "low_segment_bits": 6,
+                        }
+                    ),
                 )
             )
 

@@ -7,13 +7,13 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
-from passive_realization import (
+from passive_devices.realization import (
     map_ideal_netlist_passives,
     realize_passives,
     realize_project_passives,
     solve_passive,
 )
-from passive_mapping import (
+from passive_devices.mapping import (
     CallablePassiveEvaluator,
     DeviceEvaluation,
     PassiveMappingError,
@@ -25,8 +25,8 @@ from passive_mapping import (
     register_passive_evaluator,
     unregister_passive_evaluator,
 )
-from pdk_passive_probe import render_cdf_probe
-from pdk_profiles import (
+from pdk_integration.passive_probe import render_cdf_probe
+from pdk_integration.profiles import (
     PassiveDeviceProfile,
     get_pdk_profile,
     validate_pdk_profile,
@@ -57,7 +57,7 @@ class PassiveRealizationTests(unittest.TestCase):
             evaluator_backend="virtuoso_cdf_callback",
         )
         with patch(
-            "pdk_cdf_evaluator.CdfCfmomTargetMapper.map_candidates",
+            "pdk_integration.cdf_evaluator.CdfCfmomTargetMapper.map_candidates",
             return_value=[mapped],
         ) as callback:
             result = map_capacitor(500e-15)
@@ -500,7 +500,7 @@ R1 (a b) unit_rpoly w=1u l=10u
 C1 (b c) unit_mim w=2u l=5u
 ends unit
 """
-        with patch("pdk_profiles.get_pdk_profile", return_value=profile), patch(
+        with patch("pdk_integration.profiles.get_pdk_profile", return_value=profile), patch(
             "virtuoso_export.models.get_pdk_profile", return_value=profile
         ):
             ir = parse_netlist(netlist)
@@ -511,7 +511,7 @@ ends unit
         self.assertEqual(device_map["unit_mim"].cell, "mimcap")
 
     def test_cdf_probe_uses_configured_pcell_without_modifying_it(self):
-        with patch("pdk_passive_probe.get_pdk_profile", return_value=self._profile()):
+        with patch("pdk_integration.passive_probe.get_pdk_profile", return_value=self._profile()):
             skill = render_cdf_probe("unit_mim", "report.txt")
 
         self.assertIn('ddGetObj("unitTech" "mimcap")', skill)
@@ -530,7 +530,7 @@ ends unit
                 }
             },
         )
-        with patch("pdk_passive_probe.get_pdk_profile", return_value=profile):
+        with patch("pdk_integration.passive_probe.get_pdk_profile", return_value=profile):
             skill = render_cdf_probe("finger_mom_2t", "report.txt")
 
         self.assertIn('ddGetObj("tsmcN28" "cfmom_2t")', skill)

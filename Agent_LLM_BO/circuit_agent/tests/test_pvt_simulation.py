@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from models import SimResult
-from pdk_profiles import get_pdk_profile
+from pdk_integration.profiles import get_pdk_profile
 from pvt_simulation import (
     PVTCorner,
     default_pvt_corners,

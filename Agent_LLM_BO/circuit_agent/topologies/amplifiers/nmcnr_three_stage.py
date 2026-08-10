@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from models import ParamDef, ParamSpace, format_spice_value
 from topologies.base import PassiveImplementation, TopologyMeta
-from topologies.mnmc_three_stage import MNMCThreeStageOTA
+from topologies.amplifiers.mnmc_three_stage import MNMCThreeStageOTA
 
 
 _FTS_PARAMS = {

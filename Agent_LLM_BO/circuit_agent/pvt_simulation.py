@@ -14,7 +14,7 @@ from typing import Any
 
 from config import Settings, settings
 from models import DesignTarget, SimResult, parse_metric_goals
-from pdk_profiles import PDKProfile, get_pdk_profile, spectre_include_line
+from pdk_integration.profiles import PDKProfile, get_pdk_profile, spectre_include_line
 from simulator import Simulator
 from summarize_metrics import build_report_from_sim_result
 from virtuoso_export.exporter import select_export_netlist

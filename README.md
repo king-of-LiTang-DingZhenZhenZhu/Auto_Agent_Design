@@ -25,10 +25,10 @@ Auto_Agent_Design/
 │       ├── models.py                  # 指标、参数和仿真数据模型
 │       ├── optimizer.py               # BO 与 reward
 │       ├── simulator.py               # Spectre 调用
-│       ├── pdk_profiles.py            # PDK、电压域、model 和 preset
-│       ├── passive_mapping.py          # 理想 R/C 到 PDK PCell 的黑盒数值映射
-│       ├── passive_realization.py      # DUT 替换、映射报告和映射后 nominal 验证
-│       ├── topologies/                # 硬约束 DUT/testbench 生成
+│       ├── system_architectures/      # 系统 block graph、接口和指标预算
+│       ├── pdk_integration/           # PDK profile、校验、callback 和器件表征
+│       ├── passive_devices/           # R/C 器件映射和网表实现
+│       ├── topologies/                # 按 amplifiers/references/regulators/comparators 分类
 │       ├── virtuoso_export/           # Virtuoso SKILL 导出
 │       ├── tests/
 │       ├── outputs/
@@ -170,7 +170,7 @@ python review_optimization.py \
 
 BO 最优或 Review candidate 在 nominal 条件下达标后，建议先做 PVT 验证，再导出最终 schematic。`pvt_simulation.py` 会复用最终 netlist 选择逻辑：若 Review candidate 达标则优先验证它，否则验证 BO best。
 
-默认 PVT 矩阵为 `tt/ss/ff × VDD(min/typ/max) × temp(-40/27/125)`，共 27 个 corner。process section 来自 `pdk_profiles.py` 的 `process_sections`，可用 `.env` 中的 `PDK_PROCESS_SECTIONS=tt:top_tt,ss:top_ss,ff:top_ff` 覆盖。
+默认 PVT 矩阵为 `tt/ss/ff × VDD(min/typ/max) × temp(-40/27/125)`，共 27 个 corner。process section 来自 `pdk_integration/profiles.py` 的 `process_sections`，可用 `.env` 中的 `PDK_PROCESS_SECTIONS=tt:top_tt,ss:top_ss,ff:top_ff` 覆盖。
 
 ```bash
 cd Agent_LLM_BO/circuit_agent
@@ -254,6 +254,12 @@ Agent_LLM_BO/virtuoso_runs/<project>/
 
 `--tech-lib` 是 Virtuoso technology library 名称，不是 Spectre model include 文件路径。batch Virtuoso 不一定会自动读取用户主目录的 `cds.lib`，因此建议用 `--include-cds-lib` 显式引入站点/用户 `cds.lib`，或用 `--pdk-lib-path` 显式写入 `DEFINE tsmcN28 /PDKS/TSMC28nm/tsmcN28`。自动运行时脚本会把 `CDS_LOG` 指到工作目录下的 `CDS.log`，避免和已打开的 Virtuoso GUI 争用 `~/CDS.log` 锁。
 
+原理图导出使用 PDK PCell 的 `dbCreateParamInst` 创建 MOS 和已映射 R/C，按
+CDF 参数类型传入尺寸与倍乘参数；连接从 symbol master 的真实 pin 坐标生成
+wire/net label，顶层端口使用 `basic/ipin`、`opin`、`iopin` 创建。生成的
+`cds.lib` 会显式加载 `basic` 和 `analogLib`，batch wrapper 也会处理
+`display.drf` 退出对话框，避免无图形导入完成后阻塞。
+
 ## 可用拓扑
 
 | 拓扑 | 增益范围 | GBW 范围 | 复杂度 |
@@ -299,7 +305,7 @@ child nominal/PVT targets 和 `hierarchy.json`，再把内部运放单独优化�
 
 ## PDK Profile 与约束
 
-工艺相关信息集中在 `Agent_LLM_BO/circuit_agent/pdk_profiles.py`，拓扑脚本从当前 profile 读取 Spectre include 路径、section、NMOS/PMOS/LVT model 名称、默认 VDD、VDD 允许范围、尺寸边界、gm/Id 表路径、PVT 温度列表、Spectre options、Virtuoso tech library，以及每个 topology 的 PDK 专用初始参数 preset。默认 profile 是 `tsmc28`。
+工艺相关信息集中在 `Agent_LLM_BO/circuit_agent/pdk_integration/profiles.py`，拓扑脚本从当前 profile 读取 Spectre include 路径、section、NMOS/PMOS/LVT model 名称、默认 VDD、VDD 允许范围、尺寸边界、gm/Id 表路径、PVT 温度列表、Spectre options 和 Virtuoso tech library。默认 profile 是 `tsmc28`。
 
 可通过环境变量切换或覆盖：
 
@@ -318,37 +324,19 @@ export VIRTUOSO_TECH_LIB=tsmcN28
 
 ```bash
 export PDK_PROFILE_FILE=/path/to/my_pdk_profile.json
-python Agent_LLM_BO/circuit_agent/pdk_profiles.py --validate --require-gmid --require-virtuoso
+python Agent_LLM_BO/circuit_agent/pdk_integration/profiles.py --validate --require-gmid --require-virtuoso
 ```
 
 VDD 使用优先级：单次 `params["VDD"]` 最高，其次 `.env`/环境变量 `VDD`，最后才是 profile 默认值。profile 中的 `VDD_MIN/VDD_MAX` 记录该工艺允许范围，例如 TSMC28 当前为 `0.9~1.1V`；如果希望 BO 搜索 VDD，应在 topology 的 `get_param_space()` 或显式 `params.json` 中加入 `VDD`，范围不要超过 profile 允许值。
 
 晶体管类型由 topology 选择 profile 字段：`five_t_ota`、`two_stage_ota` 使用 `nmos_model/pmos_model`；`nmcnr_three_stage`、`mnmc_three_stage`、`nmcf_three_stage`、`folded_cascode` 与 `folded_cascode_two_stage` 使用 `nmos_lvt_model/pmos_lvt_model`。换 PDK 时改 profile，不要在 topology 模板里硬编码 model 名。
 
-初始参数使用规则：每个 topology 仍保留通用 `DEFAULT_PARAMS` 作为 fallback；如果当前 profile 的 `topology_presets` 中提供了该 topology 的 `default_params`、`testbench_defaults` 或 `param_space_overrides`，生成网表、初始仿真、普通 BO 和 gm/Id pass-through 都优先使用 profile preset。`topology_presets` 是可选校准层，不是新增 PDK 时必须为所有拓扑填写的表；只有某个拓扑在新工艺/型号下初始工作点明显不可用或搜索范围需要微调时，才为该拓扑补 preset。换工艺或换器件型号时，应优先在 PDK profile 里新增/修改 topology preset，不要直接改 topology 源码默认值。
-
-外部 JSON profile 中可以这样写：
-
-```json
-{
-  "name": "my28_lvt",
-  "...": "...",
-  "topology_presets": {
-    "folded_cascode_two_stage": {
-      "default_params": {"Lbias": 5e-7, "m_half_unit": 4},
-      "testbench_defaults": {"VCM": 0.35, "IBIAS": 2e-5, "CL": 1e-12},
-      "param_space_overrides": {"m_half_unit": {"low": 3, "high": 6}}
-    }
-  }
-}
-```
-
-添加新工艺时，优先新增一个 PDK profile，而不是修改 topology。profile 至少需要包含：Spectre/HSPICE model include、process section、PVT corner section、VDD 范围、MOS model role、W/L 限制、gm/Id table path、Virtuoso tech lib、OA library path，以及必要的 topology preset。然后运行：
+添加新工艺时，优先新增一个 PDK profile，而不是修改 topology。profile 至少需要包含：Spectre/HSPICE model include、process section、PVT corner section、VDD 范围、MOS model role、W/L 限制、gm/Id table path、Virtuoso tech lib 和 OA library path。然后运行：
 
 ```bash
 cd Agent_LLM_BO/circuit_agent
 conda activate Auto_Agent_Design
-python pdk_profiles.py --validate --require-gmid --require-virtuoso
+python -m pdk_integration.profiles --validate --require-gmid --require-virtuoso
 ```
 
 真实 Cadence VM 中可以额外加 `--check-files`，确认 PDK 路径实际存在。每次优化输出目录会保存 `pdk_profile_used.json`，用于复现实验。

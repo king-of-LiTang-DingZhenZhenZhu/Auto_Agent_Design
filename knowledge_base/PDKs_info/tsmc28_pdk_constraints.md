@@ -67,10 +67,10 @@ characterization 条件与结果：
 `cfmom_2t` 的 base CDF 包含派生参数 `c`（`CapValue@0V_(F)`）。项目可以在
 临时 OA library 中设置 `Wfinger/Sfinger/Lfinger/Nfinger/StartMn/StopMn/m`，执行
 CDF 登记的 callback，并读取 `c`，无需为每个候选尺寸运行 Spectre。实现见
-`Agent_LLM_BO/circuit_agent/pdk_cdf_evaluator.py`：
+`Agent_LLM_BO/circuit_agent/pdk_integration/cdf_evaluator.py`：
 
 ```bash
-python pdk_cdf_evaluator.py \
+python -m pdk_integration.cdf_evaluator \
   --target 241.291f \
   --work-dir /share/tmp/cfmom_cdf_mapping
 ```
@@ -95,7 +95,7 @@ callback 回写的 `spm=6`。现有 `spm=8` LUT 仅保留为旧版 characterizat
 cd Agent_LLM_BO/circuit_agent
 conda activate Auto_Agent_Design
 PDK_PROFILE_FILE=../../PDK_Info_Json/TSMC_28nm_Information.json \
-  python pdk_profiles.py --validate --require-gmid --require-virtuoso
+  python -m pdk_integration.profiles --validate --require-gmid --require-virtuoso
 ```
 
 在真实 Cadence 服务器上追加 `--check-files`，验证模型路径和 OA library 路径。

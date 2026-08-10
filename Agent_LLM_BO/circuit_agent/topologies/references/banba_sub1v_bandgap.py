@@ -7,11 +7,11 @@ from pathlib import Path
 from typing import Any
 
 from models import DesignTarget, ParamDef, ParamSpace, format_spice_value
-from pdk_profiles import get_pdk_profile_for_params, spectre_include_line
+from pdk_integration.profiles import get_pdk_profile_for_params, spectre_include_line
 from system_decomposition import SystemDesignRequest, decompose_bandgap
-from topologies.bandgap_ptat import BandgapPTAT
+from topologies.references.bandgap_ptat import BandgapPTAT
 from topologies.base import ExecutableChildSpec, PassiveImplementation, TopologyMeta
-from topologies.two_stage_ota import TwoStageOTA
+from topologies.amplifiers.two_stage_ota import TwoStageOTA
 
 
 class BanbaSub1VBandgap(BandgapPTAT):
