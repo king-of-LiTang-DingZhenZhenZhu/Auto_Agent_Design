@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import signal
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,6 +10,7 @@ from pdk_integration.cdf_evaluator import (
     CdfCfmomTargetMapper,
     CdfEvaluation,
     _cfmom_target_candidates,
+    _stop_process,
     evaluate_cdf_geometries,
     parse_cdf_evaluation_report,
     render_cdf_evaluation_probe,
@@ -44,7 +46,103 @@ class PdkCdfEvaluatorTests(unittest.TestCase):
         self.assertIn("cdfFindParamByName", skill)
         self.assertIn("evalstring(callback)", skill)
         self.assertIn('list("StopMn" "6")', skill)
+        self.assertIn('sprintf(nil "Iprobe_%d" index)', skill)
+        self.assertIn("dbDeleteObject(inst)", skill)
+        self.assertLess(
+            skill.index("foreach(pair case boCdfSet"),
+            skill.index("foreach(pair case boCdfRun"),
+        )
+        self.assertLess(
+            skill.index('list("StartMn" "1")'),
+            skill.index('list("Nfinger" "98")'),
+        )
         self.assertNotIn("tsmcN28_cfmom_2t_CB", skill)
+
+    def test_target_evaluation_isolates_candidates_and_cleans_successes(self):
+        profile = get_pdk_profile()
+        with tempfile.TemporaryDirectory(dir="/share/tmp") as tmp:
+            mapper = CdfCfmomTargetMapper(
+                profile=profile,
+                device_name="finger_mom_2t",
+                work_dir=tmp,
+            )
+            requests = [
+                {**self.device.fixed_parameters, "nr": nr, "lr": 2e-6}
+                for nr in (6, 8)
+            ]
+
+            with patch(
+                "pdk_integration.cdf_evaluator.evaluate_cdf_geometries",
+                side_effect=lambda _device, batch, **_kwargs: [
+                    CdfEvaluation(10e-15, dict(batch[0]))
+                ],
+            ) as evaluate:
+                results = mapper._evaluate(self.device, requests, isolate=True)
+
+            self.assertEqual(len(results), 2)
+            self.assertEqual(evaluate.call_count, 2)
+            self.assertTrue(all(len(call.args[1]) == 1 for call in evaluate.call_args_list))
+            self.assertFalse(list(Path(tmp).glob("oa_run_*")))
+
+    def test_batch_failure_retries_candidates_in_isolated_processes(self):
+        profile = get_pdk_profile()
+        requests = [
+            {**self.device.fixed_parameters, "nr": nr, "lr": 2e-6}
+            for nr in (6, 8)
+        ]
+
+        def evaluate(_device, batch, **_kwargs):
+            if len(batch) > 1:
+                raise RuntimeError("batch failed")
+            return [CdfEvaluation(10e-15, dict(batch[0]))]
+
+        with tempfile.TemporaryDirectory(dir="/share/tmp") as tmp:
+            mapper = CdfCfmomTargetMapper(
+                profile=profile,
+                device_name="finger_mom_2t",
+                work_dir=tmp,
+            )
+            with patch(
+                "pdk_integration.cdf_evaluator.evaluate_cdf_geometries",
+                side_effect=evaluate,
+            ) as evaluator:
+                results = mapper._evaluate(self.device, requests)
+
+            self.assertEqual(len(results), 2)
+            self.assertEqual(evaluator.call_count, 3)
+            failures = list(Path(tmp).glob("oa_run_*/failure.json"))
+            self.assertEqual(len(failures), 1)
+
+    def test_target_evaluation_preserves_failure_artifacts(self):
+        profile = get_pdk_profile()
+        request = {**self.device.fixed_parameters, "nr": 112, "lr": 11.26e-6}
+        with tempfile.TemporaryDirectory(dir="/share/tmp") as tmp:
+            mapper = CdfCfmomTargetMapper(
+                profile=profile,
+                device_name="finger_mom_2t",
+                work_dir=tmp,
+            )
+            with patch(
+                "pdk_integration.cdf_evaluator.evaluate_cdf_geometries",
+                side_effect=RuntimeError("signal 11"),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "artifacts preserved"):
+                    mapper._evaluate(self.device, [request])
+
+            failures = list(Path(tmp).glob("oa_run_*/failure.json"))
+            self.assertEqual(len(failures), 1)
+            self.assertIn("signal 11", failures[0].read_text(encoding="utf-8"))
+
+    def test_stop_process_terminates_the_whole_session(self):
+        process = unittest.mock.Mock(pid=12345)
+        with patch("pdk_integration.cdf_evaluator.os.killpg") as killpg, patch(
+            "pdk_integration.cdf_evaluator._stop_tagged_processes"
+        ) as stop_tagged:
+            _stop_process(process, "unit-token")
+
+        killpg.assert_called_once_with(12345, signal.SIGTERM)
+        process.wait.assert_called_once_with(timeout=10)
+        stop_tagged.assert_called_once_with("unit-token")
 
     def test_report_parser_preserves_resolved_geometry(self):
         with tempfile.TemporaryDirectory(dir="/share/tmp") as tmp:
@@ -153,6 +251,56 @@ class PdkCdfEvaluatorTests(unittest.TestCase):
         self.assertEqual(results[0].evaluator_backend, "virtuoso_cdf_callback")
         self.assertTrue(results[0].evaluator_metadata["callback_resolved"])
         self.assertGreater(results[0].unit_area_m2, 0.0)
+
+    def test_target_mapper_applies_multiplier_to_cdf_base_value(self):
+        profile = get_pdk_profile()
+        device = profile.passive_devices["finger_mom_2t"]
+        calibration_request = {
+            **device.fixed_parameters,
+            "nr": 6,
+            "lr": 1e-6,
+        }
+        calibration = CdfEvaluation(
+            actual_value=10e-15,
+            resolved_params=dict(calibration_request),
+        )
+
+        def evaluate_candidates(_device, requests, **_kwargs):
+            return [
+                CdfEvaluation(
+                    actual_value=10e-15 * float(request["lr"]) / 1e-6,
+                    resolved_params=dict(request),
+                )
+                for request in requests
+            ]
+
+        with tempfile.TemporaryDirectory(dir="/share/tmp") as tmp:
+            mapper = CdfCfmomTargetMapper(
+                profile=profile,
+                device_name="finger_mom_2t",
+                work_dir=tmp,
+            )
+            with patch.object(
+                mapper,
+                "_calibration",
+                return_value=([calibration_request], [calibration]),
+            ), patch.object(mapper, "_evaluate", side_effect=evaluate_candidates):
+                results = mapper.map_candidates(
+                    "finger_mom_2t",
+                    device,
+                    1e-12,
+                    PassiveMappingConstraints(),
+                )
+
+        self.assertEqual(results[0].params["multi"], 3)
+        self.assertEqual(results[0].parallel_units, 1)
+        self.assertAlmostEqual(
+            results[0].actual_value,
+            results[0].evaluator_metadata["cdf_base_value_f"] * 3,
+        )
+        self.assertTrue(
+            results[0].evaluator_metadata["cdf_value_excludes_multiplier"]
+        )
 
 
 if __name__ == "__main__":

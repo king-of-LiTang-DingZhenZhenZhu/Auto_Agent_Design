@@ -48,6 +48,7 @@ class OptimizerConfigTest(unittest.TestCase):
         self.assertEqual(capacitor.finger_step, 2)
         self.assertEqual(capacitor.spectre_model, "cfmom_2t")
         self.assertEqual(capacitor.max_parallel_units, 16)
+        self.assertEqual(capacitor.max_multiplier, 16)
         self.assertTrue(Path(capacitor.lookup_table_path).is_file())
         self.assertEqual(
             profile.passive_role_map["compensation_capacitor"],

@@ -724,9 +724,17 @@ def map_passive_candidates(
                 else build_passive_target_mapper(name, device, pdk)
             )
             if target_mapper is not None:
-                results.extend(
-                    target_mapper.map_candidates(name, device, target_value, limits)
-                )
+                try:
+                    mapped = target_mapper.map_candidates(
+                        name, device, target_value, limits
+                    )
+                except (PassiveMappingError, RuntimeError) as exc:
+                    mapped = _callback_lookup_fallback(
+                        name, device, target_value, limits, exc
+                    )
+                    if mapped is None:
+                        raise
+                results.extend(mapped)
                 continue
             selected_evaluator = (
                 evaluator
@@ -739,7 +747,7 @@ def map_passive_candidates(
                     target_value, constraints
                 )
             )
-        except (PassiveMappingError, ValueError) as exc:
+        except (PassiveMappingError, RuntimeError, ValueError) as exc:
             failures.append(f"{name}: {exc}")
     if not results:
         detail = "; ".join(failures) or "no candidates"
@@ -748,6 +756,43 @@ def map_passive_candidates(
         )
     ordered = sorted(results, key=lambda result: _Candidate(result).score())
     return ordered
+
+
+def _callback_lookup_fallback(
+    device_name: str,
+    device: PassiveDeviceProfile,
+    target_value: float,
+    constraints: PassiveMappingConstraints,
+    callback_error: Exception,
+) -> list[PassiveMappingResult] | None:
+    """Use a compatible characterized LUT when the online callback fails."""
+
+    if device.mapping_mode != "callback" or not device.lookup_table_path:
+        return None
+    path = Path(device.lookup_table_path)
+    if not path.is_file():
+        return None
+    fallback_device = replace(device, mapping_mode="lookup", evaluator_key=None)
+    mapper_cls = (
+        ResistorMapper if device.kind == "resistor" else CapacitorMapper
+    )
+    mapped = mapper_cls(
+        device_name,
+        fallback_device,
+        _LookupEvaluator(path),
+    ).map(target_value, constraints)
+    return [
+        replace(
+            result,
+            evaluator_metadata={
+                **result.evaluator_metadata,
+                "fallback_from": "virtuoso_cdf_callback",
+                "callback_error_type": type(callback_error).__name__,
+                "callback_error": str(callback_error),
+            },
+        )
+        for result in mapped
+    ]
 
 
 def build_passive_target_mapper(

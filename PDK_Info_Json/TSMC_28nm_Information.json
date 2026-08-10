@@ -333,6 +333,7 @@
       "length_parameter": "lr",
       "finger_parameter": "nr",
       "multiplier_parameter": "multi",
+      "max_multiplier": 16,
       "min_width_m": 5e-08,
       "max_width_m": 7.5e-08,
       "min_length_m": 1e-06,

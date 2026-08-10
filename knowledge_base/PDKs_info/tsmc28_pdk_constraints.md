@@ -46,11 +46,13 @@ sign-off 规则。
 | `Nfinger` | `nr` | `6–288`，偶数，步进 `2` |
 | `StartMn` | `stm` | `1–6` |
 | `StopMn` | `spm` | `3–8` |
-| `m` | `multi` | 当前自动映射固定为 `1` |
+| `m` | `multi` | `1–16`；仅在单 PCell 容值范围不足时使用 |
 
 金属堆叠必须至少包含 3 层，即 `spm-stm+1 >= 3`。当前 callback 自动映射固定
-`w=s=0.05 um, stm=1, spm=6, multi=1`，并搜索 `nr/lr`。这些是项目选择的映射
-族，不是 PCell 的唯一合法几何。
+`w=s=0.05 um, stm=1, spm=6`，并搜索 `nr/lr`。单 PCell 可覆盖目标时固定
+`multi=1`；超出单 PCell 范围时允许 `multi=2–16`。这些是项目选择的映射
+族，不是 PCell 的唯一合法几何。该 PCell 的 CDF 显示参数 `c` 不包含 `multi`；
+映射器以 `c × multi` 作为 Spectre 中的最终电容值。
 
 characterization 条件与结果：
 

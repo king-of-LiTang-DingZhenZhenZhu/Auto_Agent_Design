@@ -21,7 +21,11 @@ from passive_devices.mapping import (
     map_passive,
     map_passive_candidates,
 )
-from pdk_integration.profiles import PDKProfile, PassiveDeviceProfile
+from pdk_integration.profiles import (
+    PDKProfile,
+    PassiveDeviceProfile,
+    spectre_include_line,
+)
 from topologies.base import PassiveImplementation
 from virtuoso_schematic_generation.parser import parse_netlist
 
@@ -266,9 +270,12 @@ def realize_project_passives(
     pdk = profile or (
         get_pdk_profile(str(snapshot)) if snapshot.exists() else get_pdk_profile()
     )
+    source_text = _with_complete_pdk_include(
+        selected_netlist.read_text(encoding="utf-8"), pdk
+    )
     try:
         realized_text, records = realize_passives(
-            selected_netlist.read_text(encoding="utf-8"),
+            source_text,
             implementations,
             pdk,
             evaluators=evaluators,
@@ -384,6 +391,19 @@ def _find_testbenches(project: Path, selected_netlist: Path) -> list[Path]:
     if local:
         return local
     return sorted((project / "simulation").glob("tb_circuit*.scs"))
+
+
+def _with_complete_pdk_include(netlist_text: str, profile: PDKProfile) -> str:
+    """Replace the generated primary model include with the full PDK section."""
+
+    include = spectre_include_line(profile)
+    pattern = re.compile(r'(?m)^\s*include\s+"[^"]+"\s+section=\S+\s*$')
+    if pattern.search(netlist_text):
+        return pattern.sub(include, netlist_text, count=1)
+    language = re.compile(r"(?m)^simulator\s+lang=spectre[^\n]*$")
+    if language.search(netlist_text):
+        return language.sub(lambda match: f"{match.group(0)}\n\n{include}", netlist_text, count=1)
+    return f"{include}\n{netlist_text}"
 
 
 def _run_nominal(simulator, run_dir: Path, netlist_text: str, testbenches: list[Path]):

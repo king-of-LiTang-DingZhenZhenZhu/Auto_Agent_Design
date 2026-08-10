@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from passive_devices.realization import (
+    _with_complete_pdk_include,
     map_ideal_netlist_passives,
     realize_passives,
     realize_project_passives,
@@ -70,6 +71,35 @@ class PassiveRealizationTests(unittest.TestCase):
         self.assertEqual(result.params["stm"], 1)
         self.assertEqual(result.params["spm"], 6)
         callback.assert_called_once()
+
+    def test_cdf_failure_falls_back_to_characterized_lookup_with_audit(self):
+        with patch(
+            "pdk_integration.cdf_evaluator.CdfCfmomTargetMapper.map_candidates",
+            side_effect=RuntimeError("Virtuoso exited with signal 11"),
+        ):
+            result = map_capacitor(737.091e-15, "finger_mom_2t")
+
+        self.assertEqual(result.evaluator_backend, "characterized_lookup")
+        self.assertEqual(
+            result.evaluator_metadata["fallback_from"],
+            "virtuoso_cdf_callback",
+        )
+        self.assertIn("signal 11", result.evaluator_metadata["callback_error"])
+        self.assertLess(result.relative_error, 0.02)
+
+    def test_complete_pdk_include_replaces_mos_only_section(self):
+        profile = get_pdk_profile("tsmc28")
+        source = (
+            "simulator lang=spectre\n"
+            'include "/pdk/embedded_usage.scs" section=ttmacro_mos_moscap\n'
+            "subckt unit (a b)\nends unit\n"
+        )
+
+        realized = _with_complete_pdk_include(source, profile)
+
+        self.assertIn(f'include "{profile.spectre_model_path}"', realized)
+        self.assertIn(f"section={profile.spectre_section}", realized)
+        self.assertNotIn("ttmacro_mos_moscap", realized)
 
     def test_default_tsmc28_high_res_poly_maps_to_grid_geometry(self):
         result = map_resistor(10_000.0, "high_res_poly")

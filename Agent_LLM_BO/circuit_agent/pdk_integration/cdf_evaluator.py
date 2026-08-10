@@ -13,9 +13,12 @@ import json
 import math
 import os
 import re
+import shutil
+import signal
 import subprocess
 import tempfile
 import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Sequence
@@ -79,15 +82,15 @@ class CdfCfmomTargetMapper:
         estimated_max = max(item.actual_value for item in calibration) * (
             device.max_length_m / reference_length
         )
-        max_parallel = constraints.max_parallel_units or device.max_parallel_units
-        first_parallel = max(1, math.ceil(target_value / estimated_max))
-        if first_parallel > max_parallel:
+        max_units = constraints.max_parallel_units or device.max_parallel_units
+        multiplier = max(1, math.ceil(target_value / estimated_max))
+        if multiplier > min(max_units, device.max_multiplier):
             raise PassiveMappingError(
                 f"{device_name} target {target_value:g} exceeds the estimated "
-                f"{max_parallel}-unit CDF range"
+                f"{min(max_units, device.max_multiplier)}-multiplier CDF range"
             )
-        parallel = first_parallel
-        unit_target = target_value / parallel
+        parallel = 1
+        unit_target = target_value / multiplier
         seed_requests = _cfmom_target_candidates(
             unit_target,
             calibration_requests,
@@ -97,6 +100,10 @@ class CdfCfmomTargetMapper:
             candidate_finger_limit=1,
             length_radius=0,
         )
+        seed_requests = [
+            {**request, device.multiplier_parameter: multiplier}
+            for request in seed_requests
+        ]
         seed_evaluations = self._evaluate(device, seed_requests)
         calibration_by_finger = {
             int(
@@ -129,19 +136,21 @@ class CdfCfmomTargetMapper:
             else:
                 corrected_length = seed_length * unit_target / seed.actual_value
             requests.extend(
-                _cfmom_local_length_candidates(
-                    device=device,
-                    nr=nr,
-                    center_length=corrected_length,
-                    radius=3,
+                {
+                    **candidate,
+                    device.multiplier_parameter: multiplier,
+                }
+                for candidate in _cfmom_local_length_candidates(
+                    device=device, nr=nr, center_length=corrected_length, radius=3
                 )
             )
         evaluations = self._evaluate(device, requests)
         results: list[PassiveMappingResult] = []
         for request, evaluation in zip(requests, evaluations):
-            actual = evaluation.actual_value * parallel
+            unit_value = evaluation.actual_value * multiplier
+            actual = unit_value * parallel
             params = evaluation.resolved_params or request
-            unit_area = _cfmom_estimated_area(params)
+            unit_area = _cfmom_estimated_area(params) * multiplier
             results.append(
                 PassiveMappingResult(
                     device_kind="capacitor",
@@ -151,13 +160,15 @@ class CdfCfmomTargetMapper:
                     relative_error=abs(actual - target_value) / target_value,
                     params=dict(params),
                     parallel_units=parallel,
-                    unit_value=evaluation.actual_value,
+                    unit_value=unit_value,
                     unit_area_m2=unit_area,
                     area_m2=unit_area * parallel,
                     evaluator_backend=self.backend_name,
                     evaluator_metadata={
                         "derived_parameter": device.value_parameter or "c",
                         "callback_resolved": True,
+                        "cdf_value_excludes_multiplier": True,
+                        "cdf_base_value_f": evaluation.actual_value,
                         "calibration_cache": str(self._cache_path),
                         "area_method": "estimated_cfmom_footprint",
                     },
@@ -222,7 +233,7 @@ class CdfCfmomTargetMapper:
         cached = _read_calibration_cache(self._cache_path, fingerprint, requests)
         if cached is not None:
             return requests, cached
-        results = self._evaluate(device, requests)
+        results = self._evaluate(device, requests, isolate=False)
         payload = {
             "version": 1,
             "fingerprint": fingerprint,
@@ -244,18 +255,47 @@ class CdfCfmomTargetMapper:
         self,
         device: PassiveDeviceProfile,
         requests: Sequence[Mapping[str, object]],
+        *,
+        isolate: bool = False,
     ) -> list[CdfEvaluation]:
-        with tempfile.TemporaryDirectory(
-            prefix="oa_run_", dir=self.work_dir
-        ) as run_dir:
-            return evaluate_cdf_geometries(
-                device,
-                requests,
-                profile=self.profile,
-                work_dir=run_dir,
-                virtuoso_bin=self.virtuoso_bin,
-                value_parameter=device.value_parameter or "c",
-            )
+        if not requests:
+            return []
+        batches = [[request] for request in requests] if isolate else [list(requests)]
+        results: list[CdfEvaluation] = []
+        for batch_index, batch in enumerate(batches):
+            run_dir = Path(
+                tempfile.mkdtemp(prefix="oa_run_", dir=self.work_dir)
+            ).resolve()
+            try:
+                batch_results = evaluate_cdf_geometries(
+                    device,
+                    batch,
+                    profile=self.profile,
+                    work_dir=run_dir,
+                    virtuoso_bin=self.virtuoso_bin,
+                    value_parameter=device.value_parameter or "c",
+                )
+            except Exception as exc:
+                failure = {
+                    "device": self.device_name,
+                    "batch_index": batch_index,
+                    "requests": [dict(request) for request in batch],
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                }
+                (run_dir / "failure.json").write_text(
+                    json.dumps(failure, indent=2, default=str), encoding="utf-8"
+                )
+                if not isolate and len(batch) > 1:
+                    return self._evaluate(device, requests, isolate=True)
+                raise RuntimeError(
+                    f"CDF evaluation failed for {self.device_name} batch "
+                    f"{batch_index}; artifacts preserved at {run_dir}: {exc}"
+                ) from exc
+            else:
+                results.extend(batch_results)
+                shutil.rmtree(run_dir)
+        return results
 
 
 def render_cdf_evaluation_probe(
@@ -271,9 +311,10 @@ def render_cdf_evaluation_probe(
     if not requests:
         raise ValueError("CDF evaluation requires at least one geometry")
     cdf_names = _cdf_parameter_names(device)
+    callback_names = _cdf_callback_parameter_names(device)
     rendered_cases = []
     for request in requests:
-        missing = [name for name in cdf_names if name not in request]
+        missing = [name for name in callback_names if name not in request]
         if missing:
             raise ValueError(
                 "CDF geometry is missing Spectre parameters: " + ", ".join(missing)
@@ -281,24 +322,31 @@ def render_cdf_evaluation_probe(
         entries = "\n".join(
             f'        list("{_skill_escape(cdf_name)}" '
             f'"{_skill_escape(_cdf_value(request[spectre_name]))}")'
-            for spectre_name, cdf_name in cdf_names.items()
+            for spectre_name, cdf_name in callback_names.items()
         )
         rendered_cases.append(f"      list(\n{entries}\n      )")
     cases = "\n".join(rendered_cases)
     resolved_names = " ".join(f'"{_skill_escape(name)}"' for name in cdf_names.values())
     header = "index\tvalue\t" + "\t".join(cdf_names)
     return f"""/* Read-only PCell CDF value evaluation generated by Circuit Agent. */
-procedure(boCdfSetAndRun(cdfObj name value)
-  let((param callback)
+procedure(boCdfSet(cdfObj name value)
+  let((param)
     param = cdfFindParamByName(cdfObj name)
     unless(param error("Missing CDF parameter: %s\\n" name))
     param~>value = value
+  )
+)
+
+procedure(boCdfRun(cdfObj name)
+  let((param callback)
+    param = cdfFindParamByName(cdfObj name)
+    unless(param error("Missing CDF parameter: %s\\n" name))
     callback = param~>callback
     when(callback && callback != "" evalstring(callback))
   )
 )
 
-let((cv master inst cdfObj out cases case pair param valueParam index paramNames)
+let((cv master inst cdfObj out cases case pair param valueParam index paramNames instName)
   unless(ddGetObj("{_skill_escape(scratch_lib)}")
     ddCreateLib("{_skill_escape(scratch_lib)}"
       "{_skill_escape(str(Path(scratch_lib_path).resolve()))}")
@@ -310,10 +358,6 @@ let((cv master inst cdfObj out cases case pair param valueParam index paramNames
     "{_skill_escape(device.virtuoso_cell)}"
     "{_skill_escape(device.virtuoso_view)}" "" "r")
   unless(master error("Unable to open passive PCell master\\n"))
-  inst = dbCreateParamInst(cv master "Iprobe" list(0 0) "R0" 1 nil)
-  unless(inst error("Unable to create passive PCell instance\\n"))
-  cdfObj = cdfGetInstCDF(inst)
-  unless(cdfObj error("Unable to get instance CDF\\n"))
   out = outfile("{_skill_escape(str(Path(report_path).resolve()))}" "w")
   fprintf(out "{_skill_escape(header)}\\n")
   cases = list(
@@ -322,8 +366,15 @@ let((cv master inst cdfObj out cases case pair param valueParam index paramNames
   paramNames = list({resolved_names})
   index = 0
   foreach(case cases
+    instName = sprintf(nil "Iprobe_%d" index)
+    inst = dbCreateParamInst(cv master instName list(0 0) "R0" 1 nil)
+    unless(inst error("Unable to create passive PCell instance\\n"))
+    cdfObj = cdfGetInstCDF(inst)
+    unless(cdfObj error("Unable to get instance CDF\\n"))
     cdfgData = cdfObj
-    foreach(pair case boCdfSetAndRun(cdfObj car(pair) cadr(pair)))
+    printf("CDF passive evaluating case %d\\n" index)
+    foreach(pair case boCdfSet(cdfObj car(pair) cadr(pair)))
+    foreach(pair case boCdfRun(cdfObj car(pair)))
     valueParam = cdfFindParamByName(cdfObj "{_skill_escape(value_parameter)}")
     unless(valueParam error("Missing derived CDF value parameter\\n"))
     fprintf(out "%d\\t%s" index valueParam~>value)
@@ -332,6 +383,7 @@ let((cv master inst cdfObj out cases case pair param valueParam index paramNames
     )
     fprintf(out "\\n")
     cdfgData = nil
+    dbDeleteObject(inst)
     index = index + 1
   )
   close(out)
@@ -427,10 +479,13 @@ def evaluate_cdf_geometries(
             "-log",
             str(log),
         ]
+        run_token = uuid.uuid4().hex
+        process_env = os.environ.copy()
+        process_env["CIRCUIT_AGENT_CDF_RUN_ID"] = run_token
         process = subprocess.Popen(
             command,
             cwd=root,
-            env=os.environ.copy(),
+            env=process_env,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
@@ -441,7 +496,20 @@ def evaluate_cdf_geometries(
                 return_code = process.poll()
                 report_complete = _report_row_count(report) == len(requests)
                 replay_complete = _log_contains(log, "CDF passive evaluation complete:")
-                if report_complete and (replay_complete or return_code is not None):
+                if report_complete and replay_complete:
+                    results = parse_cdf_evaluation_report(report, device)
+                    if len(results) != len(requests):
+                        raise RuntimeError(
+                            "CDF evaluation returned "
+                            f"{len(results)} results for {len(requests)} requests; "
+                            f"see {report}"
+                        )
+                    try:
+                        process.wait(timeout=2)
+                    except subprocess.TimeoutExpired:
+                        pass
+                    return results
+                if report_complete and return_code is not None:
                     results = parse_cdf_evaluation_report(report, device)
                     if len(results) != len(requests):
                         raise RuntimeError(
@@ -470,7 +538,7 @@ def evaluate_cdf_geometries(
                 f"{detail or f'see {log}'}"
             )
         finally:
-            _stop_process(process)
+            _stop_process(process, run_token)
     finally:
         if temporary is not None:
             temporary.cleanup()
@@ -678,6 +746,25 @@ def _cdf_parameter_names(device: PassiveDeviceProfile) -> dict[str, str]:
     return names
 
 
+def _cdf_callback_parameter_names(device: PassiveDeviceProfile) -> dict[str, str]:
+    """Return a stable order whose intermediate geometry remains legal."""
+
+    ordered = (
+        "stm",
+        "spm",
+        device.width_parameter,
+        "s",
+        device.finger_parameter,
+        device.length_parameter,
+        device.multiplier_parameter,
+    )
+    return {
+        spectre_name: device.parameter_map.get(spectre_name, spectre_name)
+        for spectre_name in ordered
+        if spectre_name
+    }
+
+
 def _cdf_value(value: object) -> str:
     if isinstance(value, float):
         return format_spice_value(value)
@@ -748,15 +835,56 @@ def _report_row_count(path: Path) -> int:
     return max(len(lines) - 1, 0)
 
 
-def _stop_process(process: subprocess.Popen) -> None:
-    if process.poll() is not None:
-        return
-    process.terminate()
+def _stop_process(process: subprocess.Popen, run_token: str | None = None) -> None:
     try:
-        process.wait(timeout=10)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait(timeout=10)
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        try:
+            process.wait(timeout=0)
+        except subprocess.TimeoutExpired:
+            pass
+    else:
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait(timeout=10)
+    if run_token:
+        _stop_tagged_processes(run_token)
+
+
+def _stop_tagged_processes(run_token: str) -> None:
+    pids = _tagged_process_ids(run_token)
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        for pid in pids:
+            try:
+                os.kill(pid, sig)
+            except (PermissionError, ProcessLookupError):
+                pass
+        if sig == signal.SIGTERM and pids:
+            time.sleep(0.2)
+            pids = _tagged_process_ids(run_token)
+
+
+def _tagged_process_ids(run_token: str) -> list[int]:
+    marker = f"CIRCUIT_AGENT_CDF_RUN_ID={run_token}".encode("ascii")
+    pids: list[int] = []
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        pid = int(entry.name)
+        if pid == os.getpid():
+            continue
+        try:
+            environment = (entry / "environ").read_bytes().split(b"\0")
+        except (FileNotFoundError, PermissionError, ProcessLookupError):
+            continue
+        if marker in environment:
+            pids.append(pid)
+    return pids
 
 
 def _skill_escape(value: str) -> str:
