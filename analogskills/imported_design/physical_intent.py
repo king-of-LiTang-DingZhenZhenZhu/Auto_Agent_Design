@@ -143,8 +143,8 @@ def compile_physical_intent(
     builder.pattern("mirror_pair", ("Mmirr1", "Mmirr2"), role="pmos_match", kind="row", spacing_um=spacing_um)
     builder.pattern("second_stage", ("Mload", "Mcs"), role="output_stage", kind="column", spacing_um=spacing_um)
     builder.pattern("compensation", ("Rz", "Cc"), role="miller_compensation", kind="column", spacing_um=spacing_um)
-    builder.pair("input_pair_symmetry", "Mdiff1", "Mdiff2", role="input_pair", mirror_right=False, same_y=True)
-    builder.pair("mirror_pair_symmetry", "Mmirr1", "Mmirr2", role="current_mirror", mirror_right=False, same_y=True)
+    builder.pair("input_pair_symmetry", "Mdiff1", "Mdiff2", role="input_pair", mirror_right=True, same_y=True)
+    builder.pair("mirror_pair_symmetry", "Mmirr1", "Mmirr2", role="current_mirror", mirror_right=True, same_y=True)
     # Relation names follow the compiler convention: source is below/left of target.
     builder.relation("tail_device", "input_pair", "above", min_gap_um=spacing_um, notes="tail below input pair")
     builder.relation("tail_device", "input_pair", "overlap_x", notes="tail must remain routable beneath input pair")
@@ -272,7 +272,7 @@ def solve_imported_physical_smt(
         "route_resource_capacity_overflow": 0,
         "matching_realization": matching,
         "constraint_realization_complete": all(
-            row.get("status") in {"realized", "degraded_explicit"} for row in matching.values()
+            row.get("status") == "realized" for row in matching.values()
         ),
     }
     compiled = replace(compiled, checks=checks, route_resource_assignments=assignments)
@@ -458,20 +458,19 @@ def _constraint_evidence(
 def _matching_realization_report(constraints: LayoutConstraintSet) -> dict[str, dict[str, object]]:
     result: dict[str, dict[str, object]] = {}
     for group in constraints.matched_groups:
-        if group.style == "common_centroid":
+        if group.style in {"common_centroid", "interdigitated"}:
             result[group.name] = {
                 "requested_style": group.style,
-                "realized_style": "symmetric_same_orientation",
+                "realized_style": "symmetric_pair",
                 "status": "degraded_explicit",
-                "reason": "no calibrated legal unit-array or mirrored-access realization is available for the current devices",
+                "reason": "requested matched-device unit pattern is not physically realized",
                 "devices": tuple(group.devices),
             }
         else:
             result[group.name] = {
                 "requested_style": group.style,
-                "realized_style": "symmetric_same_orientation",
-                "status": "degraded_explicit",
-                "reason": "mirrored CRN28 terminal-access calibration is not qualified for sign-off",
+                "realized_style": "symmetric_pair",
+                "status": "realized",
                 "devices": tuple(group.devices),
             }
     return result

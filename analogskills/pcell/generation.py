@@ -539,6 +539,11 @@ def generate_pcell_layout_plan(
                     "layout_width_um": width_um,
                     "layout_height_um": height_um,
                     "parallel_reduction_expected": bool(mos_array.get("parallel_reduction_expected", True)),
+                    "source": str(mos_array.get("source", "")),
+                    "matching_group": str(mos_array.get("matching_group", "")),
+                    "matching_role": str(mos_array.get("matching_role", "")),
+                    "pattern": tuple(mos_array.get("pattern", ()) or ()),
+                    "dummy_realization": str(mos_array.get("dummy_realization", "")),
                 }
             )
             pcell_unit_arrays.append(mos_unit_arrays[-1])
@@ -966,9 +971,32 @@ def _mos_unit_array_instance_plans(
     unit_count = max(1, int(float(spec.get("unit_count", 1) or 1)))
     rows = max(1, int(float(spec.get("rows", 1) or 1)))
     cols = max(1, int(float(spec.get("cols", 1) or 1)))
-    unit_width_um = max(0.1, float(spec.get("unit_width_um", 1.0) or 1.0))
-    unit_height_um = max(0.1, float(spec.get("unit_height_um", 1.0) or 1.0))
+    unit_sizing = dict(sizing)
+    unit_sizing["W"] = float(spec.get("unit_total_width_m", spec.get("unit_width_m", unit_sizing.get("W", 1e-6))) or 1e-6)
+    unit_sizing["L"] = float(spec.get("unit_length_m", unit_sizing.get("L", unit_sizing.get("l", 0.18e-6))) or 0.18e-6)
+    unit_sizing["nf"] = max(1, int(float(spec.get("unit_nf", unit_sizing.get("nf", 1)) or 1)))
+    unit_sizing["m"] = max(1, int(float(spec.get("unit_m", 1) or 1)))
+    if "unit_layout_bbox_x0_um" in spec or "layout_bbox_x0_um" in spec:
+        unit_sizing["layout_bbox_x0_um"] = float(spec.get("unit_layout_bbox_x0_um", spec.get("layout_bbox_x0_um", 0.0)) or 0.0)
+    if "unit_layout_bbox_y0_um" in spec or "layout_bbox_y0_um" in spec:
+        unit_sizing["layout_bbox_y0_um"] = float(spec.get("unit_layout_bbox_y0_um", spec.get("layout_bbox_y0_um", 0.0)) or 0.0)
+    unit_pcell_params = dict(spec.get("unit_pcell_params", {}) if isinstance(spec.get("unit_pcell_params", {}), Mapping) else {})
+    raw_unit_param_rows = spec.get("unit_pcell_params_by_index", ())
+    unit_param_rows = tuple(raw_unit_param_rows) if isinstance(raw_unit_param_rows, SequenceABC) and not isinstance(raw_unit_param_rows, (str, bytes)) else ()
+    raw_unit_slots = spec.get("unit_slots", ())
+    unit_slots = tuple(raw_unit_slots) if isinstance(raw_unit_slots, SequenceABC) and not isinstance(raw_unit_slots, (str, bytes)) else ()
+    raw_unit_orients = spec.get("unit_orients", ())
+    unit_orients = tuple(raw_unit_orients) if isinstance(raw_unit_orients, SequenceABC) and not isinstance(raw_unit_orients, (str, bytes)) else ()
+    if unit_pcell_params:
+        unit_sizing["pcell_overrides"] = unit_pcell_params
+    unit_sizing.pop("mos_unit_array", None)
+    unit_finger = _finger_choice_for_device(device, unit_sizing, "balanced")
+    estimated_width_um, estimated_height_um = estimate_pcell_bbox_um(device, unit_sizing, unit_finger)
+    unit_width_um = max(0.1, float(spec.get("unit_width_um", estimated_width_um) or estimated_width_um))
+    unit_height_um = max(0.1, float(spec.get("unit_height_um", estimated_height_um) or estimated_height_um))
     unit_width_um, unit_height_um = _snap_pcell_bbox_dimensions_um(unit_width_um, unit_height_um, pdk=pdk)
+    unit_sizing["layout_width_um"] = unit_width_um
+    unit_sizing["layout_height_um"] = unit_height_um
     spacing = max(0.0, float(spec.get("spacing_um", 0.5) or 0.0))
     pitch_x = _snap_pcell_pitch_um(
         max(unit_width_um, float(spec.get("pitch_x_um", unit_width_um + spacing) or (unit_width_um + spacing))),
@@ -978,33 +1006,32 @@ def _mos_unit_array_instance_plans(
         max(unit_height_um, float(spec.get("pitch_y_um", unit_height_um + spacing) or (unit_height_um + spacing))),
         pdk,
     )
-    unit_sizing = dict(sizing)
-    unit_sizing["W"] = float(spec.get("unit_total_width_m", spec.get("unit_width_m", unit_sizing.get("W", 1e-6))) or 1e-6)
-    unit_sizing["L"] = float(spec.get("unit_length_m", unit_sizing.get("L", unit_sizing.get("l", 0.18e-6))) or 0.18e-6)
-    unit_sizing["nf"] = max(1, int(float(spec.get("unit_nf", unit_sizing.get("nf", 1)) or 1)))
-    unit_sizing["m"] = max(1, int(float(spec.get("unit_m", 1) or 1)))
-    unit_sizing["layout_width_um"] = unit_width_um
-    unit_sizing["layout_height_um"] = unit_height_um
-    if "unit_layout_bbox_x0_um" in spec or "layout_bbox_x0_um" in spec:
-        unit_sizing["layout_bbox_x0_um"] = float(spec.get("unit_layout_bbox_x0_um", spec.get("layout_bbox_x0_um", 0.0)) or 0.0)
-    if "unit_layout_bbox_y0_um" in spec or "layout_bbox_y0_um" in spec:
-        unit_sizing["layout_bbox_y0_um"] = float(spec.get("unit_layout_bbox_y0_um", spec.get("layout_bbox_y0_um", 0.0)) or 0.0)
-    unit_pcell_params = dict(spec.get("unit_pcell_params", {}) if isinstance(spec.get("unit_pcell_params", {}), Mapping) else {})
-    if unit_pcell_params:
-        unit_sizing["pcell_overrides"] = unit_pcell_params
-    unit_sizing.pop("mos_unit_array", None)
-    unit_finger = _finger_choice_for_device(device, unit_sizing, "balanced")
-    params = pcell_params_for_device(device, unit_sizing, template, finger_choice=unit_finger, pdk=pdk)
     validation = tuple(template.validate_params(_logical_params_for_validation(device, unit_sizing, unit_finger)))
     connections = {term: term_map.get(TerminalRef(device.name, term), "") for term in device.terminals}
     bbox_x0_um, bbox_y0_um = _layout_bbox_origin_um(unit_sizing)
     anchor_by_expanded_footprint = _has_nonzero_layout_bbox_origin(unit_sizing)
     instances: list[PCellInstancePlan] = []
     for index in range(unit_count):
-        row = index // cols
-        col = index % cols
+        try:
+            slot = int(unit_slots[index]) if index < len(unit_slots) else index
+        except (TypeError, ValueError):
+            slot = index
+        if slot < 0:
+            raise ValueError(f"{device.name} MOS unit slot must be non-negative")
+        row = slot // cols
+        col = slot % cols
         if row >= rows:
-            break
+            raise ValueError(f"{device.name} MOS unit slot {slot} exceeds {rows}x{cols} array")
+        unit_orient = str(unit_orients[index]) if index < len(unit_orients) and str(unit_orients[index]) else str(orient or "R0")
+        indexed_params = unit_param_rows[index] if index < len(unit_param_rows) else {}
+        if indexed_params and not isinstance(indexed_params, Mapping):
+            raise ValueError(f"{device.name} unit_pcell_params_by_index[{index}] must be a mapping")
+        indexed_sizing = dict(unit_sizing)
+        if indexed_params:
+            merged_params = dict(unit_pcell_params)
+            merged_params.update({str(key): value for key, value in indexed_params.items()})
+            indexed_sizing["pcell_overrides"] = merged_params
+        params = pcell_params_for_device(device, indexed_sizing, template, finger_choice=unit_finger, pdk=pdk)
         unit_x = float(x_um) + col * pitch_x
         unit_y = float(y_um) + row * pitch_y
         if anchor_by_expanded_footprint:
@@ -1015,7 +1042,7 @@ def _mos_unit_array_instance_plans(
                 unit_height_um,
                 bbox_x0_um=bbox_x0_um,
                 bbox_y0_um=bbox_y0_um,
-                orient=str(orient or "R0"),
+                orient=unit_orient,
             )
         else:
             origin_x_um, origin_y_um = float(unit_x), float(unit_y)
@@ -1025,7 +1052,7 @@ def _mos_unit_array_instance_plans(
             logical_name=logical_name,
             cell_name=template.resolved_layout_cell_name(),
             params=params,
-            sizing=unit_sizing,
+            sizing=indexed_sizing,
             pdk=pdk,
         )
         instances.append(
@@ -1038,7 +1065,7 @@ def _mos_unit_array_instance_plans(
                 params=dict(params),
                 instantiation_method=template.resolved_layout_instantiation_method(),
                 xy_um=(origin_x_um, origin_y_um),
-                orient=str(orient or "R0"),
+                orient=unit_orient,
                 role=device.role.value,
                 connections=connections,
                 width_um=unit_width_um,

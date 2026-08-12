@@ -66,6 +66,8 @@ class PreparePhysicalIntegrationTest(unittest.TestCase):
                     )
                     self.assertEqual(manifest["physical_planning"]["placement_mode"], "smt")
                     self.assertTrue(manifest["physical_planning"]["signoff_eligible"])
+                    self.assertTrue(manifest["physical_planning"]["constraint_realization_complete"])
+                    self.assertEqual(manifest["physical_planning"]["signoff_blockers"], [])
                     self.assertEqual(manifest["physical_planning"]["solver"], "z3")
                     for artifact in ("design_intent", "smt_solution", "routing_resources"):
                         self.assertTrue(Path(manifest["artifacts"][artifact]).is_file())
@@ -77,19 +79,82 @@ class PreparePhysicalIntegrationTest(unittest.TestCase):
                     self.assertEqual(assignments["vip"]["layer"], assignments["vin"]["layer"])
                     self.assertEqual(abs(assignments["vip"]["lane"] - assignments["vin"]["lane"]), 1)
                     self.assertEqual(len({row["lane"] for row in assignments.values()}), len(assignments))
+                    self.assertEqual(assignments["n_tail"]["implementation"], "local_m3_template")
+                    self.assertFalse(assignments["n_tail"]["solver_assignment_consumed"])
+                    self.assertEqual(assignments["n_mirr"]["implementation"], "local_m3_template")
+                    self.assertFalse(assignments["n_mirr"]["solver_assignment_consumed"])
                     self.assertEqual(
                         smt_solution["matching_realization"]["input_pair"]["status"],
-                        "degraded_explicit",
+                        "realized",
+                    )
+                    self.assertEqual(
+                        smt_solution["matching_realization"]["input_pair"]["calibre_qualification"],
+                        "pending",
+                    )
+                    self.assertEqual(
+                        smt_solution["matching_realization"]["input_pair"]["unit_pattern"],
+                        ["DUMMY_L", "A", "B", "B", "A", "DUMMY_R"],
                     )
                     self.assertEqual(len(mapping["Mtail"]["lvs_instances"]), 2)
                     self.assertEqual(len(mapping["Mload"]["lvs_instances"]), 4)
+                    self.assertEqual(mapping["Mtail"]["physical_realization"]["strategy"], "explicit_m_unit_array")
+                    self.assertEqual(mapping["Mtail"]["physical_realization"]["requested_m"], 2)
+                    self.assertEqual(mapping["Mtail"]["physical_realization"]["requested_nf"], 1)
+                    self.assertEqual(mapping["Mtail"]["physical_realization"]["oa_instance_count"], 2)
                     layout_plan = json.loads(Path(result.layout_plan_path).read_text(encoding="utf-8"))
-                    mtail = next(instance for instance in layout_plan["instances"] if instance["name"] == "Mtail")
-                    mload = next(instance for instance in layout_plan["instances"] if instance["name"] == "Mload")
-                    self.assertEqual(mtail["params"]["fingers"], 2)
-                    self.assertEqual(mtail["params"]["simM"], 1)
-                    self.assertEqual(mload["params"]["fingers"], 4)
-                    self.assertEqual(mload["params"]["simM"], 1)
+                    landing_pads = [
+                        rect
+                        for rect in layout_plan["rects"]
+                        if rect.get("metadata", {}).get("kind") == "required_via_landing_pad"
+                    ]
+                    self.assertTrue(landing_pads)
+                    n_tail_m3 = [
+                        path
+                        for path in layout_plan["paths"]
+                        if path["net"] == "n_tail" and path["layer"] == "M3"
+                    ]
+                    self.assertTrue(n_tail_m3)
+                    self.assertTrue(
+                        any(
+                            path["net"] == "n_mirr" and path["layer"] == "M3"
+                            for path in layout_plan["paths"]
+                        )
+                    )
+                    mdiff_units = sorted(
+                        [instance for instance in layout_plan["instances"] if instance["name"].startswith("Mdiff")],
+                        key=lambda instance: instance["xy"][0],
+                    )
+                    self.assertEqual(
+                        [instance["name"].split("_", 1)[0] for instance in mdiff_units],
+                        ["Mdiff1", "Mdiff2", "Mdiff2", "Mdiff1"],
+                    )
+                    self.assertEqual([instance["orient"] for instance in mdiff_units], ["R0", "R0", "MY", "MY"])
+                    self.assertEqual(mdiff_units[0]["params"]["leftDummyPoly"], "ON")
+                    self.assertEqual(mdiff_units[0]["params"]["rightDummyPoly"], "OFF")
+                    self.assertEqual(mdiff_units[-1]["params"]["leftDummyPoly"], "OFF")
+                    self.assertEqual(mdiff_units[-1]["params"]["rightDummyPoly"], "ON")
+                    self.assertTrue(
+                        all(
+                            instance["params"]["leftDummyPoly"] == "OFF"
+                            and instance["params"]["rightDummyPoly"] == "OFF"
+                            for instance in mdiff_units[1:3]
+                        )
+                    )
+                    self.assertEqual(
+                        mapping["Mdiff1"]["physical_realization"]["strategy"],
+                        "common_centroid_abba_segmented",
+                    )
+                    self.assertEqual(mapping["Mdiff1"]["physical_realization"]["requested_nf"], 1)
+                    self.assertEqual(mapping["Mdiff1"]["physical_realization"]["oa_instance_count"], 2)
+                    mtail_units = [instance for instance in layout_plan["instances"] if instance["name"].startswith("Mtail_u")]
+                    mload_units = [instance for instance in layout_plan["instances"] if instance["name"].startswith("Mload_u")]
+                    self.assertEqual(len(mtail_units), 2)
+                    self.assertEqual(len(mload_units), 4)
+                    self.assertTrue(all(instance["params"]["fingers"] == 1 for instance in mtail_units))
+                    self.assertTrue(all(instance["params"]["simM"] == 1 for instance in mtail_units))
+                    self.assertTrue(all(instance["params"]["fingers"] == 1 for instance in mload_units))
+                    self.assertTrue(all(instance["params"]["simM"] == 1 for instance in mload_units))
+                    mtail = mtail_units[0]
                     self.assertEqual(
                         mtail["metadata"]["terminal_access"]["S"]["source"],
                         "crn28_calibre_access_plan",
@@ -115,6 +180,15 @@ class PreparePhysicalIntegrationTest(unittest.TestCase):
                         stages["final_with_pins"]["constraint_realization"]["route_resource_capacity_overflow"],
                         0,
                     )
+                    local_drc = stages["final_with_pins"]["local_drc"]
+                    self.assertTrue(local_drc["passed"])
+                    self.assertEqual(local_drc["rule_issues"], [])
+                    self.assertEqual(local_drc["via_landing_issues"], [])
+                    self.assertEqual(
+                        set(local_drc["checked_rules"]),
+                        {"min_width", "min_area", "different_net_spacing", "via_landing_enclosure"},
+                    )
+                    self.assertIn("density_and_fill", local_drc["unverified_rule_classes"])
 
 
 if __name__ == "__main__":

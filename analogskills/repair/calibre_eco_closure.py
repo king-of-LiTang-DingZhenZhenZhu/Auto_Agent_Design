@@ -25,6 +25,7 @@ from analogskills.artifacts import ArtifactRef, Checkpoint, CheckpointJournal
 from .calibre_closure import (
     classify_calibre_markers_for_local_repair,
     summarize_calibre_marker_repair_classes,
+    summarize_calibre_rule_triage,
 )
 from .drc_eco_solver import build_local_routing_drc_eco_patch, local_drc_eco_patch_summary
 from .drc_lvs import DrcIssue, localize_drc_issues_to_layout, plan_safe_redundant_via_neighbor_patch
@@ -109,8 +110,20 @@ def build_next_calibre_eco_closure_patch(
     cfg = _closure_config(pdk, config)
     classification_config = _classification_config(cfg)
     marker_class_summary = summarize_calibre_marker_repair_classes(results, config=classification_config)
+    rule_triage = summarize_calibre_rule_triage(results, pdk=pdk)
     routing_counts = routing_gating_rule_counts(results, config=classification_config)
     nonrouting_counts = nonrouting_signoff_rule_counts(results, config=classification_config)
+    if bool(rule_triage["routing_eco_blocked"]):
+        return CalibreEcoClosurePatchDecision(
+            None,
+            None,
+            len(results),
+            routing_gating_rule_counts=routing_counts,
+            nonrouting_signoff_rule_counts=nonrouting_counts,
+            marker_class_summary={**marker_class_summary, "rule_triage": rule_triage},
+            summary={"patch_available": False, "edit_count": 0, "rule_triage": rule_triage},
+            reason="pcell_dummy_or_access_markers_must_close_before_routing_eco",
+        )
     if not routing_counts:
         return CalibreEcoClosurePatchDecision(
             None,
@@ -206,6 +219,25 @@ def run_calibre_eco_closure_loop(
     for index in range(1, max_iterations + 1):
         decision = build_next_calibre_eco_closure_patch(current_plan, current_results, pdk=pdk, config=cfg)
         before_counts = dict(decision.routing_gating_rule_counts)
+        if decision.reason == "pcell_dummy_or_access_markers_must_close_before_routing_eco":
+            iterations.append(
+                CalibreEcoClosureIteration(
+                    index,
+                    decision,
+                    before_routing_gating_rule_counts=before_counts,
+                    accepted=False,
+                    acceptance_reason=decision.reason,
+                )
+            )
+            return CalibreEcoClosureLoopResult(
+                current_plan,
+                current_results,
+                tuple(iterations),
+                converged=False,
+                reason=decision.reason,
+                marker_class_summary=decision.marker_class_summary,
+                checkpoints=tuple(checkpoints),
+            )
         if not before_counts:
             return CalibreEcoClosureLoopResult(
                 current_plan,

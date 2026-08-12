@@ -24,7 +24,10 @@ from analogskills.eda.calibre import make_calibre_drc_command, make_calibre_lvs_
 from analogskills.eda.command import EdaCommand, EdaRunResult, run_eda_command
 from analogskills.eda.netlist import export_lvs_netlist
 from analogskills.eda.oa import (
+    OaCellView,
     OaPath,
+    OaRect,
+    OaVia,
     OaWritePlan,
     build_lvs_pins,
     build_oa_schematic_plan,
@@ -42,7 +45,11 @@ from analogskills.eda.virtuoso import (
 )
 from analogskills.layout.placement import Placement
 from analogskills.layout.min_router import StrapRouterConfig, build_strap_interconnect_result
-from analogskills.layout.physical import analyze_plan_physical_connectivity
+from analogskills.layout.physical import (
+    analyze_plan_design_rules,
+    analyze_plan_physical_connectivity,
+    via_landing_bboxes,
+)
 from analogskills.layout.power import (
     SupplyTapSpec,
     build_supply_tap_plan_from_specs,
@@ -61,6 +68,7 @@ from analogskills.repair.calibre_eco_closure import (
     calibre_eco_closure_loop_summary,
     run_calibre_eco_closure_loop,
 )
+from analogskills.repair.calibre_closure import summarize_calibre_rule_triage
 
 from .schema import ImportedDesignHandoff
 from .eco import accept_eco_candidate
@@ -289,6 +297,14 @@ def prepare_imported_physical_run(
         except PhysicalIntentError:
             raise
         placements = physical_smt.placements
+        physical_sizing, placements, physical_smt = _realize_ota_input_pair_common_centroid(
+            physical_sizing,
+            placements,
+            physical_smt,
+        )
+        matching_complete = bool(physical_smt.compiled.checks.get("constraint_realization_complete", False))
+        if not matching_complete:
+            signoff_eligible = False
         _write_json(layout_dir / "design_intent.json", physical_smt.intent.to_dict())
         _write_json(layout_dir / "smt_solution.json", physical_smt.solution_dict())
         _write_json(
@@ -378,6 +394,7 @@ def prepare_imported_physical_run(
         guard = plan_guard_ring(device_plan, pdk, lib=lib_name, cell=cell, net=supply[1] or "vss")
         layout_plan = merge_oa_write_plans(device_plan, interconnect, rails, drops, taps, wells, guard, cellview=device_plan.cellview, grid=pdk)
         physical_stages = {}
+    layout_plan = _add_required_via_landing_pads(layout_plan, pdk)
     pins = build_lvs_pins(
         layout_plan,
         pdk,
@@ -392,7 +409,11 @@ def prepare_imported_physical_run(
     layout_plan = replace(layout_plan, pins=pins, labels=labels)
 
     if handoff_obj.topology == "two_stage_ota":
-        physical_stages["final_with_pins"] = _physical_connectivity_report(layout_plan, pdk)
+        physical_stages["final_with_pins"] = _physical_connectivity_report(
+            layout_plan,
+            pdk,
+            include_local_drc=True,
+        )
         if physical_smt is not None:
             physical_stages["final_with_pins"]["constraint_realization"] = {
                 "complete": bool(physical_smt.compiled.checks.get("constraint_realization_complete", False)),
@@ -406,10 +427,22 @@ def prepare_imported_physical_run(
         failed_stages = [name for name, report in physical_stages.items() if not report["passed"]]
         if failed_stages:
             final_report = physical_stages[failed_stages[-1]]
+            local_drc_issues = tuple(
+                dict(final_report.get("local_drc", {})).get("issues", ()) or ()
+            )
+            open_nets = tuple(str(row.get("net", "")) for row in final_report.get("opens", ()))
+            short_pairs = tuple(
+                (str(row.get("net_a", "")), str(row.get("net_b", "")), str(row.get("layer", "")))
+                for row in final_report.get("shorts", ())
+            )
             raise ValueError(
                 "physical connectivity preparation failed at "
                 f"{','.join(failed_stages)}: {len(final_report['shorts'])} short(s), "
-                f"{len(final_report['opens'])} open net(s)"
+                f"{len(final_report['opens'])} open net(s), "
+                f"open_nets={open_nets}, "
+                f"short_pairs={short_pairs[:3]}, "
+                f"{len(local_drc_issues)} local DRC issue(s): "
+                + "; ".join(str(issue) for issue in local_drc_issues[:3])
             )
 
     layout_plan_path = save_oa_plan_json(layout_plan, layout_dir / "layout.oa_plan.json")
@@ -458,6 +491,13 @@ def prepare_imported_physical_run(
     )
     mapping = _realization_mapping(handoff_obj, pcell_plan, lvs_source)
     (root / "instance_mapping.json").write_text(json.dumps(mapping, indent=2, ensure_ascii=False), encoding="utf-8")
+    signoff_blockers = []
+    if normalized_placement_mode == "legacy_seed_debug" and not signoff_eligible:
+        signoff_blockers.append("legacy_seed_debug is not eligible for sign-off")
+    if physical_smt is not None and not bool(
+        physical_smt.compiled.checks.get("constraint_realization_complete", False)
+    ):
+        signoff_blockers.append("required matching structures are not fully realized and Calibre-qualified")
     manifest = {
         "schema": "auto_agent_design.physical_run_manifest/v1",
         "status": "prepared",
@@ -489,6 +529,7 @@ def prepare_imported_physical_run(
             "constraint_realization_complete": bool(
                 physical_smt and physical_smt.compiled.checks.get("constraint_realization_complete", False)
             ),
+            "signoff_blockers": signoff_blockers,
         },
     }
     _write_json(root / "run_manifest.json", manifest)
@@ -515,8 +556,12 @@ def run_imported_design_signoff(
         base = prepare_imported_physical_run(prepared, physical_root=physical_root, lib_name=lib_name)
     root = Path(base.physical_root)
     manifest = json.loads((root / "run_manifest.json").read_text(encoding="utf-8"))
-    if not bool(dict(manifest.get("physical_planning", {})).get("signoff_eligible", True)):
-        return _signoff_failure(base, [], "legacy_seed_debug is not eligible for sign-off")
+    planning = dict(manifest.get("physical_planning", {}))
+    if not bool(planning.get("signoff_eligible", True)):
+        blockers = tuple(str(item) for item in tuple(planning.get("signoff_blockers", ())) if str(item))
+        if not blockers and str(planning.get("placement_mode", "")) == "legacy_seed_debug":
+            blockers = ("legacy_seed_debug is not eligible for sign-off",)
+        return _signoff_failure(base, [], "; ".join(blockers) or "physical plan is not eligible for sign-off")
     config = _preflight(root, str(manifest["cellview"]["lib"]))
     cell = str(manifest["cellview"]["cell"])
     pdk = resolve_pdk_config("crn28hpcp")
@@ -637,7 +682,15 @@ def run_imported_design_signoff(
 
     drc_count = len(latest["drc"])
     lvs_count = len(latest["lvs"])
+    drc_rule_triage = summarize_calibre_rule_triage(latest["drc"], pdk=pdk)
+    drc_rule_triage_path = _write_json(root / "signoff" / "drc" / "rule_triage.json", drc_rule_triage)
     status = "done" if drc_count == 0 and lvs_count == 0 else "physical_blocked"
+    if status == "done":
+        errors: tuple[str, ...] = ()
+    elif int(drc_rule_triage["priority_blocking_count"]):
+        errors = ("PCell/dummy/terminal-access DRC blockers remain; see signoff/drc/rule_triage.json",)
+    else:
+        errors = ("DRC/LVS did not converge within the bounded ECO policy",)
     result = replace(
         base,
         status=status,
@@ -646,10 +699,17 @@ def run_imported_design_signoff(
         drc_violations=drc_count,
         lvs_issues=lvs_count,
         eco_iterations=int(eco_summary.get("iteration_count", 0)),
-        errors=() if status == "done" else ("DRC/LVS did not converge within the bounded ECO policy",),
+        errors=errors,
     )
     manifest["status"] = status
-    manifest["signoff"] = {"runs": runs, "drc_violations": drc_count, "lvs_issues": lvs_count, "eco": eco_summary}
+    manifest["signoff"] = {
+        "runs": runs,
+        "drc_violations": drc_count,
+        "lvs_issues": lvs_count,
+        "drc_rule_triage": str(drc_rule_triage_path),
+        "drc_priority_blocking_count": int(drc_rule_triage["priority_blocking_count"]),
+        "eco": eco_summary,
+    }
     manifest["runtime"] = _runtime_manifest(config)
     _write_json(root / "run_manifest.json", manifest)
     _persist_state(result)
@@ -660,7 +720,7 @@ def _physical_pcell_sizing(
     handoff: ImportedDesignHandoff,
     sizing: Mapping[str, Mapping[str, Any]],
 ) -> dict[str, dict[str, Any]]:
-    """Fold Spectre multiplicity into native PCell fingers for extraction."""
+    """Preserve Spectre ``m``/``nf`` through an explicit physical unit array."""
     mos_names = {device.name for device in handoff.devices if device.kind == "mos"}
     result = {name: dict(params) for name, params in sizing.items()}
     for name in mos_names:
@@ -671,11 +731,175 @@ def _physical_pcell_sizing(
         fingers = max(1, int(float(params.get("nf", 1) or 1)))
         width = float(params.get("W", params.get("w", 0.0)) or 0.0)
         if width <= 0.0:
-            raise ValueError(f"{name} has invalid MOS width for physical multiplicity folding")
-        params["W"] = width * multiplier
-        params["nf"] = fingers * multiplier
-        params["m"] = 1
+            raise ValueError(f"{name} has invalid MOS width for physical multiplicity realization")
+        params["mos_unit_array"] = {
+            "enabled": True,
+            "source": "spectre_multiplicity",
+            "unit_count": multiplier,
+            # Keep the first exact-multiplicity realization in one row.  The
+            # current calibrated terminal-access envelope extends beyond the
+            # estimated native PCell bbox in Y, so stacking rows can overlap a
+            # lower unit's D access with the upper unit's G access.  Matched
+            # multi-row/common-centroid ordering belongs to the next explicit
+            # matched-array realization stage.
+            "rows": 1,
+            "cols": multiplier,
+            "unit_total_width_m": width,
+            "unit_length_m": float(params.get("L", params.get("l", 0.18e-6)) or 0.18e-6),
+            "unit_nf": fingers,
+            "unit_m": 1,
+            "parallel_reduction_expected": True,
+        }
     return result
+
+
+def _realize_ota_input_pair_common_centroid(
+    sizing: Mapping[str, Mapping[str, Any]],
+    placements: tuple[Placement, ...],
+    physical_smt: object,
+) -> tuple[dict[str, dict[str, Any]], tuple[Placement, ...], object]:
+    """Lower the OTA input pair to ``D-A-B-B-A-D`` physical unit order.
+
+    The two edge dummies are native, non-electrical dummy-poly features of the
+    outer A PCells.  They therefore do not create extra devices in the LVS
+    source.  Each logical MOS remains one source-netlist device; its two
+    physical halves have identical terminals and are expected to reduce in
+    parallel during LVS.
+    """
+
+    left_name, right_name = "Mdiff1", "Mdiff2"
+    result = {str(name): dict(row) for name, row in sizing.items()}
+    pair_rows = [result.get(left_name, {}), result.get(right_name, {})]
+    if any(not row for row in pair_rows):
+        raise PhysicalIntentError("physical_adapter_required", "OTA input pair sizing is missing")
+    for name, row in zip((left_name, right_name), pair_rows):
+        multiplier = max(1, int(float(row.get("m", row.get("M", 1)) or 1)))
+        if multiplier != 1:
+            raise PhysicalIntentError(
+                "physical_adapter_required",
+                f"{name} m={multiplier} needs a calibrated M-aware common-centroid template",
+            )
+        width = float(row.get("W", row.get("w", 0.0)) or 0.0)
+        if width <= 0.0:
+            raise PhysicalIntentError("physical_adapter_required", f"{name} has invalid width")
+
+    signature_keys = ("L", "l", "nf", "m", "M")
+    for key in signature_keys:
+        left_value = pair_rows[0].get(key)
+        right_value = pair_rows[1].get(key)
+        if left_value is not None and right_value is not None and left_value != right_value:
+            raise PhysicalIntentError(
+                "physical_adapter_required",
+                f"OTA input pair requires identical {key}: {left_value!r} != {right_value!r}",
+            )
+
+    dummy_base = {
+        "secondLeftDummy": "OFF",
+        "secondRightDummy": "OFF",
+        "firstDummyPolySpacing": "120n",
+        "dummyPolyWidth": "40n",
+        "MatchDpoWithGate": "ON",
+    }
+    per_device = {
+        left_name: {
+            "unit_slots": (0, 3),
+            "unit_orients": ("R0", "MY"),
+            "unit_pcell_params_by_index": (
+                {**dummy_base, "leftDummyPoly": "ON", "rightDummyPoly": "OFF"},
+                {**dummy_base, "leftDummyPoly": "OFF", "rightDummyPoly": "ON"},
+            ),
+            "role": "A",
+        },
+        right_name: {
+            "unit_slots": (1, 2),
+            "unit_orients": ("R0", "MY"),
+            "unit_pcell_params_by_index": (
+                {**dummy_base, "leftDummyPoly": "OFF", "rightDummyPoly": "OFF"},
+                {**dummy_base, "leftDummyPoly": "OFF", "rightDummyPoly": "OFF"},
+            ),
+            "role": "B",
+        },
+    }
+    for name in (left_name, right_name):
+        row = result[name]
+        config = per_device[name]
+        row["mos_unit_array"] = {
+            "enabled": True,
+            "source": "common_centroid_abba",
+            "unit_count": 2,
+            "rows": 1,
+            "cols": 4,
+            "unit_slots": config["unit_slots"],
+            "unit_orients": config["unit_orients"],
+            "unit_pcell_params_by_index": config["unit_pcell_params_by_index"],
+            "unit_total_width_m": float(row.get("W", row.get("w"))) / 2.0,
+            "unit_length_m": float(row.get("L", row.get("l", 0.18e-6)) or 0.18e-6),
+            # Preserve the source nf on each explicitly segmented half.  W is
+            # halved, so the two parallel units preserve total electrical W.
+            "unit_nf": max(1, int(float(row.get("nf", 1) or 1))),
+            "unit_m": 1,
+            "spacing_um": 0.28,
+            "parallel_reduction_expected": True,
+            "matching_group": "input_pair",
+            "matching_role": config["role"],
+            "pattern": ("DUMMY_L", "A", "B", "B", "A", "DUMMY_R"),
+            "dummy_realization": "native_edge_dummy_poly",
+        }
+
+    by_name = {item.name: item for item in placements}
+    if left_name not in by_name or right_name not in by_name:
+        raise PhysicalIntentError("physical_adapter_required", "SMT result is missing the OTA input pair")
+    base_x = min(by_name[left_name].x_um, by_name[right_name].x_um)
+    base_y = min(by_name[left_name].y_um, by_name[right_name].y_um)
+    lowered = tuple(
+        Placement(item.name, base_x, base_y, "R0", item.role)
+        if item.name in {left_name, right_name}
+        else item
+        for item in placements
+    )
+
+    matching = {str(name): dict(row) for name, row in physical_smt.matching_realization.items()}
+    matching["input_pair"] = {
+        "requested_style": "common_centroid",
+        "realized_style": "common_centroid_abba",
+        "status": "realized",
+        "calibre_qualification": "pending",
+        "devices": (left_name, right_name),
+        "unit_pattern": ("DUMMY_L", "A", "B", "B", "A", "DUMMY_R"),
+        "dummy_realization": "native_edge_dummy_poly",
+        "reason": "ABBA geometry is explicit; CRN28 dummy PCell settings still require Calibre DRC/LVS calibration",
+    }
+    checks = dict(physical_smt.compiled.checks)
+    checks["matching_realization"] = matching
+    checks["constraint_realization_complete"] = all(
+        row.get("status") == "realized" for row in matching.values()
+    )
+    route_assignments = {
+        str(net): dict(row) for net, row in physical_smt.route_resource_assignments.items()
+    }
+    for local_net in ("n_tail", "n_mirr"):
+        if local_net not in route_assignments:
+            continue
+        route_assignments[local_net].update(
+            {
+                "implementation": "local_m3_template",
+                "solver_assignment_consumed": False,
+                "corridor": "ota_core_local",
+            }
+        )
+    compiled = replace(
+        physical_smt.compiled,
+        checks=checks,
+        route_resource_assignments=route_assignments,
+    )
+    updated_smt = replace(
+        physical_smt,
+        compiled=compiled,
+        placements=lowered,
+        route_resource_assignments=route_assignments,
+        matching_realization=matching,
+    )
+    return result, lowered, updated_smt
 
 
 def _attach_crn28_mos_access_metadata(pcell_plan: object, access_plan: OaWritePlan) -> object:
@@ -754,6 +978,23 @@ def _build_imported_two_stage_ota_layout(
     assignments = {
         str(name): dict(row) for name, row in dict(route_resource_assignments or {}).items()
     }
+    local_net_names = ("n_tail", "n_mirr")
+    local_plans = tuple(
+        _build_ota_local_net_plan(
+            pcell_plan,
+            pdk,
+            net_name=net,
+            lib_name=lib_name,
+            cell=cell,
+            expected_row_counts=(2, 4) if net == "n_tail" else None,
+        )
+        for net in local_net_names
+    )
+    local_core_routing = merge_oa_write_plans(
+        *local_plans,
+        cellview=OaCellView(lib_name, cell, "layout", "maskLayout"),
+        grid=pdk,
+    )
     layer_by_net = {
         name: str(row.get("layer", "")) for name, row in assignments.items() if str(row.get("layer", ""))
     }
@@ -772,14 +1013,20 @@ def _build_imported_two_stage_ota_layout(
         pdk,
         lib=lib_name,
         cell=cell,
+        preexisting_plan=local_core_routing,
         config=StrapRouterConfig(
             local_net_prefixes=(),
             route_layers=metals,
             route_layer_strategy="cyclic",
             route_layer_by_net=layer_by_net,
+            route_spacing_clearance_um_by_layer={
+                str(layer): float(pdk.rules.min_spacing_um(str(layer)))
+                for layer in tuple(pdk.layer_map.metals[:4])
+            },
             strap_lane_by_net=lane_by_net,
             global_net_order=ordered_nets,
             global_net_order_strategy="explicit_then_name",
+            global_net_allowlist=tuple(name for name in assignments if name not in set(local_net_names)),
             drop_route_layers=(pdk.layer_map.metals[1],),
             strap_y_start_um=route_y,
             strap_y_pitch_um=3.0,
@@ -801,6 +1048,7 @@ def _build_imported_two_stage_ota_layout(
     )
     routed_core = merge_oa_write_plans(
         device_plan,
+        local_core_routing,
         route_result.plan,
         cellview=device_plan.cellview,
         grid=pdk,
@@ -883,8 +1131,134 @@ def _build_imported_two_stage_ota_layout(
     return final_plan, stages
 
 
-def _physical_connectivity_report(plan: object, pdk: object) -> dict[str, Any]:
-    return dict(
+def _build_ota_local_net_plan(
+    pcell_plan: object,
+    pdk: object,
+    *,
+    net_name: str,
+    lib_name: str,
+    cell: str,
+    expected_row_counts: tuple[int, ...] | None = None,
+) -> OaWritePlan:
+    """Connect one OTA core-local net with a bounded access-to-M3 template."""
+
+    accesses: list[tuple[float, float, str]] = []
+    supported_access_layers = {str(pdk.layer_map.metals[0]), str(pdk.layer_map.metals[1])}
+    for instance in tuple(getattr(pcell_plan, "instances", ()) or ()):
+        connections = dict(getattr(instance, "connections", {}) or {})
+        metadata = dict(getattr(instance, "metadata", {}) or {})
+        access = dict(metadata.get("terminal_access", {}) or {})
+        for terminal, terminal_net in connections.items():
+            if str(terminal_net) != str(net_name):
+                continue
+            terminal_access = dict(access.get(str(terminal), {}) or {})
+            bbox = tuple(terminal_access.get("absolute_bbox_um", ()) or ())
+            layer = str(terminal_access.get("layer", ""))
+            if len(bbox) != 4 or layer not in supported_access_layers:
+                raise ValueError(f"{net_name} terminal access is unavailable for {instance.name}.{terminal}")
+            accesses.append(
+                (
+                    0.5 * (float(bbox[0]) + float(bbox[2])),
+                    0.5 * (float(bbox[1]) + float(bbox[3])),
+                    layer,
+                )
+            )
+    clustered: list[list[tuple[float, float]]] = []
+    for x, y, _layer in sorted(accesses, key=lambda item: (item[1], item[0], item[2])):
+        point = (x, y)
+        if not clustered or abs(point[1] - clustered[-1][0][1]) > 0.02:
+            clustered.append([point])
+        else:
+            clustered[-1].append(point)
+    if len(accesses) < 2 or not clustered:
+        raise ValueError(f"{net_name} local template requires at least two terminal accesses")
+    if expected_row_counts is not None and tuple(sorted(len(row) for row in clustered)) != tuple(sorted(expected_row_counts)):
+        raise ValueError(
+            f"{net_name} local template expected rows {tuple(expected_row_counts)}, got {[len(row) for row in clustered]}"
+        )
+
+    m3 = str(pdk.layer_map.metals[2])
+    m3_width = max(0.1, float(pdk.rules.min_width_um(m3)))
+    bus_paths: list[OaPath] = []
+    row_anchors: list[tuple[float, float]] = []
+    for row in clustered:
+        y = sum(point[1] for point in row) / len(row)
+        x0 = min(point[0] for point in row)
+        x1 = max(point[0] for point in row)
+        x0, y = pdk.rules.snap_point_um((x0, y))
+        x1, _ = pdk.rules.snap_point_um((x1, y))
+        if x1 - x0 > 1e-12:
+            bus_paths.append(OaPath(m3, "drawing", ((x0, y), (x1, y)), m3_width, net_name))
+        row_anchors.append((x0, y))
+    for lower, upper in zip(row_anchors, row_anchors[1:]):
+        points = (lower, (lower[0], upper[1]), upper)
+        bus_paths.append(OaPath(m3, "drawing", points, m3_width, net_name))
+
+    vias: list[OaVia] = []
+    seen_vias: set[tuple[str, float, float]] = set()
+    for x, y, layer in accesses:
+        point = pdk.rules.snap_point_um((x, y))
+        via_defs = ("VIA1", "VIA2") if layer == str(pdk.layer_map.metals[0]) else ("VIA2",)
+        for via_def in via_defs:
+            key = (via_def, point[0], point[1])
+            if key in seen_vias:
+                continue
+            seen_vias.add(key)
+            vias.append(OaVia(via_def, point, net_name))
+    return OaWritePlan(
+        OaCellView(lib_name, cell, "layout", "maskLayout"),
+        nets=(net_name,),
+        paths=tuple(bus_paths),
+        vias=tuple(vias),
+    )
+
+
+def _add_required_via_landing_pads(plan: OaWritePlan, pdk: object) -> OaWritePlan:
+    """Materialize the metal enclosure/min-area boxes assumed by via routing."""
+
+    existing = {
+        (
+            str(rect.layer),
+            str(rect.net),
+            tuple(round(float(value), 12) for value in rect.bbox),
+        )
+        for rect in plan.rects
+    }
+    pads: list[OaRect] = []
+    for index, via in enumerate(plan.vias):
+        net = str(via.net or "")
+        if not net:
+            continue
+        for layer, bbox in via_landing_bboxes(via, pdk):
+            key = (str(layer), net, tuple(round(float(value), 12) for value in bbox))
+            if key in existing:
+                continue
+            existing.add(key)
+            pads.append(
+                OaRect(
+                    str(layer),
+                    "drawing",
+                    tuple(float(value) for value in bbox),
+                    net,
+                    metadata={
+                        "kind": "required_via_landing_pad",
+                        "via_index": index,
+                        "via_def": str(via.via_def),
+                    },
+                )
+            )
+    if not pads:
+        return plan
+    return replace(plan, rects=tuple(plan.rects) + tuple(pads))
+
+
+def _physical_connectivity_report(
+    plan: object,
+    pdk: object,
+    *,
+    include_local_drc: bool = False,
+) -> dict[str, Any]:
+    connectivity = dict(
         analyze_plan_physical_connectivity(
             plan,
             pdk=pdk,
@@ -893,6 +1267,17 @@ def _physical_connectivity_report(plan: object, pdk: object) -> dict[str, Any]:
             include_opens=True,
         )
     )
+    if include_local_drc:
+        local_drc = dict(analyze_plan_design_rules(plan, pdk))
+        connectivity["passed"] = bool(connectivity.get("passed", False) and local_drc.get("passed", False))
+        connectivity["issues"] = list(
+            dict.fromkeys(
+                tuple(connectivity.get("issues", ()))
+                + tuple(local_drc.get("issues", ()))
+            )
+        )
+        connectivity["local_drc"] = local_drc
+    return connectivity
 
 
 def _supply_trunk(plan: object, net: str) -> tuple[tuple[float, float], str]:
@@ -999,10 +1384,50 @@ def _realization_mapping(handoff: ImportedDesignHandoff, pcell_plan: object, lvs
     missing_lvs = [name for name, items in lvs_realized.items() if not items]
     if missing_lvs:
         raise ValueError(f"LVS realization missing frontend instances: {missing_lvs}")
-    return {
-        name: {**handoff.instance_mapping[name], "oa_instances": instances, "lvs_instances": lvs_realized[name]}
-        for name, instances in realized.items()
+    source_by_name = {item.name: item for item in handoff.devices}
+    unit_array_by_device = {
+        str(row.get("device", "")): dict(row)
+        for row in tuple(getattr(pcell_plan, "metadata", {}).get("mos_unit_arrays", ()) or ())
+        if isinstance(row, Mapping) and str(row.get("device", ""))
     }
+    result: dict[str, Any] = {}
+    for name, instances in realized.items():
+        source = source_by_name[name]
+        parameters = dict(source.parameters)
+        requested_m = max(1, int(float(parameters.get("m", parameters.get("M", 1)) or 1))) if source.kind == "mos" else 1
+        requested_nf = max(1, int(float(parameters.get("nf", 1) or 1))) if source.kind == "mos" else 1
+        unit_array = unit_array_by_device.get(name, {})
+        realization_source = str(unit_array.get("source", ""))
+        if realization_source == "common_centroid_abba":
+            strategy = "common_centroid_abba_segmented"
+        elif source.kind == "mos" and requested_m > 1:
+            strategy = "explicit_m_unit_array"
+        else:
+            strategy = "single_pcell"
+        result[name] = {
+            **handoff.instance_mapping[name],
+            "oa_instances": instances,
+            "lvs_instances": lvs_realized[name],
+            "source_parameters": parameters,
+            "physical_realization": {
+                "strategy": strategy,
+                "requested_m": requested_m,
+                "requested_nf": requested_nf,
+                "oa_instance_count": len(instances),
+                "lvs_instance_count": len(lvs_realized[name]),
+                **(
+                    {
+                        "matching_group": str(unit_array.get("matching_group", "")),
+                        "matching_role": str(unit_array.get("matching_role", "")),
+                        "unit_pattern": list(unit_array.get("pattern", ()) or ()),
+                        "dummy_realization": str(unit_array.get("dummy_realization", "")),
+                    }
+                    if realization_source == "common_centroid_abba"
+                    else {}
+                ),
+            },
+        }
+    return result
 
 
 def _preflight(root: Path, lib_name: str) -> dict[str, str]:

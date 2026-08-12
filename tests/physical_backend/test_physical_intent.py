@@ -85,6 +85,11 @@ class PhysicalIntentTest(unittest.TestCase):
             )
             self.assertTrue(result.passed)
             self.assertEqual({item.name for item in result.placements}, set(graph.devices))
+            placement_by_name = {item.name: item for item in result.placements}
+            self.assertEqual(placement_by_name["Mdiff1"].orient, "R0")
+            self.assertEqual(placement_by_name["Mdiff2"].orient, "MY")
+            self.assertEqual(placement_by_name["Mmirr1"].orient, "R0")
+            self.assertEqual(placement_by_name["Mmirr2"].orient, "MY")
             lanes = [int(row["lane"]) for row in result.route_resource_assignments.values()]
             self.assertEqual(len(lanes), len(set(lanes)))
             self.assertEqual(
@@ -101,6 +106,19 @@ class PhysicalIntentTest(unittest.TestCase):
                 row["solver"] in {"analogskills_local_smt", "template"}
                 for row in result.route_resource_assignments.values()
             ))
+            self.assertFalse(result.compiled.checks["constraint_realization_complete"])
+
+    def test_physical_sizing_preserves_m_and_nf_as_explicit_units(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            handoff = self._handoff(Path(tmp))
+            _graph, sizing = compile_imported_design(handoff)
+            physical = _physical_pcell_sizing(handoff, sizing)
+            self.assertEqual(physical["Mtail"]["m"], 2)
+            self.assertEqual(physical["Mtail"]["nf"], 1)
+            self.assertEqual(physical["Mtail"]["W"], sizing["Mtail"]["W"])
+            self.assertEqual(physical["Mtail"]["mos_unit_array"]["unit_count"], 2)
+            self.assertEqual(physical["Mtail"]["mos_unit_array"]["unit_nf"], 1)
+            self.assertEqual(physical["Mtail"]["mos_unit_array"]["unit_m"], 1)
 
     def test_unknown_topology_fails_closed(self):
         with tempfile.TemporaryDirectory() as tmp:

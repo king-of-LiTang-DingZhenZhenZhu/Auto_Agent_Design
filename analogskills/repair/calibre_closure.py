@@ -52,6 +52,25 @@ class MarkerRepairClassification:
     signoff_gated: bool = True
 
 
+@dataclass(frozen=True)
+class CalibreRuleTriage:
+    """Root-cause queue entry for a Calibre result.
+
+    ``domain`` identifies the generator that must be fixed before a later
+    routing ECO is useful.  It is deliberately separate from ``repair_class``:
+    the latter decides whether a geometry patch is safe, while this record
+    controls diagnosis order.
+    """
+
+    rule: str
+    domain: str
+    priority: int
+    owner: str
+    action: str
+    blocks_routing_eco: bool = False
+    parameters: tuple[str, ...] = ()
+
+
 _ACTION_BY_TOKEN = (
     (("G.1:",), "snap_to_grid"),
     (("G.4:",), "remove_short_jog"),
@@ -218,6 +237,90 @@ def summarize_calibre_marker_repair_classes(
     }
 
 
+def classify_calibre_rule_for_triage(
+    result: object,
+    *,
+    pdk: object | None = None,
+) -> CalibreRuleTriage:
+    """Classify one result by root cause, using rule ID plus marker context.
+
+    Metal spacing IDs are intentionally not called terminal-access errors from
+    their rule ID alone.  They enter that bucket only when Calibre context says
+    the marker touches PCell/terminal-access geometry.
+    """
+
+    rule = _rule_from_result(result)
+    upper = rule.upper().strip()
+    context = _result_context(result).upper()
+    dummy_parameter_sources, marker_rules = _pdk_local_rule_sources(pdk)
+    dummy_parameter_rules = tuple(dummy_parameter_sources)
+
+    if _matches_any_rule_family(upper, dummy_parameter_rules):
+        parameters = next(
+            (
+                tuple(str(item) for item in tuple(source.get("parameters", ()) or ()))
+                for family, source in dummy_parameter_sources.items()
+                if _matches_rule_family(upper, family)
+            ),
+            (),
+        )
+        return CalibreRuleTriage(rule, "pcell_dummy", 0, "pcell", "recalibrate_mos_dummy_cdf", True, parameters)
+    if _matches_any_rule_family(upper, marker_rules):
+        return CalibreRuleTriage(rule, "dummy_marker", 0, "pcell", "repair_required_dummy_marker", True)
+    if _is_terminal_access_result(upper, context):
+        return CalibreRuleTriage(rule, "terminal_access", 0, "pcell_access", "repair_terminal_access_template", True)
+
+    repair = classify_calibre_marker_for_local_repair(rule)
+    if repair.owner == "pcell":
+        return CalibreRuleTriage(rule, "pcell_device", 0, "pcell", "recharacterize_native_pcell", True)
+    if repair.owner == "routing":
+        return CalibreRuleTriage(rule, "routing", 1, "routing", "run_local_routing_eco", False)
+    if repair.owner == "global":
+        return CalibreRuleTriage(rule, "global_signoff", 2, "global", "defer_to_global_signoff", False)
+    if repair.owner == "warning":
+        return CalibreRuleTriage(rule, "warning", 3, "warning", "record_warning", False)
+    return CalibreRuleTriage(rule, "manual_review", 2, "manual", "inspect_rule_and_marker", False)
+
+
+def summarize_calibre_rule_triage(
+    results: Iterable[object],
+    *,
+    pdk: object | None = None,
+) -> dict[str, object]:
+    """Build an ordered, rule-ID aggregated DRC root-cause report."""
+
+    rows = tuple(results)
+    classified = tuple(classify_calibre_rule_for_triage(row, pdk=pdk) for row in rows)
+    domain_counts = Counter(row.domain for row in classified)
+    rule_counts: dict[tuple[int, str, str, str, str, bool, tuple[str, ...]], int] = Counter(
+        (row.priority, row.domain, row.rule, row.owner, row.action, row.blocks_routing_eco, row.parameters)
+        for row in classified
+    )
+    queue = [
+        {
+            "priority": priority,
+            "domain": domain,
+            "rule": rule,
+            "count": count,
+            "owner": owner,
+            "action": action,
+            "blocks_routing_eco": blocks,
+            "parameters": list(parameters),
+        }
+        for (priority, domain, rule, owner, action, blocks, parameters), count in sorted(
+            rule_counts.items(), key=lambda item: (item[0][0], item[0][1], -item[1], item[0][2])
+        )
+    ]
+    blocking_count = sum(count for key, count in rule_counts.items() if key[-2])
+    return {
+        "total": len(rows),
+        "domain_counts": dict(sorted(domain_counts.items())),
+        "priority_blocking_count": blocking_count,
+        "routing_eco_blocked": blocking_count > 0,
+        "repair_queue": queue,
+    }
+
+
 def classify_calibre_rule(rule: str) -> tuple[str, bool]:
     """Return the responsible generator and whether the result is signoff-gated.
 
@@ -269,6 +372,52 @@ def _rule_from_result(row: object) -> str:
     if isinstance(row, str):
         return row
     return str(getattr(row, "rule", ""))
+
+
+def _result_context(row: object) -> str:
+    if isinstance(row, str):
+        return ""
+    values = [
+        getattr(row, "message", ""),
+        getattr(row, "cell", ""),
+        getattr(row, "instance", ""),
+        getattr(row, "properties", ""),
+    ]
+    return " ".join(str(value) for value in values if value)
+
+
+def _is_terminal_access_result(rule: str, context: str) -> bool:
+    explicit = rule.startswith(("PCELL_ACCESS.", "LVS.SOURCE_TERMINAL_ACCESS", "LVS.DRAIN_TERMINAL_ACCESS", "LVS.GATE_TERMINAL_ACCESS"))
+    contextual = any(token in context for token in ("PCELL_ACCESS", "TERMINAL_ACCESS", "CRN28_MOS_SOURCE", "CRN28_MOS_DRAIN", "CRN28_MOS_GATE"))
+    return explicit or contextual
+
+
+def _pdk_local_rule_sources(pdk: object | None) -> tuple[dict[str, Mapping[str, object]], tuple[str, ...]]:
+    metadata = getattr(pdk, "metadata", {}) if pdk is not None else {}
+    metadata = metadata if isinstance(metadata, Mapping) else {}
+    sweep = metadata.get("pcell_drc_sweep", {})
+    sweep = sweep if isinstance(sweep, Mapping) else {}
+    mos = sweep.get("strongarm_mos", {})
+    mos = mos if isinstance(mos, Mapping) else {}
+    sources = mos.get("rule_parameter_sources", {})
+    sources = sources if isinstance(sources, Mapping) else {}
+    dummy_parameter_sources = {
+        str(rule): source
+        for rule, source in sources.items()
+        if isinstance(source, Mapping)
+    }
+
+    required = metadata.get("required_marker_layers", {})
+    required = required if isinstance(required, Mapping) else {}
+    marker_rules: list[str] = []
+    for marker in tuple(required.get("markers", ()) or ()):
+        if not isinstance(marker, Mapping):
+            continue
+        marker_rules.extend(str(rule) for rule in tuple(marker.get("rule_ids", ()) or ()))
+        for enclosure in tuple(marker.get("enclosures", ()) or ()):
+            if isinstance(enclosure, Mapping):
+                marker_rules.extend(str(rule) for rule in tuple(enclosure.get("rule_ids", ()) or ()))
+    return dummy_parameter_sources, tuple(marker_rules)
 
 
 def _matches_any_rule_family(rule: str, families: tuple[object, ...]) -> bool:

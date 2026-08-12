@@ -82,6 +82,20 @@ class ViaLandingIssue:
     severity: str = "error"
 
 
+@dataclass(frozen=True)
+class DesignRuleIssue:
+    rule: str
+    layer: str
+    net: str
+    message: str
+    severity: str = "error"
+    source: str = ""
+    bbox: BBox | None = None
+    other_net: str = ""
+    other_source: str = ""
+    other_bbox: BBox | None = None
+
+
 def collect_plan_shapes(
     plan: Any,
     *,
@@ -384,6 +398,238 @@ def analyze_plan_physical_connectivity(
     }
 
 
+def analyze_plan_design_rules(
+    plan: Any,
+    pdk: Any,
+    *,
+    layers: Iterable[str] | None = None,
+) -> dict[str, object]:
+    """Check the conservative rule subset represented by ``DesignRuleDeck``.
+
+    This is intentionally not a Calibre replacement.  It proves only rules
+    whose geometry and numeric limits are present locally: path/rectangle
+    minimum width, connected-component minimum area, different-net same-layer
+    spacing, and via landing/enclosure coverage.
+    """
+
+    layer_filter = None if layers is None else {str(layer) for layer in layers}
+    rules = getattr(pdk, "rules", None)
+    if rules is None:
+        return {
+            "passed": False,
+            "issues": ["PDK design-rule deck is unavailable"],
+            "rule_issues": [],
+            "via_landing_issues": [],
+            "checked_rules": [],
+            "unverified_rule_classes": _unverified_rule_classes(),
+        }
+
+    shapes = collect_plan_shapes(
+        plan,
+        include_vias=False,
+        include_instance_terminals=False,
+        layers=layer_filter,
+    )
+    issues: list[DesignRuleIssue] = []
+    issues.extend(_minimum_width_issues(plan, shapes, rules, layer_filter))
+    issues.extend(_minimum_area_issues(shapes, rules))
+    issues.extend(_different_net_spacing_issues(shapes, rules))
+    via_report = analyze_via_landings(plan, pdk, require_all_layers=True)
+    messages = [issue.message for issue in issues]
+    messages.extend(str(message) for message in tuple(via_report.get("issues", ())) or ())
+    return {
+        "passed": not issues and bool(via_report.get("passed", False)),
+        "issues": list(dict.fromkeys(messages)),
+        "rule_issues": [asdict(issue) for issue in issues],
+        "via_landing_issues": list(via_report.get("landing_issues", ())),
+        "checked_rules": ["min_width", "min_area", "different_net_spacing", "via_landing_enclosure"],
+        "unverified_rule_classes": _unverified_rule_classes(),
+    }
+
+
+def _minimum_width_issues(
+    plan: Any,
+    shapes: Sequence[PlanShape],
+    rules: Any,
+    layer_filter: set[str] | None,
+) -> tuple[DesignRuleIssue, ...]:
+    issues: list[DesignRuleIssue] = []
+    configured = dict(getattr(rules, "min_width_nm", {}) or {})
+    for index, path in enumerate(tuple(getattr(plan, "paths", ()) or ())):
+        layer = str(getattr(path, "layer", "") or "")
+        if layer not in configured or (layer_filter is not None and layer not in layer_filter):
+            continue
+        net = str(getattr(path, "net", "") or "")
+        try:
+            width = float(getattr(path, "width", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            continue
+        minimum = float(rules.min_width_um(layer))
+        if width + 1e-12 < minimum:
+            issues.append(
+                DesignRuleIssue(
+                    "min_width",
+                    layer,
+                    net,
+                    f"path[{index}] net {net or '<unnamed>'} width {width:.6g}um is below {layer} minimum {minimum:.6g}um",
+                    source=f"path[{index}]",
+                )
+            )
+    for shape in shapes:
+        if shape.kind not in {"rect", "pin"} or shape.layer not in configured:
+            continue
+        width = min(shape.bbox[2] - shape.bbox[0], shape.bbox[3] - shape.bbox[1])
+        minimum = float(rules.min_width_um(shape.layer))
+        if width + 1e-12 < minimum:
+            issues.append(
+                DesignRuleIssue(
+                    "min_width",
+                    shape.layer,
+                    shape.net,
+                    f"{shape.source} net {shape.net} width {width:.6g}um is below {shape.layer} minimum {minimum:.6g}um",
+                    source=shape.source,
+                    bbox=shape.bbox,
+                )
+            )
+    return tuple(issues)
+
+
+def _minimum_area_issues(shapes: Sequence[PlanShape], rules: Any) -> tuple[DesignRuleIssue, ...]:
+    configured = dict(getattr(rules, "min_area_nm2", {}) or {})
+    grouped: dict[tuple[str, str], list[PlanShape]] = {}
+    for shape in shapes:
+        if shape.layer in configured:
+            grouped.setdefault((shape.layer, shape.net), []).append(shape)
+    issues: list[DesignRuleIssue] = []
+    for (layer, net), rows in sorted(grouped.items()):
+        for component in _touching_shape_components(rows):
+            area = _rectangle_union_area(tuple(shape.bbox for shape in component))
+            minimum = float(configured[layer]) * 1e-6
+            if area + 1e-12 >= minimum:
+                continue
+            bbox = _bbox_union(tuple(shape.bbox for shape in component))
+            sources = ",".join(shape.source for shape in component)
+            issues.append(
+                DesignRuleIssue(
+                    "min_area",
+                    layer,
+                    net,
+                    f"net {net} connected {layer} area {area:.6g}um^2 is below minimum {minimum:.6g}um^2",
+                    source=sources,
+                    bbox=bbox,
+                )
+            )
+    return tuple(issues)
+
+
+def _different_net_spacing_issues(shapes: Sequence[PlanShape], rules: Any) -> tuple[DesignRuleIssue, ...]:
+    configured = dict(getattr(rules, "min_spacing_nm", {}) or {})
+    by_layer: dict[str, list[PlanShape]] = {}
+    for shape in shapes:
+        if shape.layer in configured:
+            by_layer.setdefault(shape.layer, []).append(shape)
+    issues: list[DesignRuleIssue] = []
+    seen: set[tuple[str, str, str, str, str]] = set()
+    for layer, rows in sorted(by_layer.items()):
+        minimum = float(rules.min_spacing_um(layer))
+        ordered = sorted(rows, key=lambda shape: (shape.bbox[0], shape.bbox[2], shape.bbox[1]))
+        for index, left in enumerate(ordered):
+            for right in ordered[index + 1 :]:
+                if right.bbox[0] - left.bbox[2] >= minimum - 1e-12:
+                    break
+                if left.net == right.net or bbox_overlaps(left.bbox, right.bbox, include_touching=True):
+                    continue
+                distance = _bbox_edge_distance(left.bbox, right.bbox)
+                if distance + 1e-12 >= minimum:
+                    continue
+                net_a, net_b = sorted((left.net, right.net))
+                source_a, source_b = (
+                    (left.source, right.source) if left.net == net_a else (right.source, left.source)
+                )
+                key = (layer, net_a, net_b, source_a, source_b)
+                if key in seen:
+                    continue
+                seen.add(key)
+                first, second = (left, right) if left.net == net_a else (right, left)
+                issues.append(
+                    DesignRuleIssue(
+                        "min_spacing",
+                        layer,
+                        first.net,
+                        f"{first.net}-{second.net} spacing {distance:.6g}um on {layer} is below minimum {minimum:.6g}um",
+                        source=first.source,
+                        bbox=first.bbox,
+                        other_net=second.net,
+                        other_source=second.source,
+                        other_bbox=second.bbox,
+                    )
+                )
+    return tuple(issues)
+
+
+def _touching_shape_components(rows: Sequence[PlanShape]) -> tuple[tuple[PlanShape, ...], ...]:
+    parent = {index: index for index in range(len(rows))}
+    for index, left in enumerate(rows):
+        for other_index, right in enumerate(rows[index + 1 :], start=index + 1):
+            if bbox_overlaps(left.bbox, right.bbox, include_touching=True):
+                _union(parent, index, other_index)
+    grouped: dict[int, list[PlanShape]] = {}
+    for index, shape in enumerate(rows):
+        grouped.setdefault(_find(parent, index), []).append(shape)
+    return tuple(tuple(group) for group in grouped.values())
+
+
+def _rectangle_union_area(boxes: Sequence[BBox]) -> float:
+    xs = sorted({value for box in boxes for value in (box[0], box[2])})
+    area = 0.0
+    for left, right in zip(xs, xs[1:]):
+        if right <= left:
+            continue
+        intervals = sorted(
+            (box[1], box[3]) for box in boxes if box[0] < right and box[2] > left
+        )
+        covered = 0.0
+        if intervals:
+            start, stop = intervals[0]
+            for low, high in intervals[1:]:
+                if low <= stop:
+                    stop = max(stop, high)
+                else:
+                    covered += max(0.0, stop - start)
+                    start, stop = low, high
+            covered += max(0.0, stop - start)
+        area += (right - left) * covered
+    return area
+
+
+def _bbox_union(boxes: Sequence[BBox]) -> BBox | None:
+    if not boxes:
+        return None
+    return (
+        min(box[0] for box in boxes),
+        min(box[1] for box in boxes),
+        max(box[2] for box in boxes),
+        max(box[3] for box in boxes),
+    )
+
+
+def _bbox_edge_distance(left: BBox, right: BBox) -> float:
+    dx = max(left[0] - right[2], right[0] - left[2], 0.0)
+    dy = max(left[1] - right[3], right[1] - left[3], 0.0)
+    return sqrt(dx * dx + dy * dy)
+
+
+def _unverified_rule_classes() -> list[str]:
+    return [
+        "context_dependent_eol_and_notch",
+        "multi_patterning_color",
+        "density_and_fill",
+        "antenna",
+        "native_pcell_internal_feol",
+        "latchup_and_full_guard_ring_context",
+    ]
+
+
 def detect_plan_net_opens(
     plan: Any,
     *,
@@ -495,7 +741,7 @@ def analyze_via_landings(
         partial_layers: list[str] = []
         for layer, landing in landings:
             layer_shapes = shapes_by_net_layer.get((net, layer), ())
-            if any(bbox_contains(shape.bbox, landing, include_touching=True) for shape in layer_shapes):
+            if _rectangles_cover_bbox(tuple(shape.bbox for shape in layer_shapes), landing):
                 covered_layers.append(layer)
             elif any(bbox_overlaps(shape.bbox, landing, include_touching=True) for shape in layer_shapes):
                 partial_layers.append(layer)
@@ -520,6 +766,21 @@ def analyze_via_landings(
         "issues": [issue.message for issue in issues],
         "landing_issues": [asdict(issue) for issue in issues],
     }
+
+
+def _rectangles_cover_bbox(boxes: Sequence[BBox], target: BBox) -> bool:
+    clipped: list[BBox] = []
+    for box in boxes:
+        intersection = (
+            max(box[0], target[0]),
+            max(box[1], target[1]),
+            min(box[2], target[2]),
+            min(box[3], target[3]),
+        )
+        if _bbox_has_positive_area(intersection):
+            clipped.append(intersection)
+    target_area = max(0.0, target[2] - target[0]) * max(0.0, target[3] - target[1])
+    return target_area > 0.0 and _rectangle_union_area(clipped) + 1e-12 >= target_area
 
 
 def via_landing_bboxes(via: Any, pdk: Any, *, landing_margin_um: float | None = None) -> tuple[tuple[str, BBox], ...]:

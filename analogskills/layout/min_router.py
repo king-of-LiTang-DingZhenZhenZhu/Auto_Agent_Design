@@ -209,6 +209,7 @@ def build_strap_interconnect_result(
     view: str = "layout",
     config: StrapRouterConfig | None = None,
     calibration_cache: PCellCalibrationCache | None = None,
+    preexisting_plan: Any | None = None,
 ) -> StrapRouterResult:
     """Build straps and return the plan plus its standalone physical report."""
 
@@ -225,6 +226,15 @@ def build_strap_interconnect_result(
     skipped_terminals: list[dict[str, object]] = []
     occupied: list[_OwnedShape] = list(_instance_terminal_owned_shapes(pcell_plan, pdk, accessor, cfg))
     routed_shapes_by_net: dict[str, list[_OwnedShape]] = {}
+    if preexisting_plan is not None:
+        preexisting_shapes: list[_OwnedShape] = []
+        for path in tuple(getattr(preexisting_plan, "paths", ()) or ()):
+            preexisting_shapes.extend(_path_owned_shapes(path))
+        preexisting_shapes.extend(_rect_owned_shapes(tuple(getattr(preexisting_plan, "rects", ()) or ())))
+        preexisting_shapes.extend(_via_owned_shapes(tuple(getattr(preexisting_plan, "vias", ()) or ()), pdk))
+        occupied.extend(preexisting_shapes)
+        for shape in preexisting_shapes:
+            routed_shapes_by_net.setdefault(str(shape.net), []).append(shape)
     min_w = pdk.rules.snap_dimension_um(cfg.min_route_width_um)
     half_w = min_w / 2.0
 
