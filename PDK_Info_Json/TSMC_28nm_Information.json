@@ -80,9 +80,9 @@
       "hspice_model_path": "",
       "hspice_section": "",
       "process_sections": {},
-      "gmid_table_path": "",
+      "gmid_table_path": "../gmid_lookup_table/tsmc28_1p8v_nch18_pch18_gmid_tables.json",
       "pvt_temperatures_c": [],
-      "min_l": 1.5e-07,
+      "min_l": 1.8e-07,
       "max_width_per_finger": 2.7e-06,
       "min_width_per_finger": 3.2e-07
     }

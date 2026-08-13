@@ -226,6 +226,7 @@ class TwoStageOTA(BaseTopology):
         """
         from models import DerivedBranchCurrentSpec, GmidTopologySpec, TransistorSpec
         pdk = get_pdk_profile()
+        min_l = pdk.min_l
         unit_current = 20e-6
         pass_through_space = self._apply_param_space_overrides(ParamSpace(params=[
             ParamDef(
@@ -285,7 +286,8 @@ class TwoStageOTA(BaseTopology):
                     model=pdk.nmos_model,
                     current_source="IBIAS", current_fraction=1.0,
                     gm_id_low=8, gm_id_high=15, gm_id_default=10,
-                    L_low=200e-9, L_high=600e-9, L_default=200e-9,
+                    L_low=max(min_l, 200e-9), L_high=600e-9,
+                    L_default=max(min_l, 200e-9),
                     Vds_estimate=0.2,
                 ),
                 # -- First stage: NMOS diff pair (each I_tail/2) --
@@ -295,7 +297,7 @@ class TwoStageOTA(BaseTopology):
                     model=pdk.nmos_model,
                     current_source="I_tail", current_fraction=0.5,
                     gm_id_low=10, gm_id_high=20, gm_id_default=12,
-                    L_low=60e-9, L_high=500e-9, L_default=60e-9,
+                    L_low=min_l, L_high=500e-9, L_default=min_l,
                     Vds_estimate=0.25, Vbs=-0.3, multiplicity=2,
                 ),
                 # -- First stage: PMOS current mirror load (each I_tail/2) --
@@ -305,7 +307,8 @@ class TwoStageOTA(BaseTopology):
                     model=pdk.pmos_model,
                     current_source="I_tail", current_fraction=0.5,
                     gm_id_low=8, gm_id_high=15, gm_id_default=10,
-                    L_low=60e-9, L_high=500e-9, L_default=100e-9,
+                    L_low=min_l, L_high=500e-9,
+                    L_default=max(min_l, 100e-9),
                     Vds_estimate=0.3, multiplicity=2,
                 ),
                 # -- Second stage: PMOS common-source amplifier --
@@ -315,7 +318,8 @@ class TwoStageOTA(BaseTopology):
                     model=pdk.pmos_model,
                     current_source="I_cs", current_fraction=1.0,
                     gm_id_low=8, gm_id_high=15, gm_id_default=12,
-                    L_low=200e-9, L_high=600e-9, L_default=200e-9,
+                    L_low=max(min_l, 200e-9), L_high=600e-9,
+                    L_default=max(min_l, 200e-9),
                     Vds_estimate=0.45,
                 ),
             ],

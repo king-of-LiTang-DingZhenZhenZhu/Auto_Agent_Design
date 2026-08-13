@@ -92,6 +92,60 @@ class PsfResultMathTest(unittest.TestCase):
         self.assertAlmostEqual(result.phase_margin_deg, 125.994)
         self.assertAlmostEqual(result.raw_metrics["phase_margin"], 125.994)
 
+    def test_stb_parser_uses_dc_relative_pm_when_native_margin_is_nonfinite(self):
+        frequency = np.array([1.0, 10.0, 100.0])
+        loop_gain = np.array(
+            [
+                100.0 * np.exp(-1j * np.deg2rad(20.0)),
+                1.0 * np.exp(-1j * np.deg2rad(120.0)),
+                0.01 * np.exp(-1j * np.deg2rad(160.0)),
+            ]
+        )
+        datasets = {
+            "loop.stb": (frequency, {"loopGain": loop_gain}),
+            "loop.margin.stb": (
+                np.array([0.0]),
+                {"phaseMargin": np.array([float("nan")])},
+            ),
+        }
+
+        class FakeSignal:
+            def __init__(self, name, ordinate):
+                self.name = name
+                self.ordinate = ordinate
+
+        class FakePSF:
+            def __init__(self, path):
+                self.axis, values = datasets[Path(path).name]
+                self.signals = {
+                    name: FakeSignal(name, ordinate)
+                    for name, ordinate in values.items()
+                }
+
+            def get_sweep(self):
+                return SimpleNamespace(abscissa=self.axis)
+
+            def all_signals(self):
+                return list(self.signals.values())
+
+            def get_signal(self, name):
+                return self.signals[name]
+
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+            sys.modules, {"psf_utils": SimpleNamespace(PSF=FakePSF)}
+        ):
+            raw_dir = Path(tmp)
+            (raw_dir / "loop.stb").touch()
+            (raw_dir / "loop.margin.stb").touch()
+            result = parse_psf_results(
+                raw_dir,
+                "loop stb start=1 stop=100 dec=10 probe=Iloop",
+            )
+
+        self.assertIsNotNone(result)
+        self.assertAlmostEqual(result.phase_margin_deg, 80.0)
+        self.assertAlmostEqual(result.raw_metrics["phase_margin"], 80.0)
+
     def test_metric_goals_round_trip_through_requirements(self):
         targets = DesignTarget(
             gain_db=60,
@@ -335,7 +389,24 @@ class PsfResultMathTest(unittest.TestCase):
         self.assertIsNotNone(ugf_hz)
         self.assertAlmostEqual(ugf_hz / expected_ugf, 1.0, places=3)
         self.assertIsNotNone(phase_margin_deg)
-        self.assertAlmostEqual(phase_margin_deg, 90.57, places=1)
+        phase_dc = -math.degrees(math.atan(frequency[0] / pole_hz))
+        phase_at_ugf = -math.degrees(math.atan(expected_ugf / pole_hz))
+        expected_pm = 180.0 - (phase_dc - phase_at_ugf)
+        self.assertAlmostEqual(phase_margin_deg, expected_pm, places=1)
+
+    def test_ac_metrics_measure_phase_loss_from_positive_dc_phase(self):
+        frequency = np.array([1.0, 10.0, 100.0, 1000.0])
+        magnitude = np.array([100.0, 10.0, 1.0, 0.1])
+        phase_deg = np.array([180.0, 90.0, -30.0, -60.0])
+        response = magnitude * np.exp(1j * np.deg2rad(phase_deg))
+
+        gain_db, ugf_hz, phase_margin_deg = calculate_ac_metrics(
+            (frequency, response)
+        )
+
+        self.assertAlmostEqual(gain_db, 40.0)
+        self.assertAlmostEqual(ugf_hz, 100.0)
+        self.assertAlmostEqual(phase_margin_deg, -30.0)
 
     def test_ac_metrics_report_missing_crossing(self):
         frequency = np.logspace(1, 5, 101)

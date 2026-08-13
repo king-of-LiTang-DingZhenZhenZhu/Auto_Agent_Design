@@ -1,6 +1,6 @@
 # 拓扑可行性与验证状态
 
-最后更新：2026-08-09
+最后更新：2026-08-12
 
 本文档记录 `topologies.TOPOLOGY_REGISTRY` 中每个拓扑的电气验证状态。拓扑已注册、能够生成网表或已被单元测试覆盖，并不等同于该电路在电气上有效。
 
@@ -31,7 +31,7 @@
 | `bandgap_ptat` | 层次化 PNP PTAT 基准 | **PASS** | 在 `VDD=1.1 V`、TT 温度仿真中，PTAT 输出从 `-40°C 时 0.3849 V` 单调上升至 `125°C 时 0.6113 V`，功能正常。适用条件：`VDD=0.9 V` 时低温裕量不足；尚未完成 1.1 V 下完整签核。 |
 | `banba_sub1v_bandgap` | Banba 电流求和型亚 1 V 带隙基准 | **FAIL** | `VDD=1.1 V` 时核心收敛在接近零电流的错误状态（`Vref=0.342 mV`、`startup_success=false`）；启动电路持续导通且未能建立核心电流，当前功能不正常。 |
 | `leung_mok_sub1v_bandgap` | Leung-Mok 2002 亚 1 V 带隙基准 | **UNVERIFIED** | 已实现拓扑及专用测试平台，但没有保留真实标称仿真证据。 |
-| `capless_ldo` | PMOS 调整管无片外电容 LDO | **UNVERIFIED** | 已有专用测试平台，但没有保留真实标称仿真证据。 |
+| `capless_ldo` | PMOS 调整管无片外电容 LDO | **FAIL** | TSMC28 `io_1p8`、1.8 V、TT、27°C 下 `VOUT=0.900884 V` 通过，但 Spectre 判定环路为正反馈且不稳定；按 DC 相位相对 UGF 相位损失计算，PM 约为 `-30.83°`。 |
 | `dfc_capless_ldo` | DFC 无片外电容 LDO | **UNVERIFIED** | 已实现拓扑及专用测试平台，但没有保留真实标称仿真证据。 |
 
 ## 运放单次验证
@@ -113,6 +113,17 @@ BO。持久证据为：
 - PVT 结果：`Agent_LLM_BO/circuit_agent/outputs/strongarm_latch_validation_20260808_codex/pvt/pvt_results.json`；标准 `pvt_simulation.py --results ... --simulate` 入口运行得到 `pvt_pass=true`。
 - PVT 覆盖：27/27 个声明角全部收敛并通过；该 profile 的 `vmin` 和 `vtyp` 均为 `0.9 V`，`vmax` 为 `1.1 V`。最差正/负判决裕量均为 `0.887505 V`，最差正/负传播延迟均为 `970.54 ps`，最大判决能量为 `62.61 fJ`，最大功耗为 `15.65 μW`。
 - 适用范围：该证据验证确定性模型下指定输入差分、共模、负载和时钟条件的功能及 PVT 鲁棒性；尚未覆盖 Monte Carlo mismatch、输入失调分布、极小差分输入或 metastability 统计验证。
+
+## 功能验证证据
+
+### `capless_ldo`
+
+- PDK profile：`tsmc28/io_1p8`，MOS 模型为 `nch_18_mac` / `pch_18_mac`。
+- 标称条件：`VIN=1.8 V`、`VREF=0.45 V`、TT、`27°C`。
+- 验证口径：只要求零负载环路相位裕度不低于 `60°`，且 0 至 10 mA DC load sweep 的空载输出为 `0.9 V ± 10 mV`；不以增益、GBW、功耗、PSR、负载调整率或瞬态指标阻断本次功能结论。
+- 结果：空载输出 `0.900884 V`，输出电压通过；首次 0 dB 交越约 `10.39 MHz`，DC 相位约 `180°`、交越相位约 `-30.83°`，按 `PM = 180° - (phase_DC - phase_UGF)` 得到约 `-30.83°`，环路稳定性不通过。
+- 证据：`Agent_LLM_BO/circuit_agent/outputs/capless_ldo_functional_validation_20260812/functional_validation.json` 及同目录 `functional_evidence/` 的独立 STB/DC raw 数据。
+- Spectre 原生结论：`phaseMargin` 为 `NaN`，并明确报告正反馈系统不稳定；在约 `3.981 MHz` 的零相位交越处，环路增益仍大于 0 dB。尚未运行 PVT，也未评价完整性能指标。
 
 ## 条件性 PASS 证据
 

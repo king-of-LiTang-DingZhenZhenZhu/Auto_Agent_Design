@@ -234,8 +234,13 @@ PDK_PROFILES: dict[str, PDKProfile] = {
                 vdd_min=1.62,
                 vdd_max=1.98,
                 max_device_voltage=1.98,
-                min_l=150e-9,
+                min_l=180e-9,
                 min_width_per_finger=320e-9,
+                gmid_table_path=str(
+                    REPO_ROOT
+                    / "gmid_lookup_table"
+                    / "tsmc28_1p8v_nch18_pch18_gmid_tables.json"
+                ),
                 model_flavors={
                     "nmos": {"svt": "nch_18_mac"},
                     "pmos": {"svt": "pch_18_mac"},
@@ -526,7 +531,8 @@ def _resolve_voltage_domain(
         ) from exc
 
     def model(polarity: str, flavor: str, fallback: str) -> str:
-        return domain.model_flavors.get(polarity, {}).get(flavor, fallback)
+        flavors = domain.model_flavors.get(polarity, {})
+        return flavors.get(flavor, flavors.get("svt", fallback))
 
     return replace(
         profile,

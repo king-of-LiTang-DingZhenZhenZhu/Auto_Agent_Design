@@ -254,6 +254,8 @@ class GmidLookup:
             raw = json.load(f)
 
         for model_key in sorted(raw):
+            if model_key.startswith("_"):
+                continue
             self._build_model(raw[model_key], model_key)
             MODEL_ALIASES.setdefault(model_key, model_key)
 

@@ -65,11 +65,41 @@ class OptimizerConfigTest(unittest.TestCase):
         self.assertEqual(core.process_sections["sf"], "top_sf")
         self.assertEqual(io.nmos_model, "nch_18_mac")
         self.assertEqual(io.pmos_model, "pch_18_mac")
+        self.assertEqual(io.nmos_lvt_model, "nch_18_mac")
+        self.assertEqual(io.pmos_lvt_model, "pch_18_mac")
         self.assertEqual(io.spectre_model_path, core.spectre_model_path)
         self.assertEqual(io.hspice_model_path, core.hspice_model_path)
-        self.assertEqual(io.min_l, 150e-9)
+        self.assertEqual(io.min_l, 180e-9)
         self.assertEqual(io.min_width_per_finger, 320e-9)
+        self.assertTrue(io.gmid_table_path.endswith(
+            "tsmc28_1p8v_nch18_pch18_gmid_tables.json"
+        ))
         self.assertEqual(io.voltage_domains["io_1p8"].max_device_voltage, 1.98)
+
+    def test_tsmc28_io_gmid_lookup_loads_models_and_ignores_metadata(self):
+        from gmid_lookup import GmidLookup
+
+        io = get_pdk_profile("tsmc28", "io_1p8")
+        lookup = GmidLookup(io.gmid_table_path)
+
+        self.assertEqual(lookup.get_available_Ls("nch_18_mac")[0], 180e-9)
+        self.assertEqual(lookup.get_available_Ls("pch_18_mac")[0], 180e-9)
+        self.assertGreater(
+            lookup.lookup("nch_18_mac", 12.0, 180e-9, Vds=0.9).id_w,
+            0.0,
+        )
+
+    def test_two_stage_io_gmid_lengths_respect_domain_minimum(self):
+        with patch.dict("os.environ", {"PDK_VOLTAGE_DOMAIN": "io_1p8"}):
+            spec = get_topology("two_stage_ota").get_gmid_spec()
+
+        lengths = {
+            transistor.l_param: transistor
+            for transistor in spec.transistors
+        }
+        self.assertGreaterEqual(lengths["Lbias"].L_low, 180e-9)
+        self.assertGreaterEqual(lengths["Ldiff"].L_low, 180e-9)
+        self.assertGreaterEqual(lengths["Lmirr"].L_low, 180e-9)
 
     def _write_unit_profile(
         self,

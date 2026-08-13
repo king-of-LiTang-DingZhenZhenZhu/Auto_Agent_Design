@@ -418,4 +418,6 @@ python design_flow_graph.py --project outputs/<project> --run-pvt --simulate
 该域与 core domain 共用主 1.8 V model bundle 和 `tt/ss/ff/fs/sf` section；OA CDF
 已确认两个 PCell 均可打开。
 
-项目参数或环境变量使用 `VOLTAGE_DOMAIN=io_1p8` 选择该域。当前 gm/Id lookup table 不包含这两个 IO model，因此使用它们的拓扑采用物理 W/L 参数 BO，而不调用 core-device gm/Id 表。
+项目参数或环境变量使用 `VOLTAGE_DOMAIN=io_1p8` 选择该域。该域使用独立的
+`tsmc28_1p8v_nch18_pch18_gmid_tables.json`，包含 `nch_18_mac` 和
+`pch_18_mac` 的 gm/Id 数据；不得回退到 core-device gm/Id 表。

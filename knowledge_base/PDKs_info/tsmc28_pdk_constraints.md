@@ -25,9 +25,10 @@ sign-off 规则。
 
 ## 当前限制
 
-- `io_1p8` 尚无对应的 gm/Id lookup 数据，相关拓扑应使用物理 W/L 参数优化。
+- `io_1p8` 使用独立的 `tsmc28_1p8v_nch18_pch18_gmid_tables.json`；相关拓扑不得使用 core-device gm/Id 数据。
 - `io_1p8` 的 `nch_18_mac/pch_18_mac` 使用主 1.8 V model bundle，OA CDF 默认
-  `L=150 nm`、单指 `W=320 nm`；当前没有对应 gm/Id lookup 数据。
+  最小 `L=150 nm`、单指 `W=320 nm`；当前 gm/Id 表征的最小沟道长度为
+  `180 nm`，自动 gm/Id sizing 以 `180 nm` 为下限。
 - `rupolym` 已按 OA CDF 接入解析映射，但它只提供几何搜索初值，必须经过映射后
   nominal 仿真。
 - `nf`、`m`、电流密度、可靠性和版图规则应从实际 PDK/CDF/deck 验证，不能使用

@@ -72,8 +72,9 @@ def parse_psf_results(raw_dir: Path, testbench_content: str) -> SimResult | None
                             margin_psf,
                             ("phaseMargin", "phase_margin"),
                         )
-                        result.phase_margin_deg = phase_margin_deg
-                        result.raw_metrics["phase_margin"] = phase_margin_deg
+                        if np.isfinite(phase_margin_deg):
+                            result.phase_margin_deg = phase_margin_deg
+                            result.raw_metrics["phase_margin"] = phase_margin_deg
                     except Exception as exc:
                         logger.warning(
                             "Failed to parse native STB margin %s: %s",
@@ -743,7 +744,12 @@ def _matching_real_arrays(*values: Any) -> tuple[np.ndarray, ...]:
 def calculate_ac_metrics(
     axis_and_values: tuple[Any, Any],
 ) -> tuple[float, float | None, float | None]:
-    """Calculate low-frequency gain, first 0 dB crossing and phase margin."""
+    """Calculate low-frequency gain, first 0 dB crossing and phase margin.
+
+    The loop-gain phase reference depends on the probe orientation.  Compute
+    margin from the phase lost between the first sample and unity gain instead
+    of assuming that the low-frequency phase is always zero degrees.
+    """
     frequency = np.asarray(axis_and_values[0], dtype=float)
     response = np.asarray(axis_and_values[1], dtype=complex)
     if frequency.size < 2 or response.size != frequency.size:
@@ -776,9 +782,8 @@ def calculate_ac_metrics(
     phase_at_ugf = float(
         np.interp(ugf_log, log_frequency, phase_deg)
     )
-    while phase_at_ugf > 0.0:
-        phase_at_ugf -= 360.0
-    phase_margin_deg = 180.0 + phase_at_ugf
+    phase_loss_deg = float(phase_deg[0]) - phase_at_ugf
+    phase_margin_deg = 180.0 - phase_loss_deg
 
     return gain_dc, ugf_hz, phase_margin_deg
 
