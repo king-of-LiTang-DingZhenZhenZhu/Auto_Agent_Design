@@ -356,6 +356,11 @@
     "resistor": "high_res_poly",
     "resistor_poly": "high_res_poly",
     "compensation_resistor": "high_res_poly",
+    "feedback_resistor": "high_res_poly",
+    "gate_resistor": "high_res_poly",
+    "bias_resistor": "high_res_poly",
+    "bandgap_resistor": "high_res_poly",
+    "startup_resistor": "high_res_poly",
     "capacitor": "finger_mom_2t",
     "compensation_capacitor": "finger_mom_2t",
     "feedforward_capacitor": "finger_mom_2t"
