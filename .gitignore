@@ -55,6 +55,7 @@ LOCAL_SIMULATION_ACCESS.md
 
 # Temporary working directories
 tmp/
+workspace/
 
 # Generated circuit project directories (created by topologies/*.write_project())
 Agent_LLM_BO/circuit_agent/folded_cascode_opamp/

@@ -27,9 +27,10 @@
     },
     "opamp_two_pole_pm": {
       "domain": "opamp",
-      "equation": "PM_deg ~= 90 - atan(UGF/p2)",
-      "equivalent": "p2/UGF ~= tan(PM)",
+      "equation": "PM_deg ~= 90 - atan(UGF/p2)*180/pi",
+      "equivalent": "p2/UGF ~= tan(PM_deg*pi/180)",
       "assumptions": [
+        "UGF and p2 use the same frequency unit",
         "the dominant pole contributes approximately -90 degrees at UGF",
         "one non-dominant pole dominates additional phase lag",
         "no nearby zero materially changes phase"
@@ -97,7 +98,9 @@
     },
     "ldo_loop_stability": {
       "domain": "ldo",
-      "equation": "PM is measured from Spectre STB loopGain at the first 0 dB crossing",
+      "measurement": "Spectre STB loopGain",
+      "criterion": "use the first 0 dB crossing of the intended global feedback loop",
+      "equation": "PM_deg = 180 + phase_loopGain_deg_at_UGF",
       "assumptions": [
         "the iprobe lies in the intended global feedback loop",
         "zero-load and external-capacitance corners are evaluated separately"
@@ -108,38 +111,71 @@
     },
     "strongarm_amplification": {
       "domain": "comparator",
-      "equation": "Av ~= gm_input*VTHN/ICM",
+      "equation": "Av ~= gm_input*VTHN/Ibranch",
       "assumptions": [
         "P and Q begin precharged to VDD",
-        "the latch devices remain off during the initial amplification phase"
+        "the latch devices remain off during the initial amplification phase",
+        "Ibranch is the approximate current of one input branch during the amplification phase"
       ],
       "tradeoffs": [
         "larger input devices can increase gm but also raise input capacitance and kickback",
-        "more tail current can reduce delay while increasing energy and supply transients"
+        "more branch current can reduce delay while increasing energy and supply transients"
       ]
     },
     "strongarm_regeneration": {
       "domain": "comparator",
-      "equation": "tau_reg ~= CXY/(gm_latch*(1-CXY/CPQ))",
+      "equation": "tau_reg ~= Cload/gm_eff",
+      "delay_equation": "treg ~= tau_reg*ln(delta_Vout/delta_V0)",
       "assumptions": [
-        "the cross-coupled NMOS transconductance is approximately constant",
-        "the small-signal regeneration model is used only after latch turn-on"
+        "the latch is in the small-signal positive-feedback regeneration phase",
+        "gm_eff is the effective regenerative transconductance around the latch",
+        "Cload is the effective differential regenerative-node capacitance",
+        "the exponential regeneration approximation is valid over the interval of interest"
       ],
       "tradeoffs": [
-        "larger latch gm shortens regeneration but adds capacitance",
-        "larger output load increases delay and energy"
+        "larger gm_eff shortens regeneration but usually increases device size, current, or capacitance",
+        "larger regenerative-node capacitance increases delay and dynamic energy",
+        "a smaller initial differential delta_V0 increases regeneration delay logarithmically"
       ]
     },
     "strongarm_dynamic_energy": {
       "domain": "comparator",
-      "equation": "Pavg ~= fclk*(2*CPQ+CXY)*VDD^2",
+      "equation": "Pavg ~= fclk*Csw_eff*VDD^2",
       "assumptions": [
         "static power is negligible after regeneration",
-        "dynamic charge and discharge dominate average power"
+        "dynamic charging and discharging dominate average power",
+        "Csw_eff is the topology- and activity-dependent effective switched capacitance per clock cycle"
       ],
       "tradeoffs": [
         "larger devices improve matching or speed but increase switched capacitance",
+        "internal nodes may not make a full rail-to-rail transition every cycle, so Csw_eff must be interpreted as an effective value",
         "low average power does not imply low peak supply current"
+      ]
+    },
+    "banba_reference": {
+      "domain": "bandgap",
+      "equation": "Vref ~= R4*(VBE/R2 + DeltaVBE/R3)",
+      "assumptions": [
+        "Banba current-summing sub-1V topology",
+        "the amplifier forces the intended branch voltages/currents according to the topology",
+        "current mirrors and resistor ratios are sufficiently accurate for first-order analysis"
+      ],
+      "tradeoffs": [
+        "resistor ratios set both the nominal output level and the CTAT/PTAT weighting",
+        "larger resistor values reduce current but increase noise, mismatch sensitivity, and settling time"
+      ]
+    },
+    "banba_tempco_cancel": {
+      "domain": "bandgap",
+      "equation": "d/dT[R4*(VBE/R2 + DeltaVBE/R3)] ~= 0",
+      "assumptions": [
+        "first-order Banba current-summing temperature compensation",
+        "resistor temperature coefficients are either small or included separately",
+        "BJT curvature and higher-order effects are not captured by this first-order relation"
+      ],
+      "tradeoffs": [
+        "changing resistor ratios changes both nominal Vref and first-order tempco",
+        "resistor tempco and VBE curvature can limit accuracy even when the first-order slope is cancelled"
       ]
     }
   },
@@ -147,37 +183,67 @@
     "5t_ota": {
       "domain": "opamp",
       "architecture": "single_stage",
-      "input_instances": ["Mdp1", "Mdp2"],
+      "input_instances": [
+        "Mdp1",
+        "Mdp2"
+      ],
       "capacitance_parameter": "CL",
-      "relations": ["opamp_single_stage_gbw", "opamp_two_pole_pm"]
+      "relations": [
+        "opamp_single_stage_gbw",
+        "opamp_two_pole_pm"
+      ]
     },
     "folded_cascode": {
       "domain": "opamp",
       "architecture": "single_stage",
-      "input_instances": ["Mdiff1", "Mdiff2"],
+      "input_instances": [
+        "Mdiff1",
+        "Mdiff2"
+      ],
       "capacitance_parameter": "CL",
-      "relations": ["opamp_single_stage_gbw", "opamp_two_pole_pm"]
+      "relations": [
+        "opamp_single_stage_gbw",
+        "opamp_two_pole_pm"
+      ]
     },
     "two_stage_ota": {
       "domain": "opamp",
       "architecture": "miller_two_stage",
-      "input_instances": ["Mdiff1", "Mdiff2"],
+      "input_instances": [
+        "Mdiff1",
+        "Mdiff2"
+      ],
       "capacitance_parameter": "Cc",
-      "relations": ["opamp_miller_gbw", "opamp_two_pole_pm"]
+      "relations": [
+        "opamp_miller_gbw",
+        "opamp_two_pole_pm"
+      ]
     },
     "pmos_input_two_stage_ota": {
       "domain": "opamp",
       "architecture": "miller_two_stage",
-      "input_instances": ["Mdiff1", "Mdiff2"],
+      "input_instances": [
+        "Mdiff1",
+        "Mdiff2"
+      ],
       "capacitance_parameter": "Cc",
-      "relations": ["opamp_miller_gbw", "opamp_two_pole_pm"]
+      "relations": [
+        "opamp_miller_gbw",
+        "opamp_two_pole_pm"
+      ]
     },
     "folded_cascode_two_stage": {
       "domain": "opamp",
       "architecture": "miller_two_stage",
-      "input_instances": ["Mdiff1", "Mdiff2"],
+      "input_instances": [
+        "Mdiff1",
+        "Mdiff2"
+      ],
       "capacitance_parameter": "Cc",
-      "relations": ["opamp_miller_gbw", "opamp_two_pole_pm"]
+      "relations": [
+        "opamp_miller_gbw",
+        "opamp_two_pole_pm"
+      ]
     },
     "bandgap_ptat": {
       "domain": "bandgap",
@@ -196,9 +262,9 @@
       "domain": "bandgap",
       "architecture": "banba_current_summing_sub1v",
       "relations": [
-        "bandgap_reference",
+        "banba_reference",
         "bandgap_delta_vbe",
-        "bandgap_tempco_cancel"
+        "banba_tempco_cancel"
       ],
       "limitations": [
         "the paper's native-NMOS implementation is mapped to the active PDK LVT models and must be revalidated for input common-mode and startup headroom",
@@ -208,7 +274,10 @@
     "strongarm_latch": {
       "domain": "comparator",
       "architecture": "modified_strongarm_four_switch",
-      "input_instances": ["M1", "M2"],
+      "input_instances": [
+        "M1",
+        "M2"
+      ],
       "relations": [
         "strongarm_amplification",
         "strongarm_regeneration",
